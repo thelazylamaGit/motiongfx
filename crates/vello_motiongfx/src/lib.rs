@@ -2,13 +2,16 @@
 //! authoring handles only construct existing MotionGfx actions.
 
 use motiongfx::prelude::*;
+pub use motiongfx_authoring::smooth;
 use motiongfx_authoring::{Property, Sequence};
 use peniko_motiongfx as _;
 use std::time::Duration;
 use vello::kurbo::{Affine, Rect, Stroke};
-pub use vello::kurbo::{Point, Size};
+pub use vello::kurbo::{Point, Size, Vec2};
 pub use vello::peniko::Color;
 use vello::peniko::Fill;
+
+pub mod colors;
 
 /// Rectangle centered on its position. Coordinates are logical canvas units,
 /// positive y points up, and rotation is counterclockwise in radians.
@@ -35,6 +38,34 @@ impl Default for Rectangle {
             scale: 1.0,
             rotation: 0.0,
         }
+    }
+}
+
+impl Rectangle {
+    /// Create initial rectangle state with the remaining properties defaulted.
+    /// Register this value with `Scene::add` to obtain animation handles.
+    pub fn new(width: f64, height: f64) -> Self {
+        Self {
+            size: Size::new(width, height),
+            ..Self::default()
+        }
+    }
+
+    /// Create a rectangle from a `(width, height)` tuple, `Vec2`, or `Size`.
+    pub fn from_size(size: impl Into<(f64, f64)>) -> Self {
+        let (width, height) = size.into();
+        Self::new(width, height)
+    }
+
+    pub fn fill(mut self, color: Color) -> Self {
+        self.fill = color;
+        self
+    }
+
+    pub fn stroke(mut self, color: Color, width: f64) -> Self {
+        self.stroke = color;
+        self.stroke_width = width;
+        self
     }
 }
 
@@ -72,19 +103,26 @@ impl SubjectSource<RectangleId, Rectangle> for Graphics {
     }
 }
 
-/// Creates graphics objects once, in insertion/draw order.
+/// Scene construction: owns initial graphics state in insertion/draw order.
+/// `add` registers an object and returns its typed animation handles. `animate`
+/// consumes this builder to produce the scene state plus a compiled timeline.
 #[derive(Default)]
-pub struct Drawing {
+pub struct Scene {
     graphics: Graphics,
 }
 
-impl Drawing {
+impl Scene {
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Explicit object creation; returned fields describe animation targets.
-    pub fn rectangle(
+    /// Store and register an object in one operation. Dispatch is resolved
+    /// statically from its Rust type, with no extra playback dispatch.
+    pub fn add<T: SceneObject>(&mut self, object: T) -> T::Handle {
+        object.insert_into(self)
+    }
+
+    fn insert_rectangle(
         &mut self,
         rectangle: Rectangle,
     ) -> RectangleHandle {
@@ -114,6 +152,22 @@ impl Drawing {
             registry,
             timeline,
         }
+    }
+}
+
+/// Registration contract for objects or reusable components added to a scene.
+/// Built-in object implementations store their state and return typed handles;
+/// custom components can also implement this by adding their constituent objects.
+pub trait SceneObject {
+    type Handle;
+    fn insert_into(self, scene: &mut Scene) -> Self::Handle;
+}
+
+impl SceneObject for Rectangle {
+    type Handle = RectangleHandle;
+
+    fn insert_into(self, scene: &mut Scene) -> Self::Handle {
+        scene.insert_rectangle(self)
     }
 }
 
@@ -190,13 +244,6 @@ impl Animation {
     }
 }
 
-/// Manim's normalized sigmoid easing, useful for source comparisons.
-pub fn smooth(t: f32) -> f32 {
-    let error = 1.0 / (1.0 + 5.0_f32.exp());
-    let sigmoid = 1.0 / (1.0 + (-10.0 * (t - 0.5)).exp());
-    ((sigmoid - error) / (1.0 - 2.0 * error)).clamp(0.0, 1.0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,17 +256,12 @@ mod tests {
     fn authored_square_matches_direct_motiongfx_at_arbitrary_times() {
         let blue = Color::from_rgb8(88, 196, 221);
         let orange = Color::from_rgb8(255, 134, 47);
-        let initial = Rectangle {
-            size: Size::new(160.0, 160.0),
-            fill: blue,
-            stroke: blue,
-            stroke_width: 4.0,
-            ..Rectangle::default()
-        };
-        let mut drawing = Drawing::new();
-        let square = drawing.rectangle(initial.clone());
-        let mut authored = drawing.animate(|sequence| {
-            sequence.defaults(s(1), smooth);
+        let initial = Rectangle::from_size(Vec2::new(160.0, 160.0))
+            .fill(blue)
+            .stroke(blue, 4.0);
+        let mut scene = Scene::new();
+        let square = scene.add(initial.clone());
+        let mut authored = scene.animate(|sequence| {
             sequence.play(square.position.offset((-80.0, 0.0)));
             sequence.play(square.fill.to(orange));
             sequence.play(square.scale.multiply(0.3));
@@ -285,10 +327,11 @@ mod tests {
 
     #[test]
     fn relative_targets_waits_overrides_and_multiple_objects() {
-        let mut drawing = Drawing::new();
-        let left = drawing.rectangle(Rectangle::default());
-        let right = drawing.rectangle(Rectangle::default());
-        let mut animation = drawing.animate(|sequence| {
+        let mut scene = Scene::new();
+        let left = scene.add(Rectangle::default());
+        let right = scene.add(Rectangle::default());
+        let mut animation = scene.animate(|sequence| {
+            sequence.defaults(s(1), ease::linear);
             sequence.play(
                 left.position.offset((10.0, 0.0)).over(ms(200)),
             );
@@ -324,11 +367,11 @@ mod tests {
 
     #[test]
     fn custom_target_runs_during_baking_not_playback() {
-        let mut drawing = Drawing::new();
-        let square = drawing.rectangle(Rectangle::default());
+        let mut scene = Scene::new();
+        let square = scene.add(Rectangle::default());
         let calls = Arc::new(AtomicUsize::new(0));
         let counter = calls.clone();
-        let mut animation = drawing.animate(|sequence| {
+        let mut animation = scene.animate(|sequence| {
             sequence.play(square.scale.map_target(move |scale| {
                 counter.fetch_add(1, Ordering::Relaxed);
                 scale * 2.0

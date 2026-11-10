@@ -30,7 +30,12 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(title: &'static str, canvas: Size) -> Self {
+    pub fn new(
+        title: &'static str,
+        canvas: impl Into<(f64, f64)>,
+    ) -> Self {
+        let (width, height) = canvas.into();
+        let canvas = Size::new(width, height);
         assert!(canvas.width.is_finite() && canvas.width > 0.0);
         assert!(canvas.height.is_finite() && canvas.height > 0.0);
         Self { title, canvas }

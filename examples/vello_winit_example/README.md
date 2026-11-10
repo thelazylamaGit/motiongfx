@@ -20,6 +20,8 @@ cargo run -p vello_winit_example --example sine_unit_circle
 The commit graph preserves the source's blue/mauve fallbacks and timing
 (3.88s total). The square uses one-second actions with Manim's `smooth`
 easing (4s total); changing its fill leaves its blue stroke unchanged.
+The authoring crate supplies those duration/easing defaults, and the shared
+palette supplies `BLUE`/`ORANGE`; the example only declares overrides.
 The sine scene uses the same 0.25 turns/second for 8.5s, then holds for the
 source's final default one-second wait. It precomputes the sine path and
 animates `PathTracer.t_end`, rather than accumulating segments in a dt
@@ -30,7 +32,7 @@ typesetting dependency is introduced for these baseline comparisons.
 
 The square creates a `Rectangle` once and schedules `position.offset`,
 `fill.to`, `scale.multiply`, and `rotation.offset` on its returned handle.
-`Drawing::animate` executes once to build and bake an ordinary MotionGfx
+`Scene::animate` executes once to build and bake an ordinary MotionGfx
 timeline. The host samples it and renders the stored rectangle each frame.
 Coordinates are centered logical canvas units with positive y upward;
 rotation is counterclockwise radians. There is no scripting or expression

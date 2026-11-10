@@ -6,6 +6,30 @@ use motiongfx::subject::SubjectId;
 use std::ops::{Add, Mul};
 use std::time::Duration;
 
+/// Library-wide authoring defaults. Individual sequences and changes may
+/// override these without changing other animations or process-global state.
+#[derive(Clone, Copy)]
+pub struct AnimationDefaults {
+    pub duration: Duration,
+    pub ease: EaseFn,
+}
+
+impl Default for AnimationDefaults {
+    fn default() -> Self {
+        Self {
+            duration: s(1),
+            ease: smooth,
+        }
+    }
+}
+
+/// Normalized sigmoid easing (Manim's default `smooth` function).
+pub fn smooth(t: f32) -> f32 {
+    let error = 1.0 / (1.0 + 5.0_f32.exp());
+    let sigmoid = 1.0 / (1.0 + (-10.0 * (t - 0.5)).exp());
+    ((sigmoid - error) / (1.0 - 2.0 * error)).clamp(0.0, 1.0)
+}
+
 /// A subject identity plus a statically typed field accessor.
 pub struct Property<I, S, T> {
     id: I,
@@ -107,11 +131,12 @@ pub struct Sequence<'a, W> {
 
 impl<'a, W: 'static> Sequence<'a, W> {
     pub fn new(registry: &'a mut Registry) -> Self {
+        let defaults = AnimationDefaults::default();
         Self {
             builder: registry.create_builder::<W>(),
             fragments: Vec::new(),
-            duration: s(1),
-            ease: ease::linear,
+            duration: defaults.duration,
+            ease: defaults.ease,
         }
     }
 
