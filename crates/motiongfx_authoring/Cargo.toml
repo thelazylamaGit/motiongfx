@@ -1,0 +1,13 @@
+[package]
+name = "motiongfx_authoring"
+description = "Typed native authoring conveniences for MotionGfx."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+motiongfx = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

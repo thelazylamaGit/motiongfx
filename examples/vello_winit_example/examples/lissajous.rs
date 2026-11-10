@@ -1,12 +1,15 @@
 use core::f64;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use kurbo::{Affine, BezPath, Vec2};
 use motiongfx::prelude::*;
 use peniko::{Color, Fill};
 use peniko_motiongfx::prelude::*;
 use vello::peniko::color::palette::css;
-use vello_winit_example::{VelloDemo, VelloWinitApp};
+use vello_winit_example::{
+    PlaybackConfig, PlaybackMode, PlaybackState, VelloDemo,
+    VelloWinitApp,
+};
 use winit::event_loop::EventLoop;
 
 const N_X: usize = 12;
@@ -90,7 +93,6 @@ fn curve_id(c: usize, r: usize) -> usize {
 struct LissajousTableDemo {
     registry: Registry,
     world: TableWorld,
-    start: Instant,
     timeline: Timeline<TableWorld>,
     grid_duration: Duration,
     curve_duration: Duration,
@@ -233,7 +235,6 @@ impl LissajousTableDemo {
         Self {
             registry,
             world,
-            start: Instant::now(),
             timeline,
             grid_duration,
             curve_duration,
@@ -258,25 +259,26 @@ impl VelloDemo for LissajousTableDemo {
         self.window_size = size;
     }
 
+    fn playback_config(&self) -> PlaybackConfig {
+        PlaybackConfig::new(self.grid_duration + self.curve_duration)
+            .with_mode(PlaybackMode::LoopFrom(self.grid_duration))
+    }
+
     fn rebuild_scene(
         &mut self,
         scene: &mut vello::Scene,
         scale_factor: f64,
+        playback: PlaybackState,
     ) {
-        let elapsed = self.start.elapsed();
-
-        // Track 0 plays once; once done we lock to track 1 and loop it.
-        if elapsed < self.grid_duration {
+        // The host supplies one seekable clock for both chapters.
+        // It plays the grid introduction once, then loops the curves.
+        if playback.time < self.grid_duration {
             self.timeline.set_target_track(0);
-            self.timeline.set_target_time(elapsed);
+            self.timeline.set_target_time(playback.time);
         } else {
-            // `Duration` has no `Rem`, so wrap through nanoseconds.
-            let into_loop = (elapsed - self.grid_duration).as_nanos();
-            let period = self.curve_duration.as_nanos().max(1);
-
             self.timeline.set_target_track(1);
             self.timeline
-                .set_target_time(ns((into_loop % period) as u64));
+                .set_target_time(playback.time - self.grid_duration);
         }
         self.timeline.queue_actions();
         self.timeline

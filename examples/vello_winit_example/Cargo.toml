@@ -7,6 +7,8 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+vello_motiongfx = { workspace = true }
+vello_winit_motiongfx = { workspace = true }
 motiongfx = { workspace = true, default-features = true }
 peniko_motiongfx = { workspace = true }
 vello = { workspace = true }

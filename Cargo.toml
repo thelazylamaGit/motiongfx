@@ -15,6 +15,9 @@ repository = "https://github.com/voxell-tech/motiongfx"
 motiongfx = { version = "0.5.0", path = "crates/motiongfx", default-features = false }
 motiongfx_interp = { version = "0.5.0", path = "crates/motiongfx_interp", default-features = false }
 motiongfx_scene = { version = "0.5.0", path = "crates/motiongfx_scene", default-features = false }
+motiongfx_authoring = { version = "0.5.0", path = "crates/motiongfx_authoring" }
+vello_motiongfx = { version = "0.5.0", path = "crates/vello_motiongfx" }
+vello_winit_motiongfx = { version = "0.5.0", path = "crates/vello_winit_motiongfx" }
 bevy_motiongfx = { version = "0.5.0", path = "crates/bevy_motiongfx", default-features = false }
 peniko_motiongfx = { version = "0.5.0", path = "crates/peniko_motiongfx", default-features = false }
 velyst_motiongfx = { version = "0.4.0", path = "crates/velyst_motiongfx" }

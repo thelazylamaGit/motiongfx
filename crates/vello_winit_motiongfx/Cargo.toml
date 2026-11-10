@@ -1,0 +1,16 @@
+[package]
+name = "vello_winit_motiongfx"
+description = "Reusable Winit window and playback host for Vello MotionGfx animations."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+vello_motiongfx = { workspace = true }
+vello = { workspace = true }
+winit = { workspace = true }
+pollster = { workspace = true }
+
+[lints]
+workspace = true
