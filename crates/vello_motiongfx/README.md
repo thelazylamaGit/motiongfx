@@ -64,6 +64,12 @@ remain independently animatable, and its color/opacity stay independent.
 The initial anchoring implementation supports rectangle parents in the same
 scene; this is not a general hierarchy or layout engine.
 
+The optional `animate!` macro is re-exported here for native authoring. It
+removes repeated `sequence.play(...)` calls and supports sequential changes,
+waits, parallel blocks/collections, chained branches, and staggered collections.
+It expands to the same builder API and does not change playback or rendering.
+See `crates/motiongfx_authoring/README.md` for its syntax and scope.
+
 The temporary renderer is still 5x7 vector lettering, **not a real font**.
 ASCII letters display in uppercase, newline starts a new line, and unsupported
 characters use a question mark. `font_size` is the seven-cell glyph height in

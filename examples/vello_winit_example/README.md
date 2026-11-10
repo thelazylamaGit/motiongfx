@@ -1,7 +1,9 @@
 # Vello / Winit examples
 
-`moving_square` and `insertion_sort` use the native authoring API. The other
-comparison scenes retain the low-level MotionGfx API. All share the same play/pause and
+`moving_square` and `insertion_sort` use the plain native authoring API.
+The optional `animate!` macro remains available, but these examples do not
+use it. The other comparison scenes retain the low-level MotionGfx API.
+All share the same play/pause and
 scrubbing controls from `vello_winit_motiongfx`:
 
 | Example | Source | What it exercises |
@@ -41,7 +43,7 @@ graph evaluator. The low-level-equivalence and seek tests now live in
 `crates/vello_motiongfx/src/lib.rs`.
 
 The **insertion sort** example recreates the supplied Canvas Commons scene
-using typed rectangle/text handles and `Sequence::parallel`:
+using typed rectangle/text handles and `Sequence::play_all`:
 
 ```sh
 cargo run -p vello_winit_example --example insertion_sort
@@ -66,6 +68,7 @@ is animated; labels inherit the movement automatically. The sorting order
 stores `(value, rectangle_handle)` pairs, without a separate component wrapper
 or label animation tracks. The pass caption uses
 `sequence.play(status.content.set(...))`, so seeking also restores its text.
+The ordinary Rust sorting loop schedules all bar moves together with `play_all`.
 The example contains only scene creation and choreography; reusable-crate tests
 cover nested properties, anchoring, text changes, rendering caches and seeking.
 The initial text renderer is still cached ASCII vector lettering, not a real

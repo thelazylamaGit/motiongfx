@@ -6,6 +6,8 @@ use motiongfx::subject::SubjectId;
 use std::ops::{Add, Mul};
 use std::time::Duration;
 
+mod macros;
+
 /// Library-wide authoring defaults. Individual sequences and changes may
 /// override these without changing other animations or process-global state.
 #[derive(Clone, Copy)]
@@ -231,6 +233,26 @@ impl<'a, W: 'static> Sequence<'a, W> {
         self.append(fragments.ord_all());
     }
 
+    /// Start successive changes at fixed intervals, waiting for the last end.
+    /// The interval is measured between starts, not after each change finishes.
+    pub fn stagger<I, S, T, F>(
+        &mut self,
+        interval: Duration,
+        changes: impl IntoIterator<Item = Change<I, S, T, F>>,
+    ) where
+        I: SubjectId,
+        S: Clone + ThreadSafe,
+        T: Clone + ThreadSafe,
+        F: Fn(&T) -> T + ThreadSafe,
+        W: SubjectSource<I, S>,
+    {
+        let fragments: Vec<_> = changes
+            .into_iter()
+            .map(|change| self.action(change))
+            .collect();
+        self.append(fragments.ord_flow(interval));
+    }
+
     /// Accepts existing `.ord_all()` / `.ord_flow()` fragments as well.
     pub fn append(&mut self, fragment: TrackFragment) {
         self.fragments.push(fragment);
@@ -248,6 +270,15 @@ impl<'a, W: 'static> Sequence<'a, W> {
         let children: Vec<_> =
             self.fragments.drain(start..).collect();
         self.append(children.ord_all());
+    }
+
+    /// Collect a sequential branch, useful inside a parallel block.
+    pub fn chain(&mut self, author: impl FnOnce(&mut Self)) {
+        let start = self.fragments.len();
+        author(self);
+        let children: Vec<_> =
+            self.fragments.drain(start..).collect();
+        self.append(children.ord_chain());
     }
 
     /// Set a property at the current sequence time without consuming time.

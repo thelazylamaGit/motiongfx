@@ -2,8 +2,8 @@
 //! authoring handles only construct existing MotionGfx actions.
 
 use motiongfx::prelude::*;
-pub use motiongfx_authoring::smooth;
 use motiongfx_authoring::{Property, Sequence};
+pub use motiongfx_authoring::{animate, smooth};
 use peniko_motiongfx as _;
 use std::time::Duration;
 use vello::kurbo::{Affine, Rect, Stroke};
