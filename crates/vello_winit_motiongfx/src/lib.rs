@@ -14,7 +14,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window as WinitWindow;
 
-pub mod labels;
+pub use vello_motiongfx::lettering as labels;
 pub mod playback;
 use playback::PlaybackControls;
 pub use playback::{

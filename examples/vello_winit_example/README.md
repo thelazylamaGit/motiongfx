@@ -1,12 +1,13 @@
 # Vello / Winit examples
 
-`moving_square` now uses the first native authoring API. The other comparison
-scenes retain the low-level MotionGfx API. All share the same play/pause and
+`moving_square` and `insertion_sort` use the native authoring API. The other
+comparison scenes retain the low-level MotionGfx API. All share the same play/pause and
 scrubbing controls from `vello_winit_motiongfx`:
 
 | Example | Source | What it exercises |
 | --- | --- | --- |
-| `insertion_sort` | Canvas Commons sorting | Procedural object creation and parallel moves per insertion pass |
+| `insertion_sort` | Canvas Commons sorting | Procedural creation, nested position targets, moving text labels, discrete pass captions |
+| `insertion_sort_low_level` | Previous annotated version | Same sorting choreography using raw MotionGfx and Vello calls |
 | `commit_graph` | Canvas Commons commit graph | A reusable `Commit` component, path tracing, staggered back easing, derived ring opacity/scale |
 | `moving_square` | Manim `MovingAround` | Typed property handles, sequential translation, fill interpolation, relative scale, and rotation |
 | `sine_unit_circle` | Manim `SineCurveUnitCircle` | Orbiting point, dependent lines, and sine-path tracing |
@@ -40,10 +41,11 @@ graph evaluator. The low-level-equivalence and seek tests now live in
 `crates/vello_motiongfx/src/lib.rs`.
 
 The **insertion sort** example recreates the supplied Canvas Commons scene
-using the current MotionGfx API, as a baseline for authoring API comparisons:
+using typed rectangle/text handles and `Sequence::parallel`:
 
 ```sh
 cargo run -p vello_winit_example --example insertion_sort
+cargo run -p vello_winit_example --example insertion_sort_low_level
 ```
 
 It uses `[5, 2, 8, 1, 6, 3]`, 64px-wide rounded bars, height `value * 36`,
@@ -51,12 +53,24 @@ a shared bottom baseline, 90px slot spacing, and the `#89b4fa` fallback
 color. Each of the five insertion passes animates every bar in parallel
 for 400ms with cubic ease-in/out, followed by a 600ms final hold (2.6s total).
 The source's theme-variable lookup is represented by that fixed fallback.
-Value labels and a pass caption are added for inspection. The algorithm
-runs during construction; scrubbing only samples the compiled timeline.
+The algorithm runs during construction; scrubbing only samples the compiled
+timeline. Edit the `VALUES` slice to change the number or values of the bars.
+Only the handle ordering changes during construction; the stored objects
+keep their identities and initial geometry. This scene explicitly overrides
+the library's duration/easing defaults with 400ms and cubic ease-in-out.
 
-This exposes the current boilerplate directly: the bar world/access
-implementation, ID-plus-field action targeting, compile/bake/sample calls,
-and explicit Vello rendering. No proposed authoring API is assumed.
+The title, dynamic input caption, per-bar value labels, and pass caption are
+`Text` scene objects. Each value label is anchored to its rectangle with
+`relative_to(bar)` and a local position. Only the rectangle's `position.x`
+is animated; labels inherit the movement automatically. The sorting order
+stores `(value, rectangle_handle)` pairs, without a separate component wrapper
+or label animation tracks. The pass caption uses
+`sequence.play(status.content.set(...))`, so seeking also restores its text.
+The example contains only scene creation and choreography; reusable-crate tests
+cover nested properties, anchoring, text changes, rendering caches and seeking.
+The initial text renderer is still cached ASCII vector lettering, not a real
+font/shaping engine. The original annotated low-level version remains as
+`insertion_sort_low_level` for comparisons.
 
 Run from the workspace root:
 

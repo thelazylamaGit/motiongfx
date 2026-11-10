@@ -12,6 +12,13 @@ pub use vello::peniko::Color;
 use vello::peniko::Fill;
 
 pub mod colors;
+pub mod lettering;
+mod properties;
+mod text;
+mod text_renderer;
+pub use properties::Position;
+pub use text::{Text, TextAlign, TextHandle, TextId};
+use text_renderer::TextLayout;
 
 /// Rectangle centered on its position. Coordinates are logical canvas units,
 /// positive y points up, and rotation is counterclockwise in radians.
@@ -25,6 +32,7 @@ pub struct Rectangle {
     pub stroke_width: f64,
     pub scale: f64,
     pub rotation: f64,
+    pub radius: f64,
 }
 
 impl Default for Rectangle {
@@ -37,6 +45,7 @@ impl Default for Rectangle {
             stroke_width: 0.0,
             scale: 1.0,
             rotation: 0.0,
+            radius: 0.0,
         }
     }
 }
@@ -62,6 +71,17 @@ impl Rectangle {
         self
     }
 
+    pub fn position(mut self, position: impl Into<Point>) -> Self {
+        self.position = position.into();
+        self
+    }
+
+    /// Corner radius in unscaled canvas units, clamped to the shape by Kurbo.
+    pub fn radius(mut self, radius: f64) -> Self {
+        self.radius = radius;
+        self
+    }
+
     pub fn stroke(mut self, color: Color, width: f64) -> Self {
         self.stroke = color;
         self.stroke_width = width;
@@ -79,7 +99,7 @@ pub struct RectangleId(usize);
 #[derive(Clone, Copy)]
 pub struct RectangleHandle {
     id: RectangleId,
-    pub position: Property<RectangleId, Rectangle, Point>,
+    pub position: Position<RectangleId, Rectangle>,
     pub fill: Property<RectangleId, Rectangle, Color>,
     pub scale: Property<RectangleId, Rectangle, f64>,
     pub rotation: Property<RectangleId, Rectangle, f64>,
@@ -88,6 +108,25 @@ pub struct RectangleHandle {
 #[derive(Default)]
 pub struct Graphics {
     rectangles: Vec<Rectangle>,
+    texts: Vec<Text>,
+    order: Vec<DrawObject>,
+}
+
+enum DrawObject {
+    Rectangle(RectangleId),
+    Text(TextId),
+}
+
+impl Graphics {
+    fn text_parent_transform(&self, text: &Text) -> Affine {
+        match text.parent {
+            Some(id) => {
+                let parent = &self.rectangles[id.0];
+                parent.transform() * Affine::scale(parent.scale)
+            }
+            None => Affine::IDENTITY,
+        }
+    }
 }
 
 impl SubjectSource<RectangleId, Rectangle> for Graphics {
@@ -100,6 +139,19 @@ impl SubjectSource<RectangleId, Rectangle> for Graphics {
         f: impl FnOnce(&mut Rectangle) -> R,
     ) -> Option<R> {
         self.rectangles.get_mut(id.0).map(f)
+    }
+}
+
+impl SubjectSource<TextId, Text> for Graphics {
+    fn get_source(&self, id: TextId) -> Option<&Text> {
+        self.texts.get(id.0)
+    }
+    fn apply_source<R>(
+        &mut self,
+        id: TextId,
+        f: impl FnOnce(&mut Text) -> R,
+    ) -> Option<R> {
+        self.texts.get_mut(id.0).map(f)
     }
 }
 
@@ -128,12 +180,39 @@ impl Scene {
     ) -> RectangleHandle {
         let id = RectangleId(self.graphics.rectangles.len());
         self.graphics.rectangles.push(rectangle);
+        self.graphics.order.push(DrawObject::Rectangle(id));
         RectangleHandle {
             id,
-            position: Property::new(id, path!(Rectangle.position)),
+            position: Position::new(
+                id,
+                path!(Rectangle.position),
+                path!(Rectangle.position.x),
+                path!(Rectangle.position.y),
+            ),
             fill: Property::new(id, path!(Rectangle.fill)),
             scale: Property::new(id, path!(Rectangle.scale)),
             rotation: Property::new(id, path!(Rectangle.rotation)),
+        }
+    }
+
+    fn insert_text(&mut self, text: Text) -> TextHandle {
+        let id = TextId(self.graphics.texts.len());
+        self.graphics.texts.push(text);
+        self.graphics.order.push(DrawObject::Text(id));
+        TextHandle {
+            id,
+            content: Property::discrete(id, path!(Text.content)),
+            position: Position::new(
+                id,
+                path!(Text.position),
+                path!(Text.position.x),
+                path!(Text.position.y),
+            ),
+            font_size: Property::new(id, path!(Text.font_size)),
+            fill: Property::new(id, path!(Text.fill)),
+            opacity: Property::new(id, path!(Text.opacity)),
+            scale: Property::new(id, path!(Text.scale)),
+            rotation: Property::new(id, path!(Text.rotation)),
         }
     }
 
@@ -148,6 +227,12 @@ impl Scene {
         let mut timeline = sequence.compile();
         timeline.bake_actions(&registry, &self.graphics);
         Animation {
+            text_layouts: self
+                .graphics
+                .texts
+                .iter()
+                .map(TextLayout::new)
+                .collect(),
             graphics: self.graphics,
             registry,
             timeline,
@@ -176,6 +261,7 @@ pub struct Animation {
     graphics: Graphics,
     registry: Registry,
     timeline: Timeline<Graphics>,
+    text_layouts: Vec<TextLayout>,
 }
 
 impl Animation {
@@ -196,10 +282,14 @@ impl Animation {
         &self.graphics.rectangles[handle.id.0]
     }
 
+    pub fn text(&self, handle: TextHandle) -> &Text {
+        &self.graphics.texts[handle.id.0]
+    }
+
     /// Emit Vello commands from sampled state. No authoring descriptions are
     /// interpreted here. Vello still records its normal scene commands per frame.
     pub fn render(
-        &self,
+        &mut self,
         scene: &mut vello::Scene,
         viewport: Size,
         canvas: Size,
@@ -213,33 +303,50 @@ impl Animation {
                 viewport.height / 2.0,
             ))
             * Affine::scale(fit);
-        for rectangle in &self.graphics.rectangles {
-            let xf = screen
-                * Affine::translate((
-                    rectangle.position.x,
-                    -rectangle.position.y,
-                ))
-                * Affine::rotate(-rectangle.rotation);
-            let half_w = rectangle.size.width * rectangle.scale / 2.0;
-            let half_h =
-                rectangle.size.height * rectangle.scale / 2.0;
-            let shape = Rect::new(-half_w, -half_h, half_w, half_h);
-            scene.fill(
-                Fill::NonZero,
+        for object in &self.graphics.order {
+            match object {
+                DrawObject::Rectangle(id) => self.graphics.rectangles
+                    [id.0]
+                    .render(scene, screen),
+                DrawObject::Text(id) => {
+                    let text = &self.graphics.texts[id.0];
+                    let parent =
+                        self.graphics.text_parent_transform(text);
+                    self.text_layouts[id.0].render(
+                        text,
+                        scene,
+                        screen * parent,
+                    );
+                }
+            }
+        }
+    }
+}
+
+impl Rectangle {
+    fn transform(&self) -> Affine {
+        Affine::translate((self.position.x, -self.position.y))
+            * Affine::rotate(-self.rotation)
+    }
+
+    fn render(&self, scene: &mut vello::Scene, screen: Affine) {
+        let rectangle = self;
+        let xf = screen * self.transform();
+        let half_w = rectangle.size.width * rectangle.scale / 2.0;
+        let half_h = rectangle.size.height * rectangle.scale / 2.0;
+        let shape = Rect::new(-half_w, -half_h, half_w, half_h)
+            .to_rounded_rect(
+                rectangle.radius * rectangle.scale.abs(),
+            );
+        scene.fill(Fill::NonZero, xf, rectangle.fill, None, &shape);
+        if rectangle.stroke_width > 0.0 {
+            scene.stroke(
+                &Stroke::new(rectangle.stroke_width),
                 xf,
-                rectangle.fill,
+                rectangle.stroke,
                 None,
                 &shape,
             );
-            if rectangle.stroke_width > 0.0 {
-                scene.stroke(
-                    &Stroke::new(rectangle.stroke_width),
-                    xf,
-                    rectangle.stroke,
-                    None,
-                    &shape,
-                );
-            }
         }
     }
 }
@@ -272,6 +379,7 @@ mod tests {
         // convenience methods under test. Both use the same initial graphics.
         let mut world = Graphics {
             rectangles: vec![initial],
+            ..Graphics::default()
         };
         let mut registry = Registry::new();
         let mut b = registry.create_builder::<Graphics>();
@@ -342,10 +450,10 @@ mod tests {
                     .over(ms(500))
                     .ease(ease::quad::ease_in),
             );
-            let a = sequence.action(left.scale.to(2.0).over(ms(400)));
-            let b =
-                sequence.action(right.scale.to(3.0).over(ms(800)));
-            sequence.append([a, b].ord_all());
+            sequence.play_all([
+                left.scale.to(2.0).over(ms(400)),
+                right.scale.to(3.0).over(ms(800)),
+            ]);
         });
         assert_eq!(animation.duration(), ms(1800));
         animation.sample(ms(400));
@@ -383,5 +491,208 @@ mod tests {
             animation.sample(time);
         }
         assert_eq!(calls.load(Ordering::Relaxed), baked_calls);
+    }
+
+    #[test]
+    fn nested_axes_and_whole_position_operations_share_the_same_state()
+     {
+        let mut scene = Scene::new();
+        let shape = scene
+            .add(Rectangle::new(10.0, 10.0).position((10.0, 20.0)));
+        let title =
+            scene.add(Text::new("Title").position((-3.0, 4.0)));
+        let mut animation = scene.animate(|sequence| {
+            sequence.defaults(s(1), ease::linear);
+            sequence.parallel(|sequence| {
+                sequence.play(shape.position.x.to(30.0));
+                sequence.play(shape.position.y.offset(10.0));
+                sequence.play(title.position.to((100.0, 50.0)));
+            });
+            sequence.play(shape.position.offset((5.0, -10.0)));
+        });
+        animation.sample(ms(500));
+        assert_eq!(
+            animation.rectangle(shape).position,
+            Point::new(20.0, 25.0)
+        );
+        assert_eq!(
+            animation.text(title).position,
+            Point::new(48.5, 27.0)
+        );
+        animation.sample(ms(1500));
+        assert_eq!(
+            animation.rectangle(shape).position,
+            Point::new(32.5, 25.0)
+        );
+        assert_eq!(
+            animation.text(title).position,
+            Point::new(100.0, 50.0)
+        );
+        animation.sample(ms(0));
+        assert_eq!(
+            animation.rectangle(shape).position,
+            Point::new(10.0, 20.0)
+        );
+        assert_eq!(
+            animation.text(title).position,
+            Point::new(-3.0, 4.0)
+        );
+    }
+
+    #[test]
+    fn text_style_animation_and_content_changes_are_seekable() {
+        let mut scene = Scene::new();
+        let title = scene.add(Text::new("First").font_size(14.0));
+        let orange = colors::ORANGE;
+        let mut animation = scene.animate(|sequence| {
+            sequence.defaults(s(1), ease::linear);
+            sequence.parallel(|sequence| {
+                sequence.play(title.position.x.to(100.0));
+                sequence.play(title.font_size.to(28.0));
+                sequence.play(title.opacity.to(0.5));
+                sequence.play(title.scale.to(2.0));
+                sequence.play(title.rotation.to(0.4));
+                sequence.play(title.fill.to(orange));
+                sequence.play(title.content.to("Second"));
+            });
+            sequence.wait(ms(500));
+            sequence.play(title.content.set("Third"));
+            sequence.wait(ms(500));
+        });
+        assert_eq!(animation.duration(), s(2));
+        for (time, content) in [
+            (0, "First"),
+            (500, "First"),
+            (1000, "Second"),
+            (1499, "Second"),
+            (1500, "Third"),
+            (2000, "Third"),
+            (500, "First"),
+            (0, "First"),
+        ] {
+            animation.sample(ms(time));
+            assert_eq!(
+                animation.text(title).content.as_ref(),
+                content
+            );
+        }
+        animation.sample(ms(500));
+        let text = animation.text(title);
+        assert_eq!(text.position.x, 50.0);
+        assert_eq!(text.font_size, 21.0);
+        assert_eq!(text.opacity, 0.75);
+        assert_eq!(text.scale, 1.5);
+        assert!((text.rotation - 0.2).abs() < 1e-6);
+        animation.sample(s(1));
+        for (a, b) in animation
+            .text(title)
+            .fill
+            .components
+            .iter()
+            .zip(orange.components)
+        {
+            assert!((a - b).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn mixed_text_and_rectangle_objects_render_in_insertion_order() {
+        let mut scene = Scene::new();
+        scene.add(Rectangle::new(10.0, 10.0).fill(colors::RED));
+        scene.add(Text::new("A").font_size(7.0));
+        scene.add(Rectangle::new(20.0, 20.0).fill(colors::BLUE));
+        let mut animation =
+            scene.animate(|sequence| sequence.wait(s(1)));
+        let mut actual = vello::Scene::new();
+        let size = Size::new(100.0, 100.0);
+        animation.render(&mut actual, size, size, 1.0);
+
+        let mut expected = vello::Scene::new();
+        let screen = Affine::translate((50.0, 50.0));
+        expected.fill(
+            Fill::NonZero,
+            screen,
+            colors::RED,
+            None,
+            &Rect::new(-5.0, -5.0, 5.0, 5.0).to_rounded_rect(0.0),
+        );
+        lettering::draw(
+            &mut expected,
+            screen,
+            Point::ZERO,
+            "A",
+            Color::WHITE,
+            1.0,
+        );
+        expected.fill(
+            Fill::NonZero,
+            screen,
+            colors::BLUE,
+            None,
+            &Rect::new(-10.0, -10.0, 10.0, 10.0).to_rounded_rect(0.0),
+        );
+        assert_eq!(
+            actual.encoding().draw_data,
+            expected.encoding().draw_data
+        );
+        assert_eq!(
+            actual.encoding().path_data,
+            expected.encoding().path_data
+        );
+        assert_eq!(actual.encoding().n_paths, 3);
+    }
+
+    #[test]
+    fn anchored_text_inherits_parent_motion_and_keeps_independent_local_animation()
+     {
+        let mut scene = Scene::new();
+        let bar = scene
+            .add(Rectangle::new(10.0, 20.0).position((10.0, 20.0)));
+        let label = scene.add(
+            Text::new("A")
+                .relative_to(bar)
+                .position((0.0, -10.0))
+                .font_size(7.0),
+        );
+        let mut animation = scene.animate(|sequence| {
+            sequence.defaults(s(1), ease::linear);
+            // No animation is registered on the child during this first second.
+            sequence.parallel(|sequence| {
+                sequence.play(bar.position.x.to(30.0));
+                sequence.play(
+                    bar.rotation.to(std::f64::consts::FRAC_PI_2),
+                );
+                sequence.play(bar.scale.to(2.0));
+            });
+            sequence.play(label.position.x.to(5.0));
+        });
+        let mut rendered = vello::Scene::new();
+        for (time, expected) in [
+            (0, Point::new(10.0, -10.0)),
+            (1000, Point::new(50.0, -20.0)),
+            (1500, Point::new(50.0, -25.0)),
+            (2000, Point::new(50.0, -30.0)),
+            (0, Point::new(10.0, -10.0)),
+        ] {
+            animation.sample(ms(time));
+            let text = animation.text(label);
+            let anchor =
+                animation.graphics.text_parent_transform(text)
+                    * Point::new(text.position.x, -text.position.y);
+            assert!(anchor.distance(expected) < 1e-6);
+            assert_eq!(text.position.y, -10.0);
+            rendered.reset();
+            animation.render(
+                &mut rendered,
+                Size::new(100.0, 100.0),
+                Size::new(100.0, 100.0),
+                1.0,
+            );
+            assert_eq!(rendered.encoding().n_paths, 2);
+            assert_eq!(
+                animation.text_layouts[label.id.0].rebuilds,
+                1
+            );
+        }
     }
 }

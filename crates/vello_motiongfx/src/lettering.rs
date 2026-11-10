@@ -1,9 +1,10 @@
-//! Minimal 5x7 vector lettering for the explainer's short ASCII labels.
-//! Kept out of the lesson: a production application should use a proper
-//! text shaping/font stack. These labels need no platform font files.
+//! Temporary 5x7 vector lettering, with no font file or shaping engine.
+//! ASCII letters are displayed in uppercase; unknown characters use `?`.
+//! This renderer is separate from Text state so proper font layout can replace
+//! it later. Legacy immediate drawing remains available through `draw`.
 
 use vello::Scene;
-use vello::kurbo::{Affine, BezPath, Point, Rect, Shape};
+use vello::kurbo::{Affine, BezPath, Point, Rect, Shape, Size};
 use vello::peniko::{Color, Fill};
 
 /// Each byte is a row of five pixels, most significant visible bit first.
@@ -51,7 +52,9 @@ fn glyph(c: char) -> [u8; 7] {
         ')' => [8, 4, 2, 2, 2, 4, 8],
         ',' => [0, 0, 0, 0, 0, 4, 8],
         '.' => [0, 0, 0, 0, 0, 0, 4],
-        _ => [0; 7],
+        ' ' => [0; 7],
+        ':' => [0, 4, 4, 0, 4, 4, 0],
+        _ => [14, 17, 1, 2, 4, 0, 4],
     }
 }
 
@@ -63,22 +66,56 @@ pub fn draw(
     ink: Color,
     size: f64,
 ) {
-    // Append every pixel rectangle to one path: one Vello fill per label.
+    let (path, _) = layout(text);
+    scene.fill(
+        Fill::NonZero,
+        xf * Affine::translate(origin.to_vec2())
+            * Affine::scale(size),
+        ink,
+        None,
+        &path,
+    );
+}
+
+/// Geometry in unit pixel cells. Font size, alignment and object transforms
+/// are applied later, so moving/fading/resizing text reuses this geometry.
+pub(crate) fn layout(text: &str) -> (BezPath, Size) {
     let mut path = BezPath::new();
-    for (index, c) in text.chars().enumerate() {
-        for (row, bits) in glyph(c).into_iter().enumerate() {
+    let mut column_index = 0;
+    let mut line = 0;
+    let mut width = 0.0_f64;
+    for c in text.chars() {
+        if c == '\n' {
+            line += 1;
+            column_index = 0;
+            continue;
+        }
+        for (row, bits) in
+            glyph(c.to_ascii_uppercase()).into_iter().enumerate()
+        {
             for column in 0..5 {
                 if bits & (1 << (4 - column)) != 0 {
-                    let x =
-                        origin.x + (index * 6 + column) as f64 * size;
-                    let y = origin.y + row as f64 * size;
+                    let x = (column_index * 6 + column) as f64;
+                    let y = (line * 9 + row) as f64;
                     path.extend(
-                        Rect::new(x, y, x + size, y + size)
+                        Rect::new(x, y, x + 1.0, y + 1.0)
                             .path_elements(0.1),
                     );
                 }
             }
         }
+        column_index += 1;
+        width = width.max((column_index * 6 - 1) as f64);
     }
-    scene.fill(Fill::NonZero, xf, ink, None, &path);
+    (
+        path,
+        Size::new(
+            width,
+            if text.is_empty() {
+                0.0
+            } else {
+                (line * 9 + 7) as f64
+            },
+        ),
+    )
 }

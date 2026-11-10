@@ -56,6 +56,21 @@ impl<I: Copy, S, T> Property<I, S, T> {
         }
     }
 
+    /// A property whose value changes only at the end of an action.
+    /// Useful for text and other values without a meaningful interpolation.
+    pub fn discrete(id: I, path: Path<S, T>) -> Self
+    where
+        T: Clone,
+    {
+        Self {
+            id,
+            path,
+            interp: |a, b, progress| {
+                if progress < 1.0 { a.clone() } else { b.clone() }
+            },
+        }
+    }
+
     /// A custom action target, resolved during MotionGfx baking, not each frame.
     pub fn map_target<F>(self, target: F) -> Change<I, S, T, F>
     where
@@ -71,11 +86,12 @@ impl<I: Copy, S, T> Property<I, S, T> {
 
     pub fn to(
         self,
-        value: T,
+        value: impl Into<T>,
     ) -> Change<I, S, T, impl Fn(&T) -> T + ThreadSafe>
     where
         T: Clone + ThreadSafe,
     {
+        let value = value.into();
         self.map_target(move |_| value.clone())
     }
 
@@ -88,6 +104,19 @@ impl<I: Copy, S, T> Property<I, S, T> {
         D: Copy + ThreadSafe,
     {
         self.map_target(move |previous| previous.clone() + delta)
+    }
+
+    /// Describe an immediate change at the point where it is scheduled.
+    /// Use `sequence.play(property.set(value))`; this does not mutate state
+    /// merely by constructing the description.
+    pub fn set(
+        self,
+        value: impl Into<T>,
+    ) -> Change<I, S, T, impl Fn(&T) -> T + ThreadSafe>
+    where
+        T: Clone + ThreadSafe,
+    {
+        self.to(value).over(Duration::ZERO)
     }
 
     pub fn multiply<D>(
@@ -103,6 +132,7 @@ impl<I: Copy, S, T> Property<I, S, T> {
 }
 
 /// Consumed when scheduled; does not survive as an extra runtime layer.
+#[must_use = "Schedule the change with sequence.play(...) or sequence.play_all(...)"]
 pub struct Change<I, S, T, F> {
     property: Property<I, S, T>,
     target: F,
@@ -181,6 +211,26 @@ impl<'a, W: 'static> Sequence<'a, W> {
         self.append(fragment);
     }
 
+    /// Start a collection of changes together, waiting for the longest one.
+    /// Elements must have the same change type (for example, many x positions).
+    /// For mixed property types, use `action` and existing track combinators.
+    pub fn play_all<I, S, T, F>(
+        &mut self,
+        changes: impl IntoIterator<Item = Change<I, S, T, F>>,
+    ) where
+        I: SubjectId,
+        S: Clone + ThreadSafe,
+        T: Clone + ThreadSafe,
+        F: Fn(&T) -> T + ThreadSafe,
+        W: SubjectSource<I, S>,
+    {
+        let fragments: Vec<_> = changes
+            .into_iter()
+            .map(|change| self.action(change))
+            .collect();
+        self.append(fragments.ord_all());
+    }
+
     /// Accepts existing `.ord_all()` / `.ord_flow()` fragments as well.
     pub fn append(&mut self, fragment: TrackFragment) {
         self.fragments.push(fragment);
@@ -188,6 +238,30 @@ impl<'a, W: 'static> Sequence<'a, W> {
 
     pub fn wait(&mut self, duration: Duration) {
         self.append(TrackFragment::silent(duration));
+    }
+
+    /// Start all actions authored inside this block at the same sequence time.
+    /// Unlike `play_all`, a block can contain different subject/property types.
+    pub fn parallel(&mut self, author: impl FnOnce(&mut Self)) {
+        let start = self.fragments.len();
+        author(self);
+        let children: Vec<_> =
+            self.fragments.drain(start..).collect();
+        self.append(children.ord_all());
+    }
+
+    /// Set a property at the current sequence time without consuming time.
+    pub fn set<I, S, T>(
+        &mut self,
+        property: Property<I, S, T>,
+        value: impl Into<T>,
+    ) where
+        I: SubjectId,
+        S: Clone + ThreadSafe,
+        T: Clone + ThreadSafe,
+        W: SubjectSource<I, S>,
+    {
+        self.play(property.set(value));
     }
 
     pub fn compile(self) -> Timeline<W> {

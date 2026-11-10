@@ -1,9 +1,11 @@
-//! Small shared palette, matching the Manim comparison examples.
+//! Small shared palette for the comparison examples.
 //! Import individual constants with `use vello_motiongfx::colors::BLUE`.
 
 use crate::Color;
 
 pub const BLUE: Color = Color::from_rgb8(88, 196, 221);
+/// Canvas Commons' default blue fallback (#89b4fa).
+pub const PASTEL_BLUE: Color = Color::from_rgb8(137, 180, 250);
 pub const ORANGE: Color = Color::from_rgb8(255, 134, 47);
 pub const YELLOW: Color = Color::from_rgb8(255, 255, 0);
 pub const RED: Color = Color::from_rgb8(252, 98, 85);
