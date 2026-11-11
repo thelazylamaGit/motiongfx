@@ -1,6 +1,6 @@
 # Vello / Winit examples
 
-`moving_square`, `insertion_sort` and `commit_graph` use the plain native
+`moving_square`, `insertion_sort`, `commit_graph` and `camera_zoom` use the plain native
 authoring API.
 The optional `animate!` macro remains available, but these examples do not
 use it. The other comparison scenes retain the low-level MotionGfx API.
@@ -13,11 +13,13 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `insertion_sort_low_level` | Previous annotated version | Same sorting choreography using raw MotionGfx and Vello calls |
 | `commit_graph` | Canvas Commons commit graph | A reusable circle/ring component, path reveal, staggered back easing, ordinary ring scale/opacity tracks |
 | `moving_square` | Manim `MovingAround` | Typed property handles, sequential translation, fill interpolation, relative scale, and rotation |
+| `camera_zoom` | Manim-style `Zoom` | Parallel camera pan/zoom, a hold, and returning to the original view |
 | `sine_unit_circle` | Manim `SineCurveUnitCircle` | Orbiting point, dependent lines, and sine-path tracing |
 
 ```sh
 cargo run -p vello_winit_example --example commit_graph
 cargo run -p vello_winit_example --example moving_square
+cargo run -p vello_winit_example --example camera_zoom
 cargo run -p vello_winit_example --example sine_unit_circle
 ```
 

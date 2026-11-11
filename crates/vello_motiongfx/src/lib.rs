@@ -11,6 +11,7 @@ pub use vello::kurbo::{Point, Size, Vec2};
 pub use vello::peniko::Color;
 use vello::peniko::Fill;
 
+mod camera;
 mod circle;
 pub mod colors;
 pub mod lettering;
@@ -20,6 +21,7 @@ mod path_renderer;
 mod properties;
 mod text;
 mod text_renderer;
+pub use camera::{Camera, CameraHandle, CameraId};
 pub use circle::{Circle, CircleHandle, CircleId};
 pub use parent::Parent;
 pub use path::{BezPath, Path, PathHandle, PathId};
@@ -118,6 +120,7 @@ pub struct RectangleHandle {
 
 #[derive(Default)]
 pub struct Graphics {
+    camera: Camera,
     rectangles: Vec<Rectangle>,
     circles: Vec<Circle>,
     paths: Vec<Path>,
@@ -281,6 +284,11 @@ pub struct Animation {
 }
 
 impl Animation {
+    /// Current sampled camera state (position is local when attached).
+    pub fn camera(&self) -> &Camera {
+        &self.graphics.camera
+    }
+
     pub fn duration(&self) -> Duration {
         self.timeline.tracks()[0].duration()
     }
@@ -326,7 +334,8 @@ impl Animation {
                 viewport.width / 2.0,
                 viewport.height / 2.0,
             ))
-            * Affine::scale(fit);
+            * Affine::scale(fit)
+            * self.graphics.camera_transform();
         for object in &self.graphics.order {
             match object {
                 DrawObject::Circle(id) => {

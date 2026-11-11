@@ -85,6 +85,33 @@ not clone large point buffers. Visible geometry is cached separately, outside
 sampled state, and rebuilt only when the source or visible range changes.
 Moving, fading or changing the stroke style of a path reuses its geometry.
 
+Every scene has one camera, initially centered with zoom 1 and rotation 0.
+`scene.camera()` returns its typed `position` (including `.x`/`.y`), `zoom`
+and `rotation` targets. Schedule them with ordinary `sequence.play` and
+`sequence.parallel` calls. Zoom 2 means twice the magnification; positive
+camera rotation is counterclockwise, so the world rotates clockwise.
+Zoom must remain finite and positive, and position/rotation must be finite.
+The shared view transform leaves geometry caches unchanged; all scene objects
+receive it, while the host's playback controls remain in screen space.
+
+For an attached view, configure initial state before `animate`:
+
+```rust
+let camera = scene.set_camera(
+    Camera::new().relative_to(circle).position((0.0, 80.0)),
+);
+```
+
+The target must already exist in this scene. Attachment follows its sampled
+world position, including ancestor transforms, but does not inherit its scale
+or rotation. Camera position is an offset in world axes. Resolution happens
+when rendering after timeline sampling; it has no accumulated follow state,
+so seeking works in either direction. `Animation::camera()` reads sampled
+camera state, whose position remains the local offset when attached.
+See `camera_zoom` for a Manim-style zoom to a circle's tangent and back.
+It animates magnification directly, rather than interpolating frame size,
+so the intermediate zoom progression differs from Manim's frame scaling.
+
 The optional `animate!` macro is re-exported here for native authoring. It
 removes repeated `sequence.play(...)` calls and supports sequential changes,
 waits, parallel blocks/collections, chained branches, and staggered collections.
