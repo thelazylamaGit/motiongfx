@@ -1,7 +1,7 @@
 # Vello MotionGfx
 
-Native graphics integration with rectangles, circles, stroked paths and text,
-used by `moving_square`, `insertion_sort` and `commit_graph`. `Scene::add` creates stored object
+Native graphics integration with rectangles, circles, lines, stroked paths and text,
+used by `moving_square`, `insertion_sort`, `commit_graph` and `sine_unit_circle`. `Scene::add` creates stored object
 state and returns typed authoring properties. Handles belong to the scene
 that created them; do not mix handles between scenes.
 
@@ -148,5 +148,46 @@ radians. Rectangle scale changes geometry while keeping stroke width fixed.
 Fill and stroke colors are independent. `smooth` reproduces Manim's default
 normalized sigmoid easing for comparisons.
 
-The implementation is intentionally small: a general procedural-update hook
-and arbitrary custom reactive properties are not implemented yet.
+`Line::new(start, end)` stores endpoints without allocating a path buffer.
+Its handle exposes `start`/`end` (including `.x`/`.y`), stroke, stroke width
+and opacity. Endpoints use positive-y-up coordinates and receive the camera
+transform like all other objects.
+
+## Native property bindings
+
+```rust
+scene.bind(dot.position, curve.end, move |reveal| {
+    let angle = reveal * turns * std::f64::consts::TAU;
+    Point::new(-320.0 + 80.0 * angle.cos(), 80.0 * angle.sin())
+});
+scene.bind(radius.end, dot.position, |position| position);
+scene.bind(connector.end, (curve.end, dot.position.y), move |(reveal, y)| {
+    Point::new(-240.0 + reveal * turns * 320.0, y)
+});
+```
+
+Closures that capture local constants/configuration use `move` to own those
+captures. They are stored, not executed during the author callback. A source
+supplies its current sampled value, not an implicit progress parameter.
+Properties, `Derived<T>` handles, and tuples of two to four sources are
+supported. All values are local object state, not transformed world positions.
+For a shared calculation use `let orbit = scene.derive(curve.end, function)`;
+then `scene.bind(dot.position, orbit, |position| position)`. Derived handles are
+copyable, and their output is cached once per changed input for all consumers.
+
+`scene.try_animate(...)` returns `Result<Animation, BindingError>` and rejects
+cycles, overlapping binding destinations, and timeline writes to bound fields.
+`scene.animate(...)` keeps its existing return type and panics on these errors
+during construction. Both initialize the sampled animation and bindings at
+time zero. Bound fields can feed other bindings; execution order is prepared
+once regardless of registration order. Ordinary property handles still must
+belong to this scene; scene identity validation is not implemented.
+
+`Animation::sample` runs MotionGfx first, then bindings, then rendering reads
+the resulting state. Changed inputs execute native Rust closures; unchanged
+inputs skip calculation/writes. This adds source reads/comparisons and native
+closure dispatch; it is not zero-cost and not a scripting interpreter. Binding
+functions must be deterministic functions of their declared inputs. Stateful
+dt updaters, automatic dependency tracking and runtime rebinding are not
+implemented. The sine example needs none of those: it reveals precomputed
+geometry and derives the dot/line endpoints from the same sampled reveal.

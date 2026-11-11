@@ -1,6 +1,6 @@
 # Vello / Winit examples
 
-`moving_square`, `insertion_sort`, `commit_graph` and `camera_zoom` use the plain native
+`moving_square`, `insertion_sort`, `commit_graph`, `camera_zoom` and `sine_unit_circle` use the plain native
 authoring API.
 The optional `animate!` macro remains available, but these examples do not
 use it. The other comparison scenes retain the low-level MotionGfx API.
@@ -14,7 +14,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `commit_graph` | Canvas Commons commit graph | A reusable circle/ring component, path reveal, staggered back easing, ordinary ring scale/opacity tracks |
 | `moving_square` | Manim `MovingAround` | Typed property handles, sequential translation, fill interpolation, relative scale, and rotation |
 | `camera_zoom` | Manim-style `Zoom` | Parallel camera pan/zoom, a hold, and returning to the original view |
-| `sine_unit_circle` | Manim `SineCurveUnitCircle` | Orbiting point, dependent lines, and sine-path tracing |
+| `sine_unit_circle` | Manim `SineCurveUnitCircle` | Native typed bindings, dependent line endpoints, and cached path reveal |
 
 ```sh
 cargo run -p vello_winit_example --example commit_graph
@@ -38,10 +38,14 @@ easing (4s total); changing its fill leaves its blue stroke unchanged.
 The authoring crate supplies those duration/easing defaults, and the shared
 palette supplies `BLUE`/`ORANGE`; the example only declares overrides.
 The sine scene uses the same 0.25 turns/second for 8.5s, then holds for the
-source's final default one-second wait. It precomputes the sine path and
-animates `PathTracer.t_end`, rather than accumulating segments in a dt
-updater. The sampled trace progress also positions the dot and connecting
-lines. This makes scrubbing reversible with the existing tracing support.
+source's final default one-second wait. It precomputes a `Path` and animates
+its `end`, rather than accumulating segments in a dt updater. `scene.bind`
+calculates the dot position from the sampled reveal. `Line` endpoints follow
+the dot and a tuple of reveal/y inputs, using native Rust functions. Bindings
+are ordered/validated during construction and skip calculations for unchanged
+inputs. The same relationships reconstruct when seeking backwards. There are
+no manual registry, world, sampler, geometry cache, or window implementations
+in this example. `try_animate` reports binding errors before opening the window.
 Its four `MathTex` labels are represented by ASCII `PI` labels; no new
 typesetting dependency is introduced for these baseline comparisons.
 

@@ -4,7 +4,7 @@ Native, typed setup conveniences over existing MotionGfx. `Property` stores
 a subject ID, typed field path and interpolation function. `to`, `offset`,
 `multiply` and `map_target` create descriptions; `Sequence::play` lowers them
 to normal actions. Relative targets use the action-start value during baking.
-No additional property evaluator runs during playback.
+These timeline descriptions add no separate evaluator during playback.
 
 `AnimationDefaults::default()` defines the library-wide authoring defaults:
 one second and normalized sigmoid `smooth` easing. Scenes need no defaults
@@ -36,6 +36,38 @@ type, allowing string literals for shared-string text properties.
 
 This crate has no Vello, Winit, or scene-document dependency. Custom Rust
 subject types can expose their own typed `Property` fields.
+
+## Native derived relationships
+
+`BindingPlan<W>` optionally calculates properties after timeline sampling.
+`bind(destination, source, function)` stores an ordinary native Rust closure;
+`derive(source, function)` returns a typed, copyable `Derived<T>` handle for
+sharing one cached calculation. Sources can be properties, derived handles,
+or tuples of two to four sources. Multiple source values arrive as a tuple.
+Input/output types are checked by Rust; input values implement `PartialEq`
+so unchanged inputs skip calculation and writes. Sources and cached outputs
+are cloned by value; choose cheap/shared types for large data.
+
+Call `prepare(world, timeline)` once before evaluation. It rejects missing
+properties, foreign derived handles, duplicate/overlapping binding writers,
+timeline actions on bound destinations, and cyclic dependencies. Validation
+uses compiled action metadata, including raw appended fragments. Whole fields
+overlap their nested axes; sibling axes are independent. Bound properties can
+feed other bindings, even when consumers were registered before producers.
+
+Call `evaluate(world)` after each sample. A fixed dependency order is reused;
+there is no per-frame graph sorting. Shared derived outputs reuse their storage
+after initialization. Native closures still have execution/dispatch costs, and
+input reads, comparisons and destination writes are additional work. Evaluation
+does not use elapsed frame time; deterministic functions reconstruct their
+results during backward seeking. Interior mutable state, wall-clock reads,
+randomness and numerical validity are not statically checked.
+
+This is optional native binding support, not automatic dependency tracking or
+a scripting interpreter. Ordinary property handles still do not identify their
+owning scene; mixing handles between scenes is unsupported. A Vello `Scene`
+owns the plan and finalizes it through `try_animate` (returns `BindingError`)
+or `animate` (panics on a binding error during construction).
 
 ## Optional authoring macro
 

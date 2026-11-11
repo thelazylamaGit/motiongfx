@@ -1,12 +1,17 @@
 //! Setup-only property descriptions that lower to ordinary MotionGfx actions.
-//! There is no expression graph or additional playback evaluator.
+//! Timeline descriptions lower to core actions. Optional native bindings
+//! evaluate explicit property relationships after timeline sampling.
 
 use motiongfx::prelude::*;
 use motiongfx::subject::SubjectId;
 use std::ops::{Add, Mul};
 use std::time::Duration;
 
+pub mod bindings;
 mod macros;
+pub use bindings::{
+    BindingError, BindingPlan, BindingSource, Derived,
+};
 
 /// Library-wide authoring defaults. Individual sequences and changes may
 /// override these without changing other animations or process-global state.

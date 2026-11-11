@@ -330,6 +330,11 @@ impl<W> Timeline<W> {
         self.target_index
     }
 
+    /// Read-only action metadata for inspecting compiled targets.
+    pub fn action_table(&self) -> &ActionTable {
+        &self.action_table
+    }
+
     /// Returns a reference slice to all tracks.
     #[inline]
     pub fn tracks(&self) -> &[Track] {

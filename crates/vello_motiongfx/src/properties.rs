@@ -41,3 +41,36 @@ impl<I, S> Deref for Position<I, S> {
         &self.whole
     }
 }
+
+impl<I, S> From<Position<I, S>> for Property<I, S, Point> {
+    fn from(position: Position<I, S>) -> Self {
+        position.whole
+    }
+}
+
+impl<W, I, S> motiongfx_authoring::BindingSource<W> for Position<I, S>
+where
+    I: motiongfx::subject::SubjectId,
+    S: 'static,
+    W: motiongfx::world::SubjectSource<I, S>,
+{
+    type Value = Point;
+    fn read(
+        &self,
+        world: &W,
+        values: &motiongfx_authoring::bindings::DerivedValues,
+    ) -> Option<Point> {
+        self.whole.read(world, values)
+    }
+    fn dependencies(
+        &self,
+    ) -> Vec<motiongfx_authoring::bindings::BindingDependency> {
+        <Property<I, S, Point> as motiongfx_authoring::BindingSource<W>>::dependencies(&self.whole)
+    }
+    fn validate(
+        &self,
+        world: &W,
+    ) -> Result<(), motiongfx_authoring::BindingError> {
+        self.whole.validate(world)
+    }
+}

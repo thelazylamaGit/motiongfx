@@ -1,7 +1,9 @@
 //! Minimal native graphics integration. Object state is stored once; the
-//! authoring handles only construct existing MotionGfx actions.
+//! authoring handles construct MotionGfx actions and typed native bindings.
 
 use motiongfx::prelude::*;
+use motiongfx_authoring::BindingPlan;
+pub use motiongfx_authoring::{BindingError, BindingSource, Derived};
 use motiongfx_authoring::{Property, Sequence};
 pub use motiongfx_authoring::{animate, smooth};
 use peniko_motiongfx as _;
@@ -15,6 +17,7 @@ mod camera;
 mod circle;
 pub mod colors;
 pub mod lettering;
+mod line;
 mod parent;
 mod path;
 mod path_renderer;
@@ -23,10 +26,13 @@ mod text;
 mod text_renderer;
 pub use camera::{Camera, CameraHandle, CameraId};
 pub use circle::{Circle, CircleHandle, CircleId};
+pub use line::{Line, LineHandle, LineId};
 pub use parent::Parent;
 pub use path::{BezPath, Path, PathHandle, PathId};
 use path_renderer::PathGeometry;
 
+#[cfg(test)]
+mod binding_tests;
 #[cfg(test)]
 mod graphics_tests;
 pub use properties::Position;
@@ -123,6 +129,7 @@ pub struct Graphics {
     camera: Camera,
     rectangles: Vec<Rectangle>,
     circles: Vec<Circle>,
+    lines: Vec<Line>,
     paths: Vec<Path>,
     texts: Vec<Text>,
     order: Vec<DrawObject>,
@@ -131,6 +138,7 @@ pub struct Graphics {
 enum DrawObject {
     Rectangle(RectangleId),
     Circle(CircleId),
+    Line(LineId),
     Path(PathId),
     Text(TextId),
 }
@@ -173,11 +181,55 @@ impl SubjectSource<TextId, Text> for Graphics {
 #[derive(Default)]
 pub struct Scene {
     graphics: Graphics,
+    bindings: BindingPlan<Graphics>,
 }
 
 impl Scene {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Calculate a property from explicit sources after timeline sampling.
+    /// Sources may be properties, shared derived values, or tuples of either.
+    /// Values use the object's local coordinates; parent transforms are applied
+    /// later during rendering. Functions must depend only on declared inputs.
+    ///
+    /// Incorrect output types fail to compile:
+    /// ```compile_fail
+    /// use vello_motiongfx::{Circle, Scene};
+    /// let mut scene = Scene::new();
+    /// let dot = scene.add(Circle::new(10.0));
+    /// // Position needs Point, but this calculation returns f64.
+    /// scene.bind(dot.position, dot.radius, |radius| radius);
+    /// ```
+    pub fn bind<I, S, T, Source, F>(
+        &mut self,
+        destination: impl Into<Property<I, S, T>>,
+        source: Source,
+        calculate: F,
+    ) where
+        I: motiongfx::subject::SubjectId,
+        S: 'static,
+        T: Clone + ThreadSafe,
+        Graphics: SubjectSource<I, S>,
+        Source: BindingSource<Graphics>,
+        F: Fn(Source::Value) -> T + ThreadSafe,
+    {
+        self.bindings.bind(destination, source, calculate);
+    }
+
+    /// Calculate and cache a value shared by multiple downstream bindings.
+    pub fn derive<Source, T, F>(
+        &mut self,
+        source: Source,
+        calculate: F,
+    ) -> Derived<T>
+    where
+        Source: BindingSource<Graphics>,
+        T: Clone + PartialEq + ThreadSafe,
+        F: Fn(Source::Value) -> T + ThreadSafe,
+    {
+        self.bindings.derive(source, calculate)
     }
 
     /// Store and register an object in one operation. Dispatch is resolved
@@ -228,17 +280,30 @@ impl Scene {
         }
     }
 
-    /// Build and bake once. The callback does not execute during playback.
+    /// Build and bake once. The author callback does not execute in playback.
+    /// Panics during construction on invalid bindings; use `try_animate` to
+    /// handle errors instead. Binding calculations initialize at time zero.
+    #[track_caller]
     pub fn animate(
         self,
         author: impl FnOnce(&mut Sequence<'_, Graphics>),
     ) -> Animation {
+        self.try_animate(author).expect("invalid scene bindings")
+    }
+
+    /// Fallible finalization for applications that want to display binding
+    /// errors and retain their last valid animation. No validation per frame.
+    pub fn try_animate(
+        mut self,
+        author: impl FnOnce(&mut Sequence<'_, Graphics>),
+    ) -> Result<Animation, BindingError> {
         let mut registry = Registry::new();
         let mut sequence = Sequence::new(&mut registry);
         author(&mut sequence);
         let mut timeline = sequence.compile();
+        self.bindings.prepare(&self.graphics, &timeline)?;
         timeline.bake_actions(&registry, &self.graphics);
-        Animation {
+        let mut animation = Animation {
             path_geometry: self
                 .graphics
                 .paths
@@ -254,7 +319,10 @@ impl Scene {
             graphics: self.graphics,
             registry,
             timeline,
-        }
+            bindings: self.bindings,
+        };
+        animation.sample(Duration::ZERO);
+        Ok(animation)
     }
 }
 
@@ -281,6 +349,7 @@ pub struct Animation {
     timeline: Timeline<Graphics>,
     text_layouts: Vec<TextLayout>,
     path_geometry: Vec<PathGeometry>,
+    bindings: BindingPlan<Graphics>,
 }
 
 impl Animation {
@@ -300,6 +369,7 @@ impl Animation {
             &self.registry,
             &mut self.graphics,
         );
+        self.bindings.evaluate(&mut self.graphics);
     }
 
     pub fn rectangle(&self, handle: RectangleHandle) -> &Rectangle {
@@ -338,6 +408,9 @@ impl Animation {
             * self.graphics.camera_transform();
         for object in &self.graphics.order {
             match object {
+                DrawObject::Line(id) => {
+                    self.graphics.lines[id.0].render(scene, screen);
+                }
                 DrawObject::Circle(id) => {
                     let circle = &self.graphics.circles[id.0];
                     let parent =
