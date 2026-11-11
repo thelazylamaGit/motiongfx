@@ -1,7 +1,7 @@
 # Vello MotionGfx
 
-Initial native graphics integration, currently implementing rectangles and text for
-the `moving_square` and `insertion_sort` comparisons. `Scene::add` creates stored object
+Native graphics integration with rectangles, circles, stroked paths and text,
+used by `moving_square`, `insertion_sort` and `commit_graph`. `Scene::add` creates stored object
 state and returns typed authoring properties. Handles belong to the scene
 that created them; do not mix handles between scenes.
 
@@ -62,7 +62,28 @@ rectangle's translation, rotation and scale automatically, without extra
 animation tracks or cache rebuilds. The text's own position/scale/rotation
 remain independently animatable, and its color/opacity stay independent.
 The initial anchoring implementation supports rectangle parents in the same
-scene; this is not a general hierarchy or layout engine.
+scene, and now circle parents too. Circles can also use `relative_to(parent)`
+to build anchored rings and reusable components. Parents must already exist
+in the same scene. Only transforms are inherited; color and opacity remain
+independent. This is not a layout engine.
+
+`Circle::new(radius)` creates a filled circle. Use `.fill(TRANSPARENT)` and
+`.stroke(color, width)` for a ring. Its handle exposes nested position axes,
+radius, fill/stroke, stroke width, opacity, scale and rotation. Circle scale
+transforms the stroke as well as the geometry, including anchored children.
+Text can anchor to a circle using the same `relative_to` method.
+
+`Path::new(points)` creates a polyline; `Path::from_bez_path(geometry)` accepts
+arbitrary quadratic/cubic geometry. `.stroke(color, width)` stores its style,
+and `.end(0.0)` initially hides it. Animate `path.end.to(1.0)` to reveal it.
+`start`/`end` are normalized visible-range fractions. They reuse Peniko's
+existing segment-based tracing, not arc-length parameterization. Position,
+scale, rotation, opacity and stroke properties are also animatable.
+
+Path source geometry is shared through `Arc<BezPath>` so timeline baking does
+not clone large point buffers. Visible geometry is cached separately, outside
+sampled state, and rebuilt only when the source or visible range changes.
+Moving, fading or changing the stroke style of a path reuses its geometry.
 
 The optional `animate!` macro is re-exported here for native authoring. It
 removes repeated `sequence.play(...)` calls and supports sequential changes,
@@ -97,5 +118,5 @@ radians. Rectangle scale changes geometry while keeping stroke width fixed.
 Fill and stroke colors are independent. `smooth` reproduces Manim's default
 normalized sigmoid easing for comparisons.
 
-The implementation is intentionally small: circle/path components and a
-general procedural-update hook are not implemented yet.
+The implementation is intentionally small: a general procedural-update hook
+and arbitrary custom reactive properties are not implemented yet.

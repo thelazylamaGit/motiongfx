@@ -11,11 +11,22 @@ pub use vello::kurbo::{Point, Size, Vec2};
 pub use vello::peniko::Color;
 use vello::peniko::Fill;
 
+mod circle;
 pub mod colors;
 pub mod lettering;
+mod parent;
+mod path;
+mod path_renderer;
 mod properties;
 mod text;
 mod text_renderer;
+pub use circle::{Circle, CircleHandle, CircleId};
+pub use parent::Parent;
+pub use path::{BezPath, Path, PathHandle, PathId};
+use path_renderer::PathGeometry;
+
+#[cfg(test)]
+mod graphics_tests;
 pub use properties::Position;
 pub use text::{Text, TextAlign, TextHandle, TextId};
 use text_renderer::TextLayout;
@@ -108,24 +119,22 @@ pub struct RectangleHandle {
 #[derive(Default)]
 pub struct Graphics {
     rectangles: Vec<Rectangle>,
+    circles: Vec<Circle>,
+    paths: Vec<Path>,
     texts: Vec<Text>,
     order: Vec<DrawObject>,
 }
 
 enum DrawObject {
     Rectangle(RectangleId),
+    Circle(CircleId),
+    Path(PathId),
     Text(TextId),
 }
 
 impl Graphics {
     fn text_parent_transform(&self, text: &Text) -> Affine {
-        match text.parent {
-            Some(id) => {
-                let parent = &self.rectangles[id.0];
-                parent.transform() * Affine::scale(parent.scale)
-            }
-            None => Affine::IDENTITY,
-        }
+        self.parent_transform(text.parent)
     }
 }
 
@@ -227,6 +236,12 @@ impl Scene {
         let mut timeline = sequence.compile();
         timeline.bake_actions(&registry, &self.graphics);
         Animation {
+            path_geometry: self
+                .graphics
+                .paths
+                .iter()
+                .map(PathGeometry::new)
+                .collect(),
             text_layouts: self
                 .graphics
                 .texts
@@ -262,6 +277,7 @@ pub struct Animation {
     registry: Registry,
     timeline: Timeline<Graphics>,
     text_layouts: Vec<TextLayout>,
+    path_geometry: Vec<PathGeometry>,
 }
 
 impl Animation {
@@ -286,6 +302,14 @@ impl Animation {
         &self.graphics.texts[handle.id.0]
     }
 
+    pub fn circle(&self, handle: CircleHandle) -> &Circle {
+        &self.graphics.circles[handle.id.0]
+    }
+
+    pub fn path(&self, handle: PathHandle) -> &Path {
+        &self.graphics.paths[handle.id.0]
+    }
+
     /// Emit Vello commands from sampled state. No authoring descriptions are
     /// interpreted here. Vello still records its normal scene commands per frame.
     pub fn render(
@@ -305,6 +329,18 @@ impl Animation {
             * Affine::scale(fit);
         for object in &self.graphics.order {
             match object {
+                DrawObject::Circle(id) => {
+                    let circle = &self.graphics.circles[id.0];
+                    let parent =
+                        self.graphics.parent_transform(circle.parent);
+                    circle.render(scene, screen * parent);
+                }
+                DrawObject::Path(id) => self.path_geometry[id.0]
+                    .render(
+                        &self.graphics.paths[id.0],
+                        scene,
+                        screen,
+                    ),
                 DrawObject::Rectangle(id) => self.graphics.rectangles
                     [id.0]
                     .render(scene, screen),

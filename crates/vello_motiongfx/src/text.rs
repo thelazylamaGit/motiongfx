@@ -1,9 +1,6 @@
 //! Text authoring state, independent of the temporary lettering renderer.
 
-use crate::{
-    Color, Point, Position, RectangleHandle, RectangleId, Scene,
-    SceneObject,
-};
+use crate::{Color, Parent, Point, Position, Scene, SceneObject};
 use motiongfx_authoring::Property;
 use std::sync::Arc;
 
@@ -29,7 +26,7 @@ pub struct Text {
     pub scale: f64,
     pub rotation: f64,
     pub align: TextAlign,
-    pub(crate) parent: Option<RectangleId>,
+    pub(crate) parent: Option<Parent>,
 }
 
 impl Text {
@@ -51,11 +48,11 @@ impl Text {
         self
     }
 
-    /// Make position local to a rectangle's center. Its translation, rotation,
+    /// Make position local to a rectangle or circle. Its translation, rotation,
     /// and scale are inherited; text style and local animations stay independent.
-    /// The rectangle must belong to the same scene as this text.
-    pub fn relative_to(mut self, rectangle: RectangleHandle) -> Self {
-        self.parent = Some(rectangle.id);
+    /// The parent must belong to the same scene as this text.
+    pub fn relative_to(mut self, parent: impl Into<Parent>) -> Self {
+        self.parent = Some(parent.into());
         self
     }
     pub fn font_size(mut self, size: f64) -> Self {

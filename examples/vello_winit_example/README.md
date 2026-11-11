@@ -1,6 +1,7 @@
 # Vello / Winit examples
 
-`moving_square` and `insertion_sort` use the plain native authoring API.
+`moving_square`, `insertion_sort` and `commit_graph` use the plain native
+authoring API.
 The optional `animate!` macro remains available, but these examples do not
 use it. The other comparison scenes retain the low-level MotionGfx API.
 All share the same play/pause and
@@ -10,7 +11,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 | --- | --- | --- |
 | `insertion_sort` | Canvas Commons sorting | Procedural creation, nested position targets, moving text labels, discrete pass captions |
 | `insertion_sort_low_level` | Previous annotated version | Same sorting choreography using raw MotionGfx and Vello calls |
-| `commit_graph` | Canvas Commons commit graph | A reusable `Commit` component, path tracing, staggered back easing, derived ring opacity/scale |
+| `commit_graph` | Canvas Commons commit graph | A reusable circle/ring component, path reveal, staggered back easing, ordinary ring scale/opacity tracks |
 | `moving_square` | Manim `MovingAround` | Typed property handles, sequential translation, fill interpolation, relative scale, and rotation |
 | `sine_unit_circle` | Manim `SineCurveUnitCircle` | Orbiting point, dependent lines, and sine-path tracing |
 
@@ -21,7 +22,16 @@ cargo run -p vello_winit_example --example sine_unit_circle
 ```
 
 The commit graph preserves the source's blue/mauve fallbacks and timing
-(3.88s total). The square uses one-second actions with Manim's `smooth`
+(3.88s total). `Path` creates the trunk and fork explicitly, with their visible
+end initially zero. A local `Commit` constructor creates a filled `Circle`
+and a stroked child ring, anchored with `relative_to(dot)`. `sequence.stagger`
+animates only the dots' scales; the rings inherit the appearance transform.
+The pulse uses ordinary ring scale (1 to 2.4) and opacity (1 to 0) tracks in
+parallel, equivalent to the source's linear pulse expressions. No pulse-specific
+library binding or general signal evaluator is introduced. Coordinates are
+converted from Canvas Commons' y-down to this API's y-up convention.
+
+The square uses one-second actions with Manim's `smooth`
 easing (4s total); changing its fill leaves its blue stroke unchanged.
 The authoring crate supplies those duration/easing defaults, and the shared
 palette supplies `BLUE`/`ORANGE`; the example only declares overrides.
