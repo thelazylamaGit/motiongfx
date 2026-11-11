@@ -20,16 +20,16 @@ fn main() -> Result<(), winit::error::EventLoopError> {
 
     let camera = scene.camera();
     let animation = scene.animate(|sequence| {
-        // Manim shrinks its frame to 1/4 size: magnification becomes 4x.
-        // Both changes run together, using the default smooth easing.
+        // Animate the frame's size, not magnification: 1/4 size means 4x
+        // magnification. Position and size use the same smooth progress.
         sequence.parallel(|sequence| {
-            sequence.play(camera.zoom.to(4.0).over(s(2)));
+            sequence.play(camera.scale.to(0.25).over(s(2)));
             sequence
                 .play(camera.position.to((0.0, 300.0)).over(s(2)));
         });
         sequence.wait(s(1));
         sequence.parallel(|sequence| {
-            sequence.play(camera.zoom.to(1.0).over(s(2)));
+            sequence.play(camera.scale.to(1.0).over(s(2)));
             sequence.play(camera.position.to((0.0, 0.0)).over(s(2)));
         });
     });

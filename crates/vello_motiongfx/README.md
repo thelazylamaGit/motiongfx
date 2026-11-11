@@ -85,12 +85,13 @@ not clone large point buffers. Visible geometry is cached separately, outside
 sampled state, and rebuilt only when the source or visible range changes.
 Moving, fading or changing the stroke style of a path reuses its geometry.
 
-Every scene has one camera, initially centered with zoom 1 and rotation 0.
-`scene.camera()` returns its typed `position` (including `.x`/`.y`), `zoom`
+Every scene has one camera, initially centered with frame scale 1 and rotation 0.
+`scene.camera()` returns its typed `position` (including `.x`/`.y`), `scale`
 and `rotation` targets. Schedule them with ordinary `sequence.play` and
-`sequence.parallel` calls. Zoom 2 means twice the magnification; positive
+`sequence.parallel` calls. Frame scale 0.25 shows a quarter of the normal
+width/height, giving four times the magnification. Positive
 camera rotation is counterclockwise, so the world rotates clockwise.
-Zoom must remain finite and positive, and position/rotation must be finite.
+Frame scale must remain finite and positive, and position/rotation must be finite.
 The shared view transform leaves geometry caches unchanged; all scene objects
 receive it, while the host's playback controls remain in screen space.
 
@@ -109,8 +110,10 @@ when rendering after timeline sampling; it has no accumulated follow state,
 so seeking works in either direction. `Animation::camera()` reads sampled
 camera state, whose position remains the local offset when attached.
 See `camera_zoom` for a Manim-style zoom to a circle's tangent and back.
-It animates magnification directly, rather than interpolating frame size,
-so the intermediate zoom progression differs from Manim's frame scaling.
+It interpolates frame scale and position together, then derives magnification
+as `1 / scale` during rendering. This matches the reference's frame-size
+interpolation. There is one scale value, rather than independent zoom and
+frame-scale properties that could conflict.
 
 The optional `animate!` macro is re-exported here for native authoring. It
 removes repeated `sequence.play(...)` calls and supports sequential changes,
