@@ -75,17 +75,12 @@ fn main() -> Result<(), winit::error::EventLoopError> {
         // Same pulse as scale = 1 + pulse*1.4 and opacity = 1 - pulse,
         // expressed directly as two ordinary ring property animations.
         sequence.parallel(|sequence| {
-            sequence.play_all(
-                commits
-                    .iter()
-                    .map(|commit| commit.ring.scale.to(2.4)),
-            );
-            sequence.play_all(
-                commits
-                    .iter()
-                    .map(|commit| commit.ring.opacity.to(0.0)),
-            );
+            for commit in &commits {
+                sequence.play(commit.ring.scale.to(2.4));
+                sequence.play(commit.ring.opacity.to(0.0));
+            }
         });
+
         sequence.wait(ms(400));
     });
 
