@@ -1,5 +1,8 @@
 # MotionGfx Authoring
 
+See [architecture and direction](../../docs/architecture.md) for crate
+boundaries, design rationale, limitations and future options.
+
 Native, typed setup conveniences over existing MotionGfx. `Property` stores
 a subject ID, typed field path and interpolation function. `to`, `offset`,
 `multiply` and `map_target` create descriptions; `Sequence::play` lowers them
@@ -129,8 +132,8 @@ with a 100ms interval finish after 500ms.
 
 This initial macro handles animation expressions and timing forms, not general
 Rust statements. Keep `let`, `for`, `if`, defaults and ordinary helper calls
-outside it. A Rust loop or helper can contain `animate!`, as shown by the
-insertion-sort example; a helper may receive the same mutable sequence and
+outside it. A Rust loop or helper can contain `animate!`; a helper may receive
+the same mutable sequence and
 append any number of actions. Plain Rust and macro calls can be mixed. Normal
 Rust type checking applies to the expanded calls. A function's returned
 animation description is valid as an animation expression inside the macro.

@@ -1,5 +1,8 @@
 # Vello MotionGfx
 
+See [architecture and direction](../../docs/architecture.md) for the shared
+authoring design, performance boundaries and future reactive/editor options.
+
 Native graphics integration with rectangles, circles, lines, stroked paths and text,
 used by `moving_square`, `insertion_sort`, `commit_graph` and `sine_unit_circle`. `Scene::add` creates stored object
 state and returns typed authoring properties. Shape constructors produce

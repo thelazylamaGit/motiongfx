@@ -49,6 +49,12 @@ let track = [
 
 ## Where Next
 
+- [Native authoring architecture and direction](docs/architecture.md): crate
+  boundaries, design decisions, current limitations and future options.
+- [`vello_winit_example`](examples/vello_winit_example/README.md): native Rust
+  authoring examples with shared Vello/Winit preview and scrubbing controls.
+- [Contributor and agent guidance](AGENTS.md): implementation conventions and
+  relevant validation commands.
 - [Website](https://motiongfx.voxell.dev): guides and live demos.
 - [`motiongfx`](crates/motiongfx): the core crate, with a full
   walkthrough.
