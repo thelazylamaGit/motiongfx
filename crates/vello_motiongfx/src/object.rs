@@ -116,6 +116,13 @@ where
 // Each generated setter accepts a fixed value or a typed source. Only dynamic
 // inputs add wiring; no extra evaluator is installed for ordinary constants.
 macro_rules! properties {
+    ($state:ident; $($field:ident: $value:ty),* $(,)?;
+        style $style:ident { $($styled:ident: $style_value:ty),* $(,)? }) => {
+        crate::object::properties!($state;
+            $($field: $value,)* $($styled: $style_value,)*
+        );
+        crate::style::partial_style!($state, $style; $($styled: $style_value,)*);
+    };
     ($state:ident; $($field:ident: $value:ty),* $(,)?) => {
         impl crate::Object<$state> {
             $(pub fn $field(self, value: impl Into<crate::Input<$value>>) -> Self {

@@ -6,7 +6,8 @@ use std::f64::consts::PI;
 
 use motiongfx::prelude::{ease, s};
 use vello_motiongfx::{
-    Circle, Color, Line, Scene, Text, TextAlign, Triangle, signal,
+    Circle, Color, Line, Scene, Text, TextAlign, TextStyle, Triangle,
+    signal,
 };
 use vello_winit_motiongfx::Window;
 
@@ -20,7 +21,7 @@ fn main() -> Result<(), winit::error::EventLoopError> {
     let radius = signal(3.0);
     let area = radius.map(|r| PI * r * r);
     let text_style =
-        Text::new("").font_size(56.0).align(TextAlign::Center);
+        TextStyle::new().font_size(56.0).align(TextAlign::Center);
 
     // Inline calculations retain their source without borrowing the scene.
     scene.add(Circle::new(radius.map(|r| r * SCALE)).fill(RED));
@@ -38,16 +39,15 @@ fn main() -> Result<(), winit::error::EventLoopError> {
 
     // Labels are top-anchored with a 20px inset. Negative y moves downward.
     scene.add(
-        text_style
-            .clone()
-            .content(radius.map(|r| format!("r = {r:.2}").into()))
+        Text::new(radius.map(|r| format!("r = {r:.2}").into()))
+            .style(&text_style)
             .position(radius.map(|r| (r * SCALE / 2.0, -20.0)))
             .fill(INK),
     );
 
     scene.add(
-        text_style
-            .content(area.map(|a| format!("A = {a:.2}").into()))
+        Text::new(area.map(|a| format!("A = {a:.2}").into()))
+            .style(&text_style)
             .position(radius.map(|r| (0.0, -r * SCALE - 20.0)))
             .fill(RED),
     );

@@ -49,8 +49,10 @@ impl Text {
 }
 
 crate::object::properties!(Text;
-    content: Arc<str>, position: Point, font_size: f64, fill: Color,
-    opacity: f64, scale: f64, rotation: f64, align: TextAlign,
+    content: Arc<str>, position: Point, scale: f64, rotation: f64;
+    style TextStyle {
+        font_size: f64, fill: Color, opacity: f64, align: TextAlign,
+    }
 );
 impl crate::Object<Text> {
     /// Make position local to a rectangle or circle. Its translation, rotation,

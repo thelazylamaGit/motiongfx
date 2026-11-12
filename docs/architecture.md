@@ -137,6 +137,20 @@ a calculation does not omit that circle from the picture.
 
 ## Which API to use
 
+Reusable appearance settings use typed partial styles. `TextStyle` currently
+contains optional typed inputs for font size, alignment, fill and opacity;
+content/transforms/parent attachment remain object-specific. `Object::style`
+accepts a compatible `ApplyStyle<T>` implementation and applies only configured
+fields through the existing object setters. Later styles/setters win, including
+replacing obsolete source wiring. Style/object setters are generated from the
+same property declaration. Styles are construction-time presets, not scene
+objects or retained CSS rules, and add no style-resolution pass in playback.
+Signals/computed inputs retain their normal sharing/evaluation semantics.
+Changing a preset afterward does not update existing objects; animate shared
+inputs for coordinated changes. Only `TextStyle` is implemented so far; add
+other concrete style families when needed, keeping unsupported properties off
+their APIs. This does not introduce selectors, inheritance or a layout engine.
+
 Line tips reuse ordinary circle/triangle/chevron descriptions. `scene.add(line)`
 registers the tips automatically in shared shape pools, without independent
 draw entries. The line renders them at its endpoints, handles orientation and

@@ -70,6 +70,42 @@ Text position anchors the top of the block. `TextAlign::Left` (default),
 `Center`, or `Right` controls horizontal anchoring; positive scene y points up.
 Mixed rectangles and text render in their `scene.add` order.
 
+### Shared text styles
+
+```rust
+let size = signal(56.0);
+let labels = TextStyle::new()
+    .font_size(&size)
+    .align(TextAlign::Center);
+
+scene.add(Text::new("Radius").style(&labels).fill(INK));
+scene.add(Text::new("Area").style(&labels).fill(RED));
+// Within the timeline:
+sequence.play(size.to(72.0));
+```
+
+`TextStyle` is a typed partial preset with optional `font_size`, `align`, `fill`,
+and `opacity` inputs. Its constructor applies no defaults. `.style(&preset)`
+applies only configured fields; subsequent styles or direct setters override
+earlier values and replace obsolete reactive wiring. Content, position,
+transforms and parent attachment stay on the individual object.
+
+Styles accept fixed values, signals, computed values and matching property
+sources, using the same setters/binding registration as explicit object code.
+A fixed style establishes initial values that can be animated per object. For
+fields driven by a shared signal, animate that signal instead. The preset itself
+is not an animation target or a live theme: changing it after application does
+not change already-created objects. Clone a preset to derive a variant.
+
+`ApplyStyle<T>` restricts each preset to compatible object types at compile time.
+Currently `TextStyle` implements `ApplyStyle<Text>`; other style families can
+opt in when needed. Style and object setters share one property declaration,
+and applying a preset goes through existing setters rather than a second
+property system. Inputs are retained during construction; no style object or
+style-resolution pass is stored in playback. Shared reactive inputs have their
+usual binding evaluation costs. No CSS cascade, selectors, layout, automatic
+inheritance or new crate is introduced.
+
 `Text::new("5").relative_to(bar).position((0.0, -40.0))` anchors text to a
 rectangle's center. Its position is then a local offset; it inherits the
 rectangle's translation, rotation and scale automatically, without extra

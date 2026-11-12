@@ -71,6 +71,8 @@ mod input;
 pub mod lettering;
 mod line;
 mod object;
+mod style;
+pub use style::ApplyStyle;
 mod parent;
 mod path;
 mod path_renderer;
@@ -108,9 +110,11 @@ mod line_tests;
 #[cfg(test)]
 mod signal_tests;
 #[cfg(test)]
+mod style_tests;
+#[cfg(test)]
 mod update_tests;
 pub use properties::Position;
-pub use text::{Text, TextAlign, TextHandle, TextId};
+pub use text::{Text, TextAlign, TextHandle, TextId, TextStyle};
 use text_renderer::TextLayout;
 
 /// Rectangle centered on its position. Coordinates are logical canvas units,
