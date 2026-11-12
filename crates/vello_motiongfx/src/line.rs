@@ -15,6 +15,8 @@ pub struct Line {
     pub end: Point,
     pub stroke: Color,
     pub stroke_width: f64,
+    pub line_cap: crate::Cap,
+    pub line_join: crate::Join,
     pub opacity: f64,
     /// Visible fraction from start towards end, clamped to 0..1 in rendering.
     pub reveal: f64,
@@ -35,6 +37,8 @@ impl Line {
             end: Point::ZERO,
             stroke: Color::WHITE,
             stroke_width: 1.0,
+            line_cap: crate::Cap::Round,
+            line_join: crate::Join::Round,
             opacity: 1.0,
             reveal: 1.0,
             line_dash: Arc::from([]),
@@ -137,7 +141,9 @@ impl Line {
             let color = self
                 .stroke
                 .with_alpha(self.stroke.components[3] * opacity);
-            let mut stroke = Stroke::new(self.stroke_width);
+            let mut stroke = Stroke::new(self.stroke_width)
+                .with_caps(self.line_cap)
+                .with_join(self.line_join);
             if !self.line_dash.is_empty() {
                 assert!(
                     self.dash_offset.is_finite()
@@ -169,6 +175,7 @@ crate::object::properties!(Line;
 
 );
 crate::object::stroke!(Line);
+crate::object::stroke_options!(Line);
 
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
@@ -181,6 +188,8 @@ pub struct LineHandle {
     pub end: Position<LineId, Line>,
     pub stroke: Property<LineId, Line, Color>,
     pub stroke_width: Property<LineId, Line, f64>,
+    pub line_cap: Property<LineId, Line, crate::Cap>,
+    pub line_join: Property<LineId, Line, crate::Join>,
     pub opacity: Property<LineId, Line, f64>,
     pub reveal: Property<LineId, Line, f64>,
     pub line_dash: Property<LineId, Line, Arc<[f64]>>,
@@ -209,6 +218,8 @@ impl SceneObject for Line {
                 path!(Line.end.y),
             ),
             stroke: Property::new(id, path!(Line.stroke)),
+            line_cap: Property::discrete(id, path!(Line.line_cap)),
+            line_join: Property::discrete(id, path!(Line.line_join)),
             stroke_width: Property::new(id, path!(Line.stroke_width)),
             opacity: Property::new(id, path!(Line.opacity)),
             reveal: Property::new(id, path!(Line.reveal)),

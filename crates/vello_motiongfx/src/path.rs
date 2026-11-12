@@ -14,6 +14,8 @@ pub struct Path {
     pub position: Point,
     pub stroke: Color,
     pub stroke_width: f64,
+    pub line_cap: crate::Cap,
+    pub line_join: crate::Join,
     pub opacity: f64,
     pub scale: f64,
     pub rotation: f64,
@@ -105,6 +107,8 @@ impl Path {
             position: Point::ZERO,
             stroke: Color::WHITE,
             stroke_width: 1.0,
+            line_cap: crate::Cap::Round,
+            line_join: crate::Join::Round,
             opacity: 1.0,
             scale: 1.0,
             rotation: 0.0,
@@ -129,6 +133,7 @@ crate::object::properties!(Path;
     scale: f64, rotation: f64, stroke_width: f64, geometry: Arc<BezPath>,
 );
 crate::object::stroke!(Path);
+crate::object::stroke_options!(Path);
 
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
@@ -141,6 +146,8 @@ pub struct PathHandle {
     pub position: Position<PathId, Path>,
     pub stroke: Property<PathId, Path, Color>,
     pub stroke_width: Property<PathId, Path, f64>,
+    pub line_cap: Property<PathId, Path, crate::Cap>,
+    pub line_join: Property<PathId, Path, crate::Join>,
     pub opacity: Property<PathId, Path, f64>,
     pub scale: Property<PathId, Path, f64>,
     pub rotation: Property<PathId, Path, f64>,
@@ -164,6 +171,8 @@ impl SceneObject for Path {
                 path!(Path.position.y),
             ),
             stroke: Property::new(id, path!(Path.stroke)),
+            line_cap: Property::discrete(id, path!(Path.line_cap)),
+            line_join: Property::discrete(id, path!(Path.line_join)),
             stroke_width: Property::new(id, path!(Path.stroke_width)),
             opacity: Property::new(id, path!(Path.opacity)),
             scale: Property::new(id, path!(Path.scale)),

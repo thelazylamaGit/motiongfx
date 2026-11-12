@@ -28,8 +28,10 @@ fn main() -> Result<(), winit::error::EventLoopError> {
     scene.add(
         Line::new((0.0, 0.0), radius.map(|r| (r * SCALE, 0.0)))
             .line_dash([20.0, 20.0])
-            .start_tip(Triangle::new().size(24.0).fill(INK))
-            .end_tip(Triangle::new().size(24.0).fill(INK))
+            .start_tip(
+                Triangle::new().size(24.0).radius(2.0).fill(INK),
+            )
+            .end_tip(Triangle::new().size(24.0).radius(2.0).fill(INK))
             .end_offset(8.0)
             .stroke(INK, 8.0),
     );

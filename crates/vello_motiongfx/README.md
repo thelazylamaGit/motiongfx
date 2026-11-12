@@ -173,6 +173,43 @@ first, then `reveal` selects its visible prefix. The shaft uses native
 Vello/Kurbo dashing. Numeric fields are tweenable; entire dash patterns use
 discrete replacements.
 
+Stroke builders also expose caps and joins, using Vello/Kurbo's typed enums:
+
+```rust
+use vello_motiongfx::{Cap, Join};
+
+Line::new((0.0, 0.0), (200.0, 0.0))
+    .line_dash([20.0, 20.0])
+    .line_cap(Cap::Butt) // Flat stroke/dash ends; also Square or Round.
+    .line_join(Join::Miter) // Sharp stroke corners; also Bevel or Round.
+    .stroke(INK, 8.0);
+```
+
+Both default to `Round`, preserving existing appearance. They are available on
+lines, paths, triangles, chevrons and rectangles, including their inline tips.
+Caps apply to open ends and dash ends; joins apply between stroke segments.
+They have no effect on fills, and caps have no effect on closed outlines.
+Full circles expose neither option: their outline is closed and smooth. Future
+open arcs or dashed circles can expose meaningful caps when implemented; no
+unused cap/join fields are reserved on `Circle`. Shared stroke-paint code stays
+separate from optional cap/join builders. Miter joins retain Kurbo's default miter
+limit of 4. A line's stroke settings do not override its tips' own settings.
+
+Like other properties, these accept signals/computed inputs. Handle changes are
+discrete, not smoothly interpolated:
+
+```rust
+sequence.play(line.line_cap.set(Cap::Square));
+sequence.play(line.end_tip.line_join.set(Join::Round));
+```
+
+Round caps/joins derive their rounding from stroke width. They are not a numeric
+corner-radius control. A triangle's fill remains sharp with a round stroke join
+alone. Use its separate geometry `.radius(...)` to round the actual boundary,
+as with a rectangle's `.radius(...)`.
+For an open chevron, round caps and joins can round its existing stroked shape
+without adding filled geometry.
+
 ### Inline endpoint shapes
 
 ```rust
@@ -197,7 +234,8 @@ sequence.play(line.end_tip.fill.to(ORANGE));
 `Object<Chevron>` descriptions. No separate `scene.add` is needed. The old
 boolean arrow flags and shared `arrow_size` have been replaced by this API.
 The returned handle retains the concrete tip types: a circle exposes `radius`,
-while triangles and chevrons expose `size` and `angle`. Ordinary line fields
+while triangles and chevrons expose `size` and `angle`. Triangle also exposes
+its independently animatable corner `radius`. Ordinary line fields
 remain accessible through the same handle. `Animation::line` accepts either
 plain or tipped line handles; `circle`, `triangle`, and `chevron` access sampled
 tip state. Tipped lines and their shapes also work with direct updates.
@@ -210,6 +248,31 @@ Sizes must be finite/nonnegative and angles strictly between zero and pi.
 Setters accept fixed values or reactive inputs, just like other shape builders.
 Both shapes are independently usable with `scene.add`, with the same geometry,
 styling and render implementation as their attached versions.
+
+Triangle supports true rounded geometry, with the same boundary for fill and
+stroke:
+
+```rust
+Triangle::new().size(24.0).angle(0.6).radius(2.0).fill(INK)
+// On a registered triangle tip:
+sequence.play(line.end_tip.radius.to(4.0));
+```
+
+Radius defaults to zero (the original sharp triangle), accepts reactive inputs,
+and is measured in local canvas units. Negative radii behave as zero; nonfinite
+values are rejected. Rendering clamps the effective radius to the inradius
+(the largest circle that fits inside the triangle), preventing corner overlap.
+The requested radius property is retained, so size/angle changes can change the
+effective limit. Corners are circular fillets represented by cubic path curves.
+The rounded path stays inside the original triangle. Position still anchors the
+nominal sharp apex, so rounding cuts back its visible point rather than moving
+the object. Tip shaft trimming uses the actual curved boundary, including local
+rotation/scale.
+
+Local triangle geometry is cached outside sampled state and rebuilt only when
+size, angle or radius changes. Styles and transforms reuse it. Geometry uses
+fixed-capacity storage without a per-frame heap path allocation. Chevron stays
+an open stroked shape with cap/join controls and does not expose a radius field.
 
 The line places each tip in an outward-facing endpoint frame after offsets and
 reveal. Shape position/rotation are local offsets within that frame; scale also

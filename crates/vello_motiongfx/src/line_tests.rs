@@ -3,6 +3,109 @@ use super::*;
 use vello::kurbo::{Line as LineShape, PathEl};
 
 #[test]
+fn stroke_shapes_send_configured_caps_and_joins_to_vello() {
+    for cap in [Cap::Butt, Cap::Square, Cap::Round] {
+        for join in [Join::Miter, Join::Bevel, Join::Round] {
+            let mut scene = Scene::new();
+            macro_rules! add {
+                ($object:expr) => {
+                    scene.add(
+                        $object
+                            .stroke(Color::WHITE, 3.0)
+                            .line_cap(cap)
+                            .line_join(join),
+                    );
+                };
+            }
+            add!(Line::new((0.0, 0.0), (100.0, 0.0)));
+            add!(Path::new([(0.0, 0.0), (20.0, 20.0), (40.0, 0.0)]));
+            add!(Triangle::new().fill(Color::TRANSPARENT));
+            add!(Chevron::new());
+            add!(Rectangle::new(20.0, 20.0).fill(Color::TRANSPARENT));
+            let mut animation =
+                scene.animate(|sequence| sequence.wait(s(1)));
+            let mut actual = vello::Scene::new();
+            let size = Size::new(200.0, 200.0);
+            animation.render(&mut actual, size, size, 1.0);
+            let mut expected = vello::Scene::new();
+            for _ in 0..5 {
+                expected.stroke(
+                    &Stroke::new(3.0).with_caps(cap).with_join(join),
+                    Affine::IDENTITY,
+                    Color::WHITE,
+                    None,
+                    &LineShape::new((0.0, 0.0), (100.0, 0.0)),
+                );
+            }
+            let strokes: Vec<_> = actual
+                .encoding()
+                .styles
+                .iter()
+                .filter(|style| style.line_width > 0.0)
+                .collect();
+            assert!(!strokes.is_empty());
+            assert!(strokes.iter().all(
+                |style| **style == expected.encoding().styles[0]
+            ));
+        }
+    }
+}
+
+#[test]
+fn reactive_caps_and_tip_joins_are_independent_discrete_seekable_styles()
+ {
+    let cap = signal(Cap::Butt);
+    let mut scene = Scene::new();
+    let line = scene.add(
+        Line::new((0.0, 0.0), (200.0, 0.0))
+            .end_tip(
+                Chevron::new()
+                    .stroke(Color::WHITE, 4.0)
+                    .line_cap(Cap::Round)
+                    .line_join(Join::Miter),
+            )
+            .stroke(Color::WHITE, 3.0)
+            .line_cap(&cap)
+            .line_join(Join::Bevel),
+    );
+    let mut animation = scene.animate(|sequence| {
+        sequence.wait(s(1));
+        sequence.play(cap.set(Cap::Square));
+        sequence.play(line.end_tip.line_join.set(Join::Round));
+        sequence.wait(s(1));
+    });
+    let size = Size::new(400.0, 200.0);
+    for (time, cap, join) in [
+        (0, Cap::Butt, Join::Miter),
+        (1500, Cap::Square, Join::Round),
+        (0, Cap::Butt, Join::Miter),
+    ] {
+        animation.sample(ms(time));
+        assert_eq!(animation.line(line).line_cap, cap);
+        assert_eq!(animation.chevron(line.end_tip).line_join, join);
+        let mut actual = vello::Scene::new();
+        animation.render(&mut actual, size, size, 1.0);
+        let mut expected = vello::Scene::new();
+        for stroke in [
+            Stroke::new(3.0).with_caps(cap).with_join(Join::Bevel),
+            Stroke::new(4.0).with_caps(Cap::Round).with_join(join),
+        ] {
+            expected.stroke(
+                &stroke,
+                Affine::IDENTITY,
+                Color::WHITE,
+                None,
+                &LineShape::new((0.0, 0.0), (200.0, 0.0)),
+            );
+        }
+        assert_eq!(
+            actual.encoding().styles,
+            expected.encoding().styles
+        );
+    }
+}
+
+#[test]
 fn replacement_tips_drop_obsolete_wiring_and_grouped_updates_borrow_shapes_safely()
  {
     let mut scene = Scene::new();
@@ -209,6 +312,7 @@ fn tip_renderer_matches_standalone_shape_and_inherits_line_opacity_once()
     let triangle = Triangle::new()
         .size(12.0)
         .angle(0.6)
+        .radius(2.0)
         .fill(colors::RED)
         .stroke(colors::BLUE, 2.0)
         .opacity(0.5);
@@ -245,6 +349,58 @@ fn tip_renderer_matches_standalone_shape_and_inherits_line_opacity_once()
         actual.encoding().transforms,
         expected.encoding().transforms
     );
+}
+
+#[test]
+fn rounded_tip_radius_is_reactive_seekable_and_geometry_cache_ignores_style_changes()
+ {
+    let radius = signal(0.0);
+    let mut scene = Scene::new();
+    let line =
+        scene.add(Line::new((0.0, 0.0), (200.0, 0.0)).end_tip(
+            Triangle::new().radius(&radius).fill(colors::RED),
+        ));
+    let mut animation = scene.animate(|sequence| {
+        sequence.play(radius.to(4.0).ease(ease::linear));
+        sequence.parallel(|sequence| {
+            sequence.play(line.end_tip.fill.to(colors::BLUE));
+            sequence.play(line.end_tip.rotation.to(0.3));
+        });
+    });
+    let mut rendered = vello::Scene::new();
+    let size = Size::new(400.0, 200.0);
+    for (time, radius, rebuilds) in [
+        (0, 0.0, 1),
+        (500, 2.0, 2),
+        (500, 2.0, 2),
+        (1000, 4.0, 3),
+        (1500, 4.0, 3),
+        (0, 0.0, 4),
+    ] {
+        animation.sample(ms(time));
+        rendered.reset();
+        animation.render(&mut rendered, size, size, 1.0);
+        assert_eq!(animation.triangle(line.end_tip).radius, radius);
+        let cache =
+            &animation.graphics.triangle_geometry[line.end_tip.id.0];
+        assert_eq!(cache.rebuilds, rebuilds);
+        assert_eq!(
+            cache
+                .geometry
+                .elements()
+                .iter()
+                .any(|el| matches!(el, PathEl::CurveTo(..))),
+            radius > 0.0
+        );
+    }
+    // Direct typed property animations use the same path as reactive radius.
+    let mut scene = Scene::new();
+    let triangle = scene.add(Triangle::new());
+    let mut animation = scene.animate(|sequence| {
+        sequence.play(triangle.radius.to(6.0).ease(ease::linear));
+    });
+    animation.sample(ms(500));
+    assert_eq!(animation.triangle(triangle).radius, 3.0);
 }
 
 #[test]

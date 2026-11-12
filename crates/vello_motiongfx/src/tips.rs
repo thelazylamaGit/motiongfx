@@ -83,7 +83,14 @@ impl EndpointTip {
                 (c.radius.max(0.0) * c.scale.abs() - c.position.x)
                     .max(0.0)
             }
-            Self::Triangle(id) => graphics.triangles[id.0].extent(),
+            Self::Triangle(id) => {
+                let triangle = &graphics.triangles[id.0];
+                graphics.triangle_geometry[id.0].geometry.extent(
+                    triangle.position,
+                    triangle.rotation,
+                    triangle.scale,
+                )
+            }
             Self::Chevron(id) => graphics.chevrons[id.0].extent(),
         }
     }
@@ -105,8 +112,12 @@ impl EndpointTip {
         match self {
             Self::Circle(id) => graphics.circles[id.0]
                 .render_with_opacity(scene, transform, opacity),
-            Self::Triangle(id) => graphics.triangles[id.0]
-                .render(scene, transform, opacity),
+            Self::Triangle(id) => graphics.triangles[id.0].render(
+                scene,
+                transform,
+                opacity,
+                graphics.triangle_geometry[id.0].geometry,
+            ),
             Self::Chevron(id) => graphics.chevrons[id.0]
                 .render(scene, transform, opacity),
         }
@@ -140,11 +151,11 @@ impl Object<Line> {
     /// ```
     /// Tip-specific properties are checked at compile time:
     /// ```compile_fail
-    /// use vello_motiongfx::{Line, Scene, Triangle};
+    /// use vello_motiongfx::{Circle, Line, Scene};
     /// let mut scene = Scene::new();
     /// let line = scene.add(Line::new((0.0, 0.0), (200.0, 0.0))
-    ///     .start_tip(Triangle::new()));
-    /// line.start_tip.radius.to(10.0); // Triangle has size and angle, not radius.
+    ///     .start_tip(Circle::new(6.0)));
+    /// line.start_tip.angle.to(0.6); // A circle has radius, not an opening angle.
     /// ```
     pub fn start_tip<S: LineTip>(self, tip: S) -> LineWithTips<S> {
         LineWithTips {
@@ -200,6 +211,7 @@ macro_rules! setters {
     };
 }
 setters!(start: Point, end: Point, opacity: f64, stroke_width: f64,
+    line_cap: Cap, line_join: Join,
     reveal: f64, line_dash: std::sync::Arc<[f64]>, dash_offset: f64,
     start_offset: f64, end_offset: f64,);
 

@@ -11,6 +11,7 @@ pub use motiongfx_authoring::{animate, smooth};
 use peniko_motiongfx as _;
 use std::time::Duration;
 use vello::kurbo::{Affine, Rect, Stroke};
+pub use vello::kurbo::{Cap, Join};
 pub use vello::kurbo::{Point, Size, Vec2};
 pub use vello::peniko::Color;
 use vello::peniko::Fill;
@@ -74,6 +75,7 @@ mod parent;
 mod path;
 mod path_renderer;
 mod properties;
+mod rounded_triangle;
 mod text;
 mod text_renderer;
 mod tips;
@@ -121,6 +123,8 @@ pub struct Rectangle {
     pub fill: Color,
     pub stroke: Color,
     pub stroke_width: f64,
+    pub line_cap: crate::Cap,
+    pub line_join: crate::Join,
     pub scale: f64,
     pub rotation: f64,
     pub radius: f64,
@@ -134,6 +138,8 @@ impl Default for Rectangle {
             fill: Color::WHITE,
             stroke: Color::TRANSPARENT,
             stroke_width: 0.0,
+            line_cap: crate::Cap::Round,
+            line_join: crate::Join::Round,
             scale: 1.0,
             rotation: 0.0,
             radius: 0.0,
@@ -163,6 +169,7 @@ crate::object::properties!(Rectangle;
     scale: f64, rotation: f64, stroke_width: f64,
 );
 crate::object::stroke!(Rectangle);
+crate::object::stroke_options!(Rectangle);
 
 /// Typed subject identity; separate from authoring handles and sampled state.
 #[derive(
@@ -182,6 +189,8 @@ pub struct RectangleHandle {
     pub radius: Property<RectangleId, Rectangle, f64>,
     pub stroke: Property<RectangleId, Rectangle, Color>,
     pub stroke_width: Property<RectangleId, Rectangle, f64>,
+    pub line_cap: Property<RectangleId, Rectangle, crate::Cap>,
+    pub line_join: Property<RectangleId, Rectangle, crate::Join>,
 }
 
 #[derive(Default)]
@@ -193,6 +202,7 @@ pub struct Graphics {
     rectangles: Vec<Rectangle>,
     circles: Vec<Circle>,
     triangles: Vec<Triangle>,
+    triangle_geometry: Vec<rounded_triangle::CachedTriangle>,
     chevrons: Vec<Chevron>,
     lines: Vec<Line>,
     paths: Vec<Path>,
@@ -318,6 +328,14 @@ impl Scene {
             size: Property::new(id, path!(Rectangle.size)),
             radius: Property::new(id, path!(Rectangle.radius)),
             stroke: Property::new(id, path!(Rectangle.stroke)),
+            line_cap: Property::discrete(
+                id,
+                path!(Rectangle.line_cap),
+            ),
+            line_join: Property::discrete(
+                id,
+                path!(Rectangle.line_join),
+            ),
             stroke_width: Property::new(
                 id,
                 path!(Rectangle.stroke_width),
@@ -487,6 +505,14 @@ impl Animation {
             ))
             * Affine::scale(fit)
             * self.graphics.camera_transform();
+        for (triangle, cache) in self
+            .graphics
+            .triangles
+            .iter()
+            .zip(&mut self.graphics.triangle_geometry)
+        {
+            cache.update(triangle);
+        }
         for object in &self.graphics.order {
             match object {
                 DrawObject::Line(id) => {
@@ -496,9 +522,15 @@ impl Animation {
                         &self.graphics,
                     );
                 }
-                DrawObject::Triangle(id) => self.graphics.triangles
-                    [id.0]
-                    .render(scene, screen, 1.0),
+                DrawObject::Triangle(id) => {
+                    self.graphics.triangles[id.0].render(
+                        scene,
+                        screen,
+                        1.0,
+                        self.graphics.triangle_geometry[id.0]
+                            .geometry,
+                    )
+                }
                 DrawObject::Chevron(id) => self.graphics.chevrons
                     [id.0]
                     .render(scene, screen, 1.0),
@@ -550,7 +582,9 @@ impl Rectangle {
         scene.fill(Fill::NonZero, xf, rectangle.fill, None, &shape);
         if rectangle.stroke_width > 0.0 {
             scene.stroke(
-                &Stroke::new(rectangle.stroke_width),
+                &Stroke::new(rectangle.stroke_width)
+                    .with_caps(rectangle.line_cap)
+                    .with_join(rectangle.line_join),
                 xf,
                 rectangle.stroke,
                 None,

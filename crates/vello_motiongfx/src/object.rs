@@ -149,3 +149,36 @@ macro_rules! stroke {
     };
 }
 pub(crate) use stroke;
+
+// Opt in only for shapes where stroke endpoints/corners are meaningful.
+macro_rules! stroke_options {
+    ($state:ident) => {
+        impl crate::Object<$state> {
+            /// Stroke/dash endpoints: butt, square or round. Closed outlines
+            /// have no endpoints. This does not round the shape's filled geometry.
+            pub fn line_cap(
+                self,
+                value: impl Into<crate::Input<crate::Cap>>,
+            ) -> Self {
+                self.property(
+                    value,
+                    motiongfx::path!($state.line_cap),
+                    |handle| handle.line_cap,
+                )
+            }
+            /// Stroke corners: miter, bevel or round. This changes the outline,
+            /// not the underlying filled shape. Defaults to round.
+            pub fn line_join(
+                self,
+                value: impl Into<crate::Input<crate::Join>>,
+            ) -> Self {
+                self.property(
+                    value,
+                    motiongfx::path!($state.line_join),
+                    |handle| handle.line_join,
+                )
+            }
+        }
+    };
+}
+pub(crate) use stroke_options;

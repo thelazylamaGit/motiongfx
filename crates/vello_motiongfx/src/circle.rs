@@ -11,6 +11,9 @@ use vello::peniko::Fill;
 
 /// A circle with a local radius in canvas units. Scale transforms both the
 /// circle and its stroke, including children anchored with `relative_to`.
+/// Full circles have no caps or sharp joins. If open arcs/dashes are added,
+/// expose their meaningful stroke options then, rather than storing unused
+/// cap/join properties on today's circle.
 #[derive(Clone)]
 pub struct Circle {
     pub radius: f64,
@@ -153,6 +156,7 @@ impl Circle {
             radius: Property::new(id, path!(Circle.radius)),
             fill: Property::new(id, path!(Circle.fill)),
             stroke: Property::new(id, path!(Circle.stroke)),
+
             stroke_width: Property::new(
                 id,
                 path!(Circle.stroke_width),

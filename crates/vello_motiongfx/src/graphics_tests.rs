@@ -62,6 +62,8 @@ fn path_cache_handles_bezier_geometry_and_style_changes() {
     path.opacity = 0.5;
     path.stroke = colors::RED;
     path.stroke_width = 3.0;
+    path.line_cap = Cap::Butt;
+    path.line_join = Join::Miter;
     path.scale = 2.0;
     path.rotation = 0.4;
     cache.render(&path, &mut rendered, Affine::IDENTITY);

@@ -1,6 +1,6 @@
 # Native authoring architecture and direction
 
-This note records the current native authoring work as of 2026-11-12. It is a
+This note records the current native authoring work as of 2026-11-13. It is a
 handoff for contributors and coding agents, not a commitment to implement every
 future feature below. Update it alongside architectural changes.
 
@@ -146,6 +146,27 @@ runtime variant checks in authoring code. Standalone and attached shapes use
 the same definitions/renderers. No ECS or general hierarchy is introduced.
 See the [tip API](../crates/vello_motiongfx/README.md#inline-endpoint-shapes)
 for geometry, short-line fitting and current attachment limitations.
+
+Lines, paths, triangles, chevrons and rectangles expose typed `line_cap` (`Cap`)
+and `line_join` (`Join`)
+properties with round defaults, reactive inputs and discrete timeline changes.
+These configure Kurbo stroke styles; they do not round filled geometry.
+Triangle `.radius(...)` rounds its actual filled/stroked boundary, independently
+of stroke joins. Open chevrons round their stroke with caps/joins and have no
+geometry radius. Keep that distinction when extending shapes.
+Full circles expose neither cap nor join settings: their outline is closed and
+smooth. Stroke paint and optional cap/join builder code are shared separately.
+Future arc/dash features can opt into applicable controls without adding unused
+state now. Triangle already has filled, closed polygon geometry; it is not
+implemented as a thick chevron stroke. Both retain common vertex/style/
+registration code, while [rounded_triangle.rs](../crates/vello_motiongfx/src/rounded_triangle.rs)
+builds circular fillets in a closed path for Triangle only. Effective radius is
+clamped to the inradius, leaving the requested typed property unchanged.
+The nominal apex anchor is preserved: rounding clips back the visible point.
+Per-triangle geometry caches in `Graphics` sit outside cloned/sampled Triangle
+state and rebuild on size/angle/radius changes during rendering. Tip trimming
+uses the cached curved boundary. No per-frame heap path allocation is needed;
+ordinary cache checks, bounds/transforms, and Vello recording still take work.
 
 - Use ordinary timeline properties for authored changes: `.to`, `.offset`,
   `.multiply`, `.set`, `.over`, `.ease`, waits, parallel groups, and stagger.

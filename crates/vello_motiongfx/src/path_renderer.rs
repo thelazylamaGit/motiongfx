@@ -53,7 +53,9 @@ impl PathGeometry {
             * Affine::rotate(-path.rotation)
             * Affine::scale_non_uniform(path.scale, -path.scale);
         scene.stroke(
-            &Stroke::new(path.stroke_width),
+            &Stroke::new(path.stroke_width)
+                .with_caps(path.line_cap)
+                .with_join(path.line_join),
             xf,
             path.stroke
                 .with_alpha(path.stroke.components[3] * opacity),
