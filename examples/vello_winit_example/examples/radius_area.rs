@@ -4,7 +4,7 @@
 
 use std::f64::consts::PI;
 
-use motiongfx::prelude::{ease, s};
+use motiongfx::prelude::{ease, ms, s};
 use vello_motiongfx::{
     Circle, Color, Line, Scene, Text, TextAlign, TextStyle, Triangle,
     signal,
@@ -17,11 +17,10 @@ const INK: Color = Color::from_rgb8(36, 36, 36);
 
 fn main() -> Result<(), winit::error::EventLoopError> {
     let mut scene = Scene::new();
-    scene.set_background(Color::from_rgb8(250, 249, 246));
     let radius = signal(3.0);
     let area = radius.map(|r| PI * r * r);
     let text_style =
-        TextStyle::new().font_size(56.0).align(TextAlign::Center);
+        TextStyle::new().font_size(32.0).align(TextAlign::Center);
 
     // Inline calculations retain their source without borrowing the scene.
     scene.add(Circle::new(radius.map(|r| r * SCALE)).fill(RED));
@@ -56,6 +55,7 @@ fn main() -> Result<(), winit::error::EventLoopError> {
         // Motion Canvas's default signal tween easing is cubic in/out.
         sequence.defaults(s(2), ease::cubic::ease_in_out);
         sequence.play(radius.to(4.0));
+        sequence.wait(ms(100));
         sequence.play(radius.to(3.0));
         sequence.wait(s(1));
     });
