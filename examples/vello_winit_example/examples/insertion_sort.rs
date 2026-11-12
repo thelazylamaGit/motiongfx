@@ -2,7 +2,7 @@
 //! Labels use positions local to their bars, so they need no movement tracks.
 
 use motiongfx::prelude::{ease, ms};
-use vello_motiongfx::{
+use motiongfx_2d::{
     Rectangle, Scene, Text, TextAlign, colors::PASTEL_BLUE,
 };
 use vello_winit_motiongfx::Window;

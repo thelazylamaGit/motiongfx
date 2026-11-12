@@ -4,6 +4,7 @@ use vello::kurbo::{Line as LineShape, PathEl};
 
 #[test]
 fn stroke_shapes_send_configured_caps_and_joins_to_vello() {
+    let mut renderer = Renderer::default();
     for cap in [Cap::Butt, Cap::Square, Cap::Round] {
         for join in [Join::Miter, Join::Bevel, Join::Round] {
             let mut scene = Scene::new();
@@ -22,11 +23,11 @@ fn stroke_shapes_send_configured_caps_and_joins_to_vello() {
             add!(Triangle::new().fill(Color::TRANSPARENT));
             add!(Chevron::new());
             add!(Rectangle::new(20.0, 20.0).fill(Color::TRANSPARENT));
-            let mut animation =
+            let animation =
                 scene.animate(|sequence| sequence.wait(s(1)));
             let mut actual = vello::Scene::new();
             let size = Size::new(200.0, 200.0);
-            animation.render(&mut actual, size, size, 1.0);
+            renderer.render(&animation, &mut actual, size, size, 1.0);
             let mut expected = vello::Scene::new();
             for _ in 0..5 {
                 expected.stroke(
@@ -54,6 +55,7 @@ fn stroke_shapes_send_configured_caps_and_joins_to_vello() {
 #[test]
 fn reactive_caps_and_tip_joins_are_independent_discrete_seekable_styles()
  {
+    let mut renderer = Renderer::default();
     let cap = signal(Cap::Butt);
     let mut scene = Scene::new();
     let line = scene.add(
@@ -84,7 +86,7 @@ fn reactive_caps_and_tip_joins_are_independent_discrete_seekable_styles()
         assert_eq!(animation.line(line).line_cap, cap);
         assert_eq!(animation.chevron(line.end_tip).line_join, join);
         let mut actual = vello::Scene::new();
-        animation.render(&mut actual, size, size, 1.0);
+        renderer.render(&animation, &mut actual, size, size, 1.0);
         let mut expected = vello::Scene::new();
         for stroke in [
             Stroke::new(3.0).with_caps(cap).with_join(Join::Bevel),
@@ -116,8 +118,8 @@ fn replacement_tips_drop_obsolete_wiring_and_grouped_updates_borrow_shapes_safel
             .start_tip(Triangle::new())
             .end_tip(Chevron::new()),
     );
-    assert!(scene.graphics.circles.is_empty());
-    assert_eq!(scene.graphics.order.len(), 1);
+    assert!(scene.model().circles().is_empty());
+    assert_eq!(scene.model().draw_order().len(), 1);
     // The line and its registered tips use disjoint storage. Their ordinary
     // typed handles also remain usable as a heterogeneous update target tuple.
     scene.update(
@@ -149,6 +151,7 @@ fn replacement_tips_drop_obsolete_wiring_and_grouped_updates_borrow_shapes_safel
 #[test]
 fn dashed_tips_follow_trimmed_revealed_endpoints_in_both_directions()
 {
+    let mut renderer = Renderer::default();
     for (end, shaft, tips, angle) in [
         (
             (110.0, 20.0),
@@ -180,11 +183,10 @@ fn dashed_tips_follow_trimmed_revealed_endpoints_in_both_directions()
                 .reveal(0.5)
                 .opacity(0.5),
         );
-        let mut animation =
-            scene.animate(|sequence| sequence.wait(s(1)));
+        let animation = scene.animate(|sequence| sequence.wait(s(1)));
         let mut actual = vello::Scene::new();
         let size = Size::new(200.0, 200.0);
-        animation.render(&mut actual, size, size, 1.0);
+        renderer.render(&animation, &mut actual, size, size, 1.0);
         let mut expected = vello::Scene::new();
         let xf = Affine::translate((100.0, 100.0));
         let color = colors::BLUE.with_alpha(0.5);
@@ -233,6 +235,7 @@ fn dashed_tips_follow_trimmed_revealed_endpoints_in_both_directions()
 
 #[test]
 fn degenerate_or_fully_trimmed_tips_emit_no_geometry() {
+    let mut renderer = Renderer::default();
     for (start, end, trim) in [
         ((0.0, 0.0), (0.0, 0.0), 0.0),
         ((0.0, 0.0), (10.0, 0.0), 20.0),
@@ -244,11 +247,10 @@ fn degenerate_or_fully_trimmed_tips_emit_no_geometry() {
                 .end_tip(Circle::new(5.0))
                 .end_offset(trim),
         );
-        let mut animation =
-            scene.animate(|sequence| sequence.wait(s(1)));
+        let animation = scene.animate(|sequence| sequence.wait(s(1)));
         let mut rendered = vello::Scene::new();
         let size = Size::new(100.0, 100.0);
-        animation.render(&mut rendered, size, size, 1.0);
+        renderer.render(&animation, &mut rendered, size, size, 1.0);
         assert_eq!(rendered.encoding().n_paths, 0);
     }
 }
@@ -269,9 +271,9 @@ fn attached_shapes_retain_typed_reactive_properties_and_seek_independently()
             ),
     );
     // Attachments share shape storage, but never add independent draw entries.
-    assert_eq!(scene.graphics.order.len(), 1);
-    assert_eq!(scene.graphics.circles.len(), 1);
-    assert_eq!(scene.graphics.triangles.len(), 1);
+    assert_eq!(scene.model().draw_order().len(), 1);
+    assert_eq!(scene.model().circles().len(), 1);
+    assert_eq!(scene.model().triangles().len(), 1);
     let mut animation = scene.animate(|sequence| {
         sequence.parallel(|sequence| {
             sequence.play(radius.to(8.0).ease(ease::linear));
@@ -307,6 +309,7 @@ fn attached_shapes_retain_typed_reactive_properties_and_seek_independently()
 #[test]
 fn tip_renderer_matches_standalone_shape_and_inherits_line_opacity_once()
  {
+    let mut renderer = Renderer::default();
     // With no shaft, the endpoint triangle must produce exactly the same
     // commands as a standalone triangle positioned/oriented at that endpoint.
     let triangle = Triangle::new()
@@ -330,13 +333,13 @@ fn tip_renderer_matches_standalone_shape_and_inherits_line_opacity_once()
             .rotation(50.0_f64.atan2(100.0))
             .opacity(0.25),
     );
-    let mut a = attached.animate(|sequence| sequence.wait(s(1)));
-    let mut b = standalone.animate(|sequence| sequence.wait(s(1)));
+    let a = attached.animate(|sequence| sequence.wait(s(1)));
+    let b = standalone.animate(|sequence| sequence.wait(s(1)));
     let size = Size::new(300.0, 200.0);
     let mut actual = vello::Scene::new();
     let mut expected = vello::Scene::new();
-    a.render(&mut actual, size, size, 1.0);
-    b.render(&mut expected, size, size, 1.0);
+    renderer.render(&a, &mut actual, size, size, 1.0);
+    renderer.render(&b, &mut expected, size, size, 1.0);
     assert_eq!(
         actual.encoding().path_data,
         expected.encoding().path_data
@@ -354,6 +357,7 @@ fn tip_renderer_matches_standalone_shape_and_inherits_line_opacity_once()
 #[test]
 fn rounded_tip_radius_is_reactive_seekable_and_geometry_cache_ignores_style_changes()
  {
+    let mut renderer = Renderer::default();
     let radius = signal(0.0);
     let mut scene = Scene::new();
     let line =
@@ -379,10 +383,10 @@ fn rounded_tip_radius_is_reactive_seekable_and_geometry_cache_ignores_style_chan
     ] {
         animation.sample(ms(time));
         rendered.reset();
-        animation.render(&mut rendered, size, size, 1.0);
+        renderer.render(&animation, &mut rendered, size, size, 1.0);
         assert_eq!(animation.triangle(line.end_tip).radius, radius);
         let cache =
-            &animation.graphics.triangle_geometry[line.end_tip.id.0];
+            &renderer.triangle_geometry[line.end_tip.id().index()];
         assert_eq!(cache.rebuilds, rebuilds);
         assert_eq!(
             cache
@@ -406,16 +410,17 @@ fn rounded_tip_radius_is_reactive_seekable_and_geometry_cache_ignores_style_chan
 #[test]
 fn short_lines_fit_tips_and_open_chevrons_keep_the_shaft_to_the_apex()
 {
+    let mut renderer = Renderer::default();
     let mut scene = Scene::new();
     let line = scene.add(
         Line::new((0.0, 0.0), (10.0, 0.0))
             .start_tip(Circle::new(20.0))
             .end_tip(Triangle::new().size(20.0)),
     );
-    let mut animation = scene.animate(|sequence| sequence.wait(s(1)));
+    let animation = scene.animate(|sequence| sequence.wait(s(1)));
     let mut rendered = vello::Scene::new();
     let size = Size::new(100.0, 100.0);
-    animation.render(&mut rendered, size, size, 1.0);
+    renderer.render(&animation, &mut rendered, size, size, 1.0);
     // Both tips fit at 1/4 scale; the shaft vanishes instead of reversing.
     assert_eq!(rendered.encoding().n_paths, 2);
     assert_eq!(animation.circle(line.start_tip).radius, 20.0); // State isn't mutated to fit.
@@ -425,11 +430,11 @@ fn short_lines_fit_tips_and_open_chevrons_keep_the_shaft_to_the_apex()
         scene.add(Line::new((0.0, 0.0), (100.0, 0.0)).end_tip(
             Chevron::new().size(20.0).stroke(colors::ORANGE, 3.0),
         ));
-    let mut animation = scene.animate(|sequence| {
+    let animation = scene.animate(|sequence| {
         sequence.play(line.end_tip.angle.to(0.9));
     });
     rendered.reset();
-    animation.render(&mut rendered, size, size, 1.0);
+    renderer.render(&animation, &mut rendered, size, size, 1.0);
     let mut expected = vello::Scene::new();
     expected.stroke(
         &Stroke::new(1.0),

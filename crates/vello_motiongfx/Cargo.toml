@@ -1,12 +1,13 @@
 [package]
 name = "vello_motiongfx"
-description = "Vello graphics primitives animated by MotionGfx."
+description = "Vello renderer for portable MotionGfx 2D scenes."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
+motiongfx_2d = { workspace = true }
 motiongfx = { workspace = true, features = ["std"] }
 motiongfx_authoring = { workspace = true }
 peniko_motiongfx = { workspace = true }

@@ -207,6 +207,7 @@ fn binding_validation_rejects_missing_properties_in_standalone_computations()
 
 #[test]
 fn sine_geometry_and_bound_endpoints_agree_when_scrubbing() {
+    let mut renderer = Renderer::default();
     let mut scene = Scene::new();
     let turns = 2.125;
     let curve = scene.add(
@@ -243,7 +244,8 @@ fn sine_geometry_and_bound_endpoints_agree_when_scrubbing() {
     for time in [2000, 9500, 4250, 8500, 0, 1000] {
         animation.sample(ms(time));
         rendered.reset();
-        animation.render(
+        renderer.render(
+            &animation,
             &mut rendered,
             Size::new(1120.0, 600.0),
             Size::new(1120.0, 600.0),
@@ -253,7 +255,8 @@ fn sine_geometry_and_bound_endpoints_agree_when_scrubbing() {
             animation.line(line).start,
             animation.circle(dot).position
         );
-        let visible = &animation.path_geometry[curve.id.0].visible;
+        let visible =
+            &renderer.path_geometry[curve.id().index()].visible;
         if time == 0 {
             assert!(visible.is_empty());
         } else {
@@ -274,6 +277,7 @@ fn sine_geometry_and_bound_endpoints_agree_when_scrubbing() {
 #[test]
 fn line_rendering_matches_direct_vello_with_camera_and_animated_endpoints()
  {
+    let mut renderer = Renderer::default();
     let mut scene = Scene::new();
     let line = scene.add(
         Line::new((-30.0, -10.0), (20.0, 40.0))
@@ -289,7 +293,8 @@ fn line_rendering_matches_direct_vello_with_camera_and_animated_endpoints()
     });
     animation.sample(ms(500));
     let mut actual = vello::Scene::new();
-    animation.render(
+    renderer.render(
+        &animation,
         &mut actual,
         Size::new(200.0, 200.0),
         Size::new(200.0, 200.0),

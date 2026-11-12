@@ -5,7 +5,7 @@
 use std::f64::consts::PI;
 
 use motiongfx::prelude::{ease, ms, s};
-use vello_motiongfx::{
+use motiongfx_2d::{
     Circle, Color, Line, Scene, Text, TextAlign, TextStyle, Triangle,
     signal,
 };

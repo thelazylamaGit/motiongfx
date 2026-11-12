@@ -11,6 +11,7 @@ use vello::kurbo::{ParamCurve, QuadBez};
 #[test]
 fn background_sources_sample_without_geometry_and_last_configuration_wins()
  {
+    let mut renderer = Renderer::default();
     let mut scene = Scene::new();
     let color = signal(colors::BLUE);
     scene.set_background(&color);
@@ -30,7 +31,7 @@ fn background_sources_sample_without_geometry_and_last_configuration_wins()
     assert_eq!(animation.background(), colors::BLUE);
     let mut rendered = vello::Scene::new();
     let size = Size::new(100.0, 100.0);
-    animation.render(&mut rendered, size, size, 1.0);
+    renderer.render(&animation, &mut rendered, size, size, 1.0);
     assert_eq!(rendered.encoding().n_paths, 0);
 
     let mut scene = Scene::new();
@@ -161,6 +162,7 @@ fn point_signals_discrete_arrays_text_and_camera_use_the_same_source_model()
 #[test]
 fn source_driven_quadratic_matches_math_and_preserves_render_caches()
 {
+    let mut renderer = Renderer::default();
     let mut scene = Scene::new();
     let bend = signal(0.0);
     let t = signal(0.0);
@@ -208,18 +210,19 @@ fn source_driven_quadratic_matches_math_and_preserves_render_caches()
         );
         let size = Size::new(1120.0, 800.0);
         rendered.reset();
-        animation.render(&mut rendered, size, size, 1.0);
+        renderer.render(&animation, &mut rendered, size, size, 1.0);
         let source = animation.path(curve).geometry.clone();
-        let rebuilds = animation.path_geometry[curve.id.0].rebuilds;
+        let rebuilds =
+            renderer.path_geometry[curve.id().index()].rebuilds;
         animation.sample(ms(time));
         rendered.reset();
-        animation.render(&mut rendered, size, size, 1.0);
+        renderer.render(&animation, &mut rendered, size, size, 1.0);
         assert!(Arc::ptr_eq(
             &source,
             &animation.path(curve).geometry
         ));
         assert_eq!(
-            animation.path_geometry[curve.id.0].rebuilds,
+            renderer.path_geometry[curve.id().index()].rebuilds,
             rebuilds
         );
     }
@@ -260,6 +263,7 @@ fn repeated_setters_replace_wiring_and_source_aware_fields_reject_timeline_write
 
 #[test]
 fn line_reveal_uses_interpolated_endpoint_without_a_path_buffer() {
+    let mut renderer = Renderer::default();
     let mut scene = Scene::new();
     let reveal = signal(0.0);
     scene.add(
@@ -279,7 +283,7 @@ fn line_reveal_uses_interpolated_endpoint_without_a_path_buffer() {
     ] {
         animation.sample(ms(time));
         let mut actual = vello::Scene::new();
-        animation.render(&mut actual, size, size, 1.0);
+        renderer.render(&animation, &mut actual, size, size, 1.0);
         let mut expected = vello::Scene::new();
         if let Some(end) = end {
             expected.stroke(
@@ -371,9 +375,9 @@ fn roots_used_only_by_actions_register_and_unused_computations_do_not_run()
     });
     for (time, expected) in [(500, 3.0), (1500, 5.0), (0, 2.0)] {
         animation.sample(ms(time));
-        let id = animation.graphics.values.register(&input);
+
         assert_eq!(
-            animation.graphics.values.get::<f64>(id),
+            animation.state().signal_value(&input),
             Some(&expected)
         );
     }

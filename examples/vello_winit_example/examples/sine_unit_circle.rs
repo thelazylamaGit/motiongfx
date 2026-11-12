@@ -6,7 +6,7 @@
 use std::f64::consts::TAU;
 
 use motiongfx::prelude::{ease, ms, s};
-use vello_motiongfx::{
+use motiongfx_2d::{
     Circle, Color, Line, Path, Point, Scene, Text,
     colors::{BLUE, TRANSPARENT, WHITE},
     computed, signal,

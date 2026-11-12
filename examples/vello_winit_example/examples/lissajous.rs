@@ -6,7 +6,7 @@ use std::f64::consts::{FRAC_PI_4, TAU};
 use std::time::Duration;
 
 use motiongfx::prelude::{cs, ease, ms};
-use vello_motiongfx::{
+use motiongfx_2d::{
     Animation, Circle, Color, Line, Path, Point, Scene, Signal,
     colors::{TRANSPARENT, WHITE},
     computed, signal,

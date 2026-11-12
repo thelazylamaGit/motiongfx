@@ -2,10 +2,10 @@
 //! Fixed-capacity paths avoid allocating a buffer while constructing geometry.
 
 use crate::Point;
-use vello::kurbo::{Affine, ParamCurveExtrema, PathEl, segments};
+use kurbo::{Affine, ParamCurveExtrema, PathEl, segments};
 
 #[derive(Clone, Copy)]
-pub(crate) struct Geometry {
+pub struct Geometry {
     elements: [PathEl; 11],
     len: usize,
 }
@@ -20,10 +20,7 @@ impl Geometry {
         self.elements[self.len] = element;
         self.len += 1;
     }
-    pub(crate) fn sharp(
-        [tip, a, b]: [Point; 3],
-        closed: bool,
-    ) -> Self {
+    pub fn sharp([tip, a, b]: [Point; 3], closed: bool) -> Self {
         let mut path = Self::new();
         path.push(PathEl::MoveTo(a));
         path.push(PathEl::LineTo(tip));
@@ -33,10 +30,10 @@ impl Geometry {
         }
         path
     }
-    pub(crate) fn elements(&self) -> &[PathEl] {
+    pub fn elements(&self) -> &[PathEl] {
         &self.elements[..self.len]
     }
-    pub(crate) fn canvas(mut self) -> Self {
+    pub fn canvas(mut self) -> Self {
         for element in &mut self.elements[..self.len] {
             let flip = |p: Point| Point::new(p.x, -p.y);
             *element = match *element {
@@ -53,7 +50,7 @@ impl Geometry {
         }
         self
     }
-    pub(crate) fn extent(
+    pub fn extent(
         &self,
         position: Point,
         rotation: f64,
@@ -71,39 +68,9 @@ impl Geometry {
     }
 }
 
-/// Kept outside sampled Triangle state, like the existing path/text caches.
-/// Only size, angle and radius change local geometry; styles/transforms don't.
-pub(crate) struct CachedTriangle {
-    key: [f64; 3],
-    pub(crate) geometry: Geometry,
-    #[cfg(test)]
-    pub(crate) rebuilds: usize,
-}
-impl CachedTriangle {
-    pub(crate) fn new(triangle: &crate::Triangle) -> Self {
-        Self {
-            key: [triangle.size, triangle.angle, triangle.radius],
-            geometry: triangle.geometry(),
-            #[cfg(test)]
-            rebuilds: 1,
-        }
-    }
-    pub(crate) fn update(&mut self, triangle: &crate::Triangle) {
-        if self.key
-            != [triangle.size, triangle.angle, triangle.radius]
-        {
-            *self = Self {
-                #[cfg(test)]
-                rebuilds: self.rebuilds + 1,
-                ..Self::new(triangle)
-            };
-        }
-    }
-}
-
 /// Requested radius is clamped to the triangle's inradius, so all three
 /// fillets fit without crossing. At the limit the boundary is the incircle.
-pub(crate) fn rounded(vertices: [Point; 3], radius: f64) -> Geometry {
+pub fn rounded(vertices: [Point; 3], radius: f64) -> Geometry {
     assert!(radius.is_finite(), "triangle radius must be finite");
     let [tip, a, b] = vertices;
     let side_a = tip.distance(a);
@@ -126,7 +93,7 @@ pub(crate) fn rounded(vertices: [Point; 3], radius: f64) -> Geometry {
         let tangent_distance = radius * (turn.abs() / 2.0).tan();
         let start = vertex - incoming * tangent_distance;
         let end = vertex + outgoing * tangent_distance;
-        let normal = vello::kurbo::Vec2::new(-incoming.y, incoming.x);
+        let normal = kurbo::Vec2::new(-incoming.y, incoming.x);
         let center = start + normal * (radius * turn.signum());
         (start, end, center, turn)
     });
@@ -158,10 +125,7 @@ pub(crate) fn rounded(vertices: [Point; 3], radius: f64) -> Geometry {
             let control_a =
                 from + (-s0 * radius * k, c0 * radius * k);
             let control_b = to
-                - vello::kurbo::Vec2::new(
-                    -s1 * radius * k,
-                    c1 * radius * k,
-                );
+                - kurbo::Vec2::new(-s1 * radius * k, c1 * radius * k);
             path.push(PathEl::CurveTo(control_a, control_b, to));
             from = to;
         }
@@ -174,7 +138,7 @@ pub(crate) fn rounded(vertices: [Point; 3], radius: f64) -> Geometry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vello::kurbo::{ParamCurve, Shape};
+    use kurbo::{ParamCurve, Shape};
 
     #[test]
     fn fillets_are_tangent_closed_and_inside_the_original_triangle() {
@@ -193,7 +157,7 @@ mod tests {
             PathEl::MoveTo(p) => p,
             _ => unreachable!(),
         };
-        let mut previous_tangent: Option<vello::kurbo::Vec2> = None;
+        let mut previous_tangent: Option<kurbo::Vec2> = None;
         for element in &geometry.elements()[1..] {
             let (incoming, outgoing, end) = match *element {
                 PathEl::LineTo(end) => {

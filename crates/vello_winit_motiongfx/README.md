@@ -2,7 +2,8 @@
 
 Reusable native window/GPU host extracted from `vello_winit_example`.
 `Window::new(title, canvas_size).run(animation)` fits the logical canvas into
-the window, samples the compiled timeline and draws it. Duration comes from
+the window, samples the shared `motiongfx_2d::Animation` and passes its state
+to a separately owned `vello_motiongfx::Renderer`. Duration comes from
 the track, including waits; the current preview requires a nonzero duration.
 
 The existing play/pause and scrub controls are shared with all examples:

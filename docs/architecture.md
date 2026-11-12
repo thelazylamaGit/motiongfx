@@ -22,34 +22,64 @@ an editor, and potentially scripting with hot reload. The present focus is the
 native Rust authoring API. There is no decision to replace it with a scripting
 engine, build a complete editor, or introduce ECS.
 
-## Crate responsibilities
+## Current crate responsibilities
 
 | Crate | Responsibility and boundary |
 | --- | --- |
 | [`motiongfx`](../crates/motiongfx/README.md) | Typed actions, timelines, ordering, baking and sampling; independent of graphics/windowing. |
 | [`motiongfx_interp`](../crates/motiongfx_interp/README.md) | Interpolation support. |
-| [`motiongfx_authoring`](../crates/motiongfx_authoring/README.md) | Typed property/change descriptions, sequence conveniences, optional `animate!`, standalone signal/computed descriptions and native dependency evaluation. No Vello or Winit dependency. |
+| [`motiongfx_authoring`](../crates/motiongfx_authoring/README.md) | Shared `Scene<M>`/`Animation<M>` lifecycle, registration/property preparation, sequences, signals/computations and native binding/update execution. No graphics/window dependency. |
+| [`motiongfx_2d`](../crates/motiongfx_2d/README.md) | Portable 2D objects/storage, geometry, styles, typed handles, attachments and camera semantics. Uses Kurbo/Peniko directly, not Vello/Winit. |
 | [`peniko_motiongfx`](../crates/peniko_motiongfx/README.md) | Geometry/color interpolation and path-related integration; not a window host or complete scene renderer. |
-| [`vello_motiongfx`](../crates/vello_motiongfx/README.md) | Graphics state, typed shape/text/camera handles, source-aware object builders, native updates, render caches and Vello drawing. Re-exports/specialises authoring facilities, including `computed!`. |
+| [`vello_motiongfx`](../crates/vello_motiongfx/README.md) | Vello drawing and renderer-owned caches. Consumes portable sampled models; compatibility re-exports do not implement a second model or lifecycle. |
 | [`vello_winit_motiongfx`](../crates/vello_winit_motiongfx/README.md) | Native window/GPU setup, resize/DPI handling, playback clock, play/pause and scrubbing controls. These are shared host facilities, not required scene objects. |
-| [`motiongfx_scene`](../crates/motiongfx_scene/README.md) | Serializable scene/timeline documents, named registries and compilation into core actions. Distinct from `vello_motiongfx::Scene`; not currently a dependency of native authoring. |
+| [`motiongfx_scene`](../crates/motiongfx_scene/README.md) | Serializable scene/timeline documents, named registries and compilation into core actions. Distinct from live `motiongfx_authoring::Scene<M>`; not currently a dependency of native authoring. |
 | [`bevy_motiongfx`](../crates/bevy_motiongfx/README.md) | Separate Bevy integration. The Vello/Winit authoring path does not require Bevy. |
 | [`velyst_motiongfx`](../crates/velyst_motiongfx/README.md) | Existing Bevy/Velyst/Typst integration, currently excluded from the workspace pending dependency compatibility. Not yet the text implementation for this Vello host. |
 
-Keep these existing boundaries. There is currently no separate signals crate
-or language-binding crate; split further when a concrete dependency or reuse
-requirement warrants it, rather than creating empty architectural layers.
+The shared-scene/model/renderer separation is implemented. See
+[backend-separation.md](backend-separation.md) for its contracts, validation and
+remaining integration limits. There is no separate signals or language-binding
+crate; further splits should have concrete responsibilities.
 
 Implementation entry points:
 
 - [Standalone source descriptions](../crates/motiongfx_authoring/src/source.rs),
   [signals and storage](../crates/motiongfx_authoring/src/signals.rs), and
   [prepared dependency evaluation](../crates/motiongfx_authoring/src/bindings.rs).
-- [Object descriptors](../crates/vello_motiongfx/src/object.rs),
-  [reactive input registration](../crates/vello_motiongfx/src/input.rs), and
-  [scene finalisation/sampling/rendering](../crates/vello_motiongfx/src/lib.rs).
-- [Direct update callbacks](../crates/vello_motiongfx/src/updates.rs) and
+- [Generic descriptors](../crates/motiongfx_authoring/src/object.rs),
+  [portable builders](../crates/motiongfx_2d/src/object.rs),
+  [reactive input registration](../crates/motiongfx_authoring/src/input.rs),
+  [shared finalisation/sampling](../crates/motiongfx_authoring/src/scene.rs), and
+  [Vello rendering](../crates/vello_motiongfx/src/shape_renderer.rs).
+- [Direct update target borrowing](../crates/motiongfx_2d/src/updates.rs) and
   [native host](../crates/vello_winit_motiongfx/src/lib.rs).
+
+## Shared model boundary
+
+Authoring owns `Scene<M>`, `Animation<M>`, and `World<M>`. World wraps an
+application-selected model with signal storage and sampled time. Model crates
+implement core `SubjectSource<ModelId, State> for World<M>` using their own IDs.
+Shared code never enumerates graphics/3D types or invokes a renderer.
+
+The 2D convenience aliases specialise that lifecycle to `Graphics`. Local
+`Object<T, M>` and `Input<T, M>` wrappers add inherent builders and geometry
+conversions over generic `ObjectDefinition` / `Input` preparation in authoring.
+They satisfy Rust's inherent-implementation/orphan rules while keeping one
+preparation implementation. Detached builders may need an explicit
+`Object<Circle>` type when no scene provides inference.
+
+`Model2d` exposes a contained Graphics store in composite models. Ordinary
+2D objects and another model can share signals, computed relationships and one
+core schedule. This is tested with actual 2D objects plus a small second model.
+There is no 3D renderer or automatic Bevy adapter. Custom mixed callback targets
+still require a safe model adapter; provided 2D array/tuple borrowing targets
+Graphics. No ECS or general dynamic world registry is introduced.
+
+2D-only helpers are extension traits imported by `motiongfx_2d::prelude::*`:
+`Scene2dExt` for camera/background setup, `Animation2dExt` for sampled reads.
+The inherent lifecycle methods (`add`, `animate`, `bind`, `update`, `sample`)
+remain shared.
 
 ## Construction, sampling, rendering
 
@@ -67,7 +97,9 @@ Implementation entry points:
    reusable functions within this process; there is no animation-merge API yet.
 4. Sampling applies the core timeline, evaluates the prepared binding plan,
    then runs direct update callbacks in registration order.
-5. Rendering reads stored graphics state and emits Vello scene commands.
+5. The host invokes a separate `vello_motiongfx::Renderer`, which reads sampled
+   graphics and emits Vello scene commands. Its caches initialize lazily on
+   first rendering and remain outside sampled/baked subject state.
    Geometry/text caches can reuse prepared data, but this is not automatic
    retained-layer rendering or partial-screen invalidation.
 
@@ -158,14 +190,14 @@ shaft trimming, and multiplies their opacity by its own. Typed `LineTipHandle`
 exposes shape-specific properties (`radius` versus `angle`/`size`) without
 runtime variant checks in authoring code. Standalone and attached shapes use
 the same definitions/renderers. No ECS or general hierarchy is introduced.
-Circle, Triangle and Chevron each expose one internal `render` entry point
+Vello circle and wedge renderers expose internal painting entry points
 with explicit parent transform and inherited opacity. Standalone calls pass
 opacity `1.0`; endpoint attachments pass the line opacity. Each renderer
 multiplies its own opacity exactly once. Triangle also receives its cached
-geometry; the shared wedge painting helper avoids duplicating triangle/chevron
+geometry; the shared wedge painting implementation avoids duplicating triangle/chevron
 fill/stroke logic. No default-opacity wrappers or general render-context
 framework are needed for these arguments.
-See the [tip API](../crates/vello_motiongfx/README.md#inline-endpoint-shapes)
+See the [tip API](../crates/motiongfx_2d/README.md#inline-endpoint-shapes)
 for geometry, short-line fitting and current attachment limitations.
 
 Lines, paths, triangles, chevrons and rectangles expose typed `line_cap` (`Cap`)
@@ -180,11 +212,11 @@ smooth. Stroke paint and optional cap/join builder code are shared separately.
 Future arc/dash features can opt into applicable controls without adding unused
 state now. Triangle already has filled, closed polygon geometry; it is not
 implemented as a thick chevron stroke. Both retain common vertex/style/
-registration code, while [rounded_triangle.rs](../crates/vello_motiongfx/src/rounded_triangle.rs)
+registration code, while [rounded_triangle.rs](../crates/motiongfx_2d/src/rounded_triangle.rs)
 builds circular fillets in a closed path for Triangle only. Effective radius is
 clamped to the inradius, leaving the requested typed property unchanged.
 The nominal apex anchor is preserved: rounding clips back the visible point.
-Per-triangle geometry caches in `Graphics` sit outside cloned/sampled Triangle
+Per-triangle geometry caches in the Vello `Renderer` sit outside cloned/sampled Triangle
 state and rebuild on size/angle/radius changes during rendering. Tip trimming
 uses the cached curved boundary. No per-frame heap path allocation is needed;
 ordinary cache checks, bounds/transforms, and Vello recording still take work.

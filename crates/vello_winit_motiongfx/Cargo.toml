@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+motiongfx_2d = { workspace = true }
 vello_motiongfx = { workspace = true }
 vello = { workspace = true }
 winit = { workspace = true }

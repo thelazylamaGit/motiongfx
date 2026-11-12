@@ -1,12 +1,10 @@
 //! Stroked paths. Geometry is shared, while small reveal/style state is sampled.
 
-use crate::{
-    Color, DrawObject, Graphics, Point, Position, Scene, SceneObject,
-};
+use crate::{Color, DrawObject, Point, Position, SceneObject};
+pub use kurbo::BezPath;
 use motiongfx::prelude::{SubjectSource, path};
 use motiongfx_authoring::Property;
 use std::sync::Arc;
-pub use vello::kurbo::BezPath;
 
 #[derive(Clone)]
 pub struct Path {
@@ -25,18 +23,17 @@ pub struct Path {
 
 impl Path {
     /// Exact quadratic geometry, rather than sampling a polyline.
-    pub fn quadratic(
-        start: impl Into<crate::Input<Point>>,
-        control: impl Into<crate::Input<Point>>,
-        end: impl Into<crate::Input<Point>>,
-    ) -> crate::Object<Self> {
+    pub fn quadratic<M: crate::Model2d>(
+        start: impl Into<crate::Input<Point, M>>,
+        control: impl Into<crate::Input<Point, M>>,
+        end: impl Into<crate::Input<Point, M>>,
+    ) -> crate::Object<Self, M> {
         let inputs = (start.into(), control.into(), end.into());
-        if let (
-            crate::Input::Fixed(start),
-            crate::Input::Fixed(control),
-            crate::Input::Fixed(end),
-        ) = &inputs
-        {
+        if let (Some(start), Some(control), Some(end)) = (
+            inputs.0.as_fixed(),
+            inputs.1.as_fixed(),
+            inputs.2.as_fixed(),
+        ) {
             return Self::from_bez_path(quadratic_geometry(
                 *start, *control, *end,
             ));
@@ -73,7 +70,7 @@ impl Path {
     ) {
         let (start, control, end) =
             (start.into(), control.into(), end.into());
-        use vello::kurbo::PathEl;
+        use kurbo::PathEl;
         if self.geometry.elements()
             == [PathEl::MoveTo(start), PathEl::QuadTo(control, end)]
         {
@@ -86,9 +83,9 @@ impl Path {
     }
 
     /// Create a polyline from canvas points (positive y points up).
-    pub fn new<P: Into<Point>>(
+    pub fn new<M: crate::Model2d, P: Into<Point>>(
         points: impl IntoIterator<Item = P>,
-    ) -> crate::Object<Self> {
+    ) -> crate::Object<Self, M> {
         let mut geometry = BezPath::new();
         let mut points = points.into_iter();
         if let Some(point) = points.next() {
@@ -101,7 +98,9 @@ impl Path {
     }
 
     /// Use arbitrary line, quadratic or cubic geometry generated in Rust.
-    pub fn from_bez_path(geometry: BezPath) -> crate::Object<Self> {
+    pub fn from_bez_path<M: crate::Model2d>(
+        geometry: BezPath,
+    ) -> crate::Object<Self, M> {
         crate::Object::new(Self {
             geometry: Arc::new(geometry),
             position: Point::ZERO,
@@ -139,6 +138,11 @@ crate::object::stroke_options!(Path);
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
 pub struct PathId(pub(crate) usize);
+impl PathId {
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct PathHandle {
@@ -155,13 +159,25 @@ pub struct PathHandle {
     pub end: Property<PathId, Path, f64>,
     pub geometry: Property<PathId, Path, Arc<BezPath>>,
 }
+impl PathHandle {
+    pub fn id(self) -> PathId {
+        self.id
+    }
+}
 
-impl SceneObject for Path {
+impl<M: crate::Model2d> SceneObject<M> for Path {
     type Handle = PathHandle;
-    fn insert_into(self, scene: &mut Scene) -> Self::Handle {
-        let id = PathId(scene.graphics.paths.len());
-        scene.graphics.paths.push(self);
-        scene.graphics.order.push(DrawObject::Path(id));
+    fn insert_into(
+        self,
+        scene: &mut motiongfx_authoring::Scene<M>,
+    ) -> Self::Handle {
+        let id = PathId(scene.model_mut().graphics_mut().paths.len());
+        scene.model_mut().graphics_mut().paths.push(self);
+        scene
+            .model_mut()
+            .graphics_mut()
+            .order
+            .push(DrawObject::Path(id));
         PathHandle {
             id,
             position: Position::new(
@@ -184,15 +200,17 @@ impl SceneObject for Path {
     }
 }
 
-impl SubjectSource<PathId, Path> for Graphics {
+impl<M: crate::Model2d> SubjectSource<PathId, Path>
+    for motiongfx_authoring::World<M>
+{
     fn get_source(&self, id: PathId) -> Option<&Path> {
-        self.paths.get(id.0)
+        self.model().graphics().paths.get(id.0)
     }
     fn apply_source<R>(
         &mut self,
         id: PathId,
         f: impl FnOnce(&mut Path) -> R,
     ) -> Option<R> {
-        self.paths.get_mut(id.0).map(f)
+        self.model_mut().graphics_mut().paths.get_mut(id.0).map(f)
     }
 }

@@ -1,65 +1,44 @@
-//! Construction-only descriptors. Reactive wiring is removed from the object
-//! when it is inserted: sampled state keeps ordinary numeric/style fields.
-
-use crate::{Graphics, Input, Scene, SceneObject};
+//! Typed model builders delegate common property wiring to authoring.
+use crate::{Graphics, Input, Model2d, SceneObject, World};
 use motiongfx::prelude::{Path, SubjectSource, ThreadSafe};
 use motiongfx::subject::SubjectId;
-use motiongfx_authoring::Property;
+use motiongfx_authoring::{ObjectDefinition, Property};
 use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-
-type Register<T> =
-    Arc<dyn Fn(&mut Scene, <T as SceneObject>::Handle) + Send + Sync>;
-type Field = motiongfx::field_path::field::UntypedField;
-
-/// Initial object state and optional source-driven properties. Cloning a
-/// descriptor creates another object on insertion, sharing its input sources.
-pub struct Object<T: SceneObject> {
-    state: T,
-    bindings: Vec<(Field, Register<T>)>,
-}
-impl<T: SceneObject + Clone> Clone for Object<T> {
+pub struct Object<T: SceneObject<M>, M: Model2d = Graphics>(
+    ObjectDefinition<T, M>,
+);
+impl<T: SceneObject<M> + Clone, M: Model2d> Clone for Object<T, M> {
     fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-            bindings: self.bindings.clone(),
-        }
+        Self(self.0.clone())
     }
 }
-impl<T: SceneObject> Object<T> {
+impl<T: SceneObject<M>, M: Model2d> Object<T, M> {
+    pub(crate) fn new(state: T) -> Self {
+        Self(ObjectDefinition::new(state))
+    }
     pub(crate) fn insert_with(
         self,
-        scene: &mut Scene,
-        insert: impl FnOnce(T, &mut Scene) -> T::Handle,
+        scene: &mut motiongfx_authoring::Scene<M>,
+        insert: impl FnOnce(
+            T,
+            &mut motiongfx_authoring::Scene<M>,
+        ) -> T::Handle,
     ) -> T::Handle
     where
         T::Handle: Copy,
     {
-        let handle = insert(self.state, scene);
-        for (_, register) in self.bindings {
-            register(scene, handle);
-        }
-        handle
+        self.0.insert_with(scene, insert)
     }
-    pub(crate) fn new(state: T) -> Self {
-        Self {
-            state,
-            bindings: Vec::new(),
-        }
-    }
-
     pub(crate) fn on_insert(
         &mut self,
-        field: Field,
-        register: Register<T>,
+        field: motiongfx::field_path::field::UntypedField,
+        register: motiongfx_authoring::Register<T, M>,
     ) {
-        self.bindings.retain(|(previous, _)| *previous != field);
-        self.bindings.push((field, register));
+        self.0.on_insert(field, register);
     }
-
     pub(crate) fn property<I, V>(
-        mut self,
-        value: impl Into<Input<V>>,
+        self,
+        value: impl Into<Input<V, M>>,
         path: Path<T, V>,
         target: impl Fn(T::Handle) -> Property<I, T, V> + ThreadSafe,
     ) -> Self
@@ -68,51 +47,34 @@ impl<T: SceneObject> Object<T> {
         T::Handle: Copy,
         I: SubjectId,
         V: Clone + PartialEq + ThreadSafe,
-        Graphics: SubjectSource<I, T>,
+        World<M>: SubjectSource<I, T>,
     {
-        let value = value.into();
-        self.bindings.retain(|(previous, _)| {
-            *previous != path.field.untyped()
-        });
-        if let Input::Fixed(value) = value {
-            *path.lens.get_mut(&mut self.state) = value;
-        } else {
-            self.on_insert(
-                path.field.untyped(),
-                Arc::new(move |scene, handle| {
-                    scene.bind(
-                        target(handle),
-                        value.clone(),
-                        std::convert::identity,
-                    );
-                }),
-            );
-        }
-        self
+        Self(self.0.property(value.into().0, path, target))
     }
 }
-
-impl<T: SceneObject> Deref for Object<T> {
+impl<T: SceneObject<M>, M: Model2d> Deref for Object<T, M> {
     type Target = T;
     fn deref(&self) -> &T {
-        &self.state
+        &self.0
     }
 }
-impl<T: SceneObject> DerefMut for Object<T> {
+impl<T: SceneObject<M>, M: Model2d> DerefMut for Object<T, M> {
     fn deref_mut(&mut self) -> &mut T {
-        &mut self.state
+        &mut self.0
     }
 }
-impl<T: SceneObject> SceneObject for Object<T>
+impl<T: SceneObject<M>, M: Model2d> SceneObject<M> for Object<T, M>
 where
     T::Handle: Copy,
 {
     type Handle = T::Handle;
-    fn insert_into(self, scene: &mut Scene) -> Self::Handle {
-        self.insert_with(scene, T::insert_into)
+    fn insert_into(
+        self,
+        scene: &mut motiongfx_authoring::Scene<M>,
+    ) -> T::Handle {
+        self.0.insert_into(scene)
     }
 }
-
 // Each generated setter accepts a fixed value or a typed source. Only dynamic
 // inputs add wiring; no extra evaluator is installed for ordinary constants.
 macro_rules! properties {
@@ -124,8 +86,8 @@ macro_rules! properties {
         crate::style::partial_style!($state, $style; $($styled: $style_value,)*);
     };
     ($state:ident; $($field:ident: $value:ty),* $(,)?) => {
-        impl crate::Object<$state> {
-            $(pub fn $field(self, value: impl Into<crate::Input<$value>>) -> Self {
+        impl<M:crate::Model2d> crate::Object<$state,M> {
+            $(pub fn $field(self, value: impl Into<crate::Input<$value,M>>) -> Self {
                 self.property(value, motiongfx::path!($state.$field), |handle| handle.$field.into())
             })*
         }
@@ -135,11 +97,11 @@ pub(crate) use properties;
 
 macro_rules! stroke {
     ($state:ident) => {
-        impl crate::Object<$state> {
+        impl<M: crate::Model2d> crate::Object<$state, M> {
             pub fn stroke(
                 self,
-                color: impl Into<crate::Input<crate::Color>>,
-                width: impl Into<crate::Input<f64>>,
+                color: impl Into<crate::Input<crate::Color, M>>,
+                width: impl Into<crate::Input<f64, M>>,
             ) -> Self {
                 self.property(
                     color,
@@ -160,12 +122,12 @@ pub(crate) use stroke;
 // Opt in only for shapes where stroke endpoints/corners are meaningful.
 macro_rules! stroke_options {
     ($state:ident) => {
-        impl crate::Object<$state> {
+        impl<M: crate::Model2d> crate::Object<$state, M> {
             /// Stroke/dash endpoints: butt, square or round. Closed outlines
             /// have no endpoints. This does not round the shape's filled geometry.
             pub fn line_cap(
                 self,
-                value: impl Into<crate::Input<crate::Cap>>,
+                value: impl Into<crate::Input<crate::Cap, M>>,
             ) -> Self {
                 self.property(
                     value,
@@ -177,7 +139,7 @@ macro_rules! stroke_options {
             /// not the underlying filled shape. Defaults to round.
             pub fn line_join(
                 self,
-                value: impl Into<crate::Input<crate::Join>>,
+                value: impl Into<crate::Input<crate::Join, M>>,
             ) -> Self {
                 self.property(
                     value,

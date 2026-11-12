@@ -2,8 +2,8 @@
 //! Geometry is created once. Only the shared view transform is animated.
 
 use motiongfx::prelude::s;
-use vello_motiongfx::{
-    Circle, Path, Scene,
+use motiongfx_2d::{
+    Circle, Path, Scene, Scene2dExt as _,
     colors::{BLUE, TRANSPARENT, YELLOW},
 };
 use vello_winit_motiongfx::Window;

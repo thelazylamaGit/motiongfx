@@ -3982,6 +3982,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "motiongfx_2d"
+version = "0.5.0"
+dependencies = [
+ "kurbo",
+ "motiongfx",
+ "motiongfx_authoring",
+ "peniko",
+ "peniko_motiongfx",
+]
+
+[[package]]
 name = "motiongfx_authoring"
 version = "0.5.0"
 dependencies = [
@@ -6026,6 +6037,7 @@ name = "vello_motiongfx"
 version = "0.5.0"
 dependencies = [
  "motiongfx",
+ "motiongfx_2d",
  "motiongfx_authoring",
  "peniko_motiongfx",
  "vello",
@@ -6049,6 +6061,7 @@ name = "vello_winit_example"
 version = "0.5.0"
 dependencies = [
  "motiongfx",
+ "motiongfx_2d",
  "peniko_motiongfx",
  "pollster",
  "vello",
@@ -6061,6 +6074,7 @@ dependencies = [
 name = "vello_winit_motiongfx"
 version = "0.5.0"
 dependencies = [
+ "motiongfx_2d",
  "pollster",
  "vello",
  "vello_motiongfx",

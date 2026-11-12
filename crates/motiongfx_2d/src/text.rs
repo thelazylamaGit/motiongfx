@@ -1,6 +1,8 @@
 //! Text authoring state, independent of the temporary lettering renderer.
 
-use crate::{Color, Parent, Point, Position, Scene, SceneObject};
+use crate::{Color, Parent, Point, Position, SceneObject};
+use crate::{DrawObject, Model2d, World};
+use motiongfx::prelude::{SubjectSource, path};
 use motiongfx_authoring::Property;
 use std::sync::Arc;
 
@@ -30,9 +32,9 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn new(
-        content: impl Into<crate::Input<Arc<str>>>,
-    ) -> crate::Object<Self> {
+    pub fn new<M: crate::Model2d>(
+        content: impl Into<crate::Input<Arc<str>, M>>,
+    ) -> crate::Object<Self, M> {
         crate::Object::new(Self {
             content: Arc::from(""),
             position: Point::ZERO,
@@ -54,7 +56,7 @@ crate::object::properties!(Text;
         font_size: f64, fill: Color, opacity: f64, align: TextAlign,
     }
 );
-impl crate::Object<Text> {
+impl<M: crate::Model2d> crate::Object<Text, M> {
     /// Make position local to a rectangle or circle. Its translation, rotation,
     /// and scale are inherited; text style and local animations stay independent.
     /// The parent must belong to the same scene as this text.
@@ -68,6 +70,11 @@ impl crate::Object<Text> {
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
 pub struct TextId(pub(crate) usize);
+impl TextId {
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
 
 /// Typed targets. Content is replaced discretely; numeric/style properties
 /// interpolate through the existing MotionGfx machinery.
@@ -83,10 +90,60 @@ pub struct TextHandle {
     pub rotation: Property<TextId, Text, f64>,
     pub align: Property<TextId, Text, TextAlign>,
 }
+impl TextHandle {
+    pub fn id(self) -> TextId {
+        self.id
+    }
+}
 
-impl SceneObject for Text {
+impl<M: crate::Model2d> SceneObject<M> for Text {
     type Handle = TextHandle;
-    fn insert_into(self, scene: &mut Scene) -> Self::Handle {
-        scene.insert_text(self)
+    fn insert_into(
+        self,
+        scene: &mut motiongfx_authoring::Scene<M>,
+    ) -> Self::Handle {
+        insert_text(scene, self)
+    }
+}
+
+impl<M: Model2d> SubjectSource<TextId, Text> for World<M> {
+    fn get_source(&self, id: TextId) -> Option<&Text> {
+        self.model().graphics().texts.get(id.0)
+    }
+    fn apply_source<R>(
+        &mut self,
+        id: TextId,
+        f: impl FnOnce(&mut Text) -> R,
+    ) -> Option<R> {
+        self.model_mut().graphics_mut().texts.get_mut(id.0).map(f)
+    }
+}
+
+pub(crate) fn insert_text<M: Model2d>(
+    scene: &mut motiongfx_authoring::Scene<M>,
+    text: Text,
+) -> TextHandle {
+    let id = TextId(scene.model_mut().graphics_mut().texts.len());
+    scene.model_mut().graphics_mut().texts.push(text);
+    scene
+        .model_mut()
+        .graphics_mut()
+        .order
+        .push(DrawObject::Text(id));
+    TextHandle {
+        id,
+        content: Property::discrete(id, path!(Text.content)),
+        position: Position::new(
+            id,
+            path!(Text.position),
+            path!(Text.position.x),
+            path!(Text.position.y),
+        ),
+        font_size: Property::new(id, path!(Text.font_size)),
+        fill: Property::new(id, path!(Text.fill)),
+        opacity: Property::new(id, path!(Text.opacity)),
+        scale: Property::new(id, path!(Text.scale)),
+        rotation: Property::new(id, path!(Text.rotation)),
+        align: Property::discrete(id, path!(Text.align)),
     }
 }

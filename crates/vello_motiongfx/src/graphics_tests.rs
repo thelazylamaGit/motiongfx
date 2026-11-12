@@ -6,9 +6,15 @@ use vello::kurbo::{Circle as CircleShape, ParamCurve};
 #[test]
 fn revealed_path_is_seekable_and_movement_does_not_rebuild_geometry()
 {
+    let mut renderer = Renderer::default();
     let mut scene = Scene::new();
     let path = scene.add(
-        Path::new([(0.0, 0.0), (10.0, 0.0), (30.0, 0.0)]).end(0.0),
+        Path::new::<Graphics, _>([
+            (0.0, 0.0),
+            (10.0, 0.0),
+            (30.0, 0.0),
+        ])
+        .end(0.0),
     );
     let mut animation = scene.animate(|sequence| {
         sequence.defaults(s(1), ease::linear);
@@ -30,8 +36,8 @@ fn revealed_path_is_seekable_and_movement_does_not_rebuild_geometry()
     ] {
         animation.sample(ms(time));
         rendered.reset();
-        animation.render(&mut rendered, size, size, 1.0);
-        let geometry = &animation.path_geometry[path.id.0];
+        renderer.render(&animation, &mut rendered, size, size, 1.0);
+        let geometry = &renderer.path_geometry[path.id().index()];
         let actual_end = geometry
             .visible
             .segments()
@@ -51,7 +57,7 @@ fn path_cache_handles_bezier_geometry_and_style_changes() {
     let mut curve = BezPath::new();
     curve.move_to((0.0, 0.0));
     curve.quad_to((10.0, 20.0), (20.0, 0.0));
-    let mut path = Path::from_bez_path(curve).end(0.5);
+    let mut path: Object<Path> = Path::from_bez_path(curve).end(0.5);
     let mut cache = PathGeometry::new(&path);
     assert_eq!(
         cache.visible.segments().last().unwrap().eval(1.0),
@@ -69,7 +75,9 @@ fn path_cache_handles_bezier_geometry_and_style_changes() {
     cache.render(&path, &mut rendered, Affine::IDENTITY);
     assert_eq!(cache.rebuilds, 1);
     path.geometry =
-        Path::new([(0.0, 0.0), (40.0, 0.0)]).geometry.clone();
+        Path::new::<Graphics, _>([(0.0, 0.0), (40.0, 0.0)])
+            .geometry
+            .clone();
     rendered.reset();
     cache.render(&path, &mut rendered, Affine::IDENTITY);
     assert_eq!(
@@ -86,6 +94,7 @@ fn path_cache_handles_bezier_geometry_and_style_changes() {
 #[test]
 fn circle_ring_rendering_matches_parent_scale_and_derived_pulse_math()
 {
+    let mut renderer = Renderer::default();
     let mut scene = Scene::new();
     let color = colors::MAUVE;
     let dot = scene.add(
@@ -118,7 +127,7 @@ fn circle_ring_rendering_matches_parent_scale_and_derived_pulse_math()
     for time in [0, 100, 200, 400, 900, 1400, 900, 0] {
         animation.sample(ms(time));
         let mut actual = vello::Scene::new();
-        animation.render(&mut actual, size, size, 1.0);
+        renderer.render(&animation, &mut actual, size, size, 1.0);
 
         // Independent direct rendering of the original component equations.
         let scale =

@@ -4,7 +4,7 @@
 use crate::{
     CircleHandle, CircleId, Graphics, RectangleHandle, RectangleId,
 };
-use vello::kurbo::Affine;
+use kurbo::Affine;
 
 #[derive(Clone, Copy)]
 pub enum Parent {
@@ -24,10 +24,7 @@ impl From<CircleHandle> for Parent {
 }
 
 impl Graphics {
-    pub(crate) fn parent_transform(
-        &self,
-        parent: Option<Parent>,
-    ) -> Affine {
+    pub fn parent_transform(&self, parent: Option<Parent>) -> Affine {
         match parent {
             Some(Parent::Rectangle(id)) => {
                 let rectangle = &self.rectangles[id.0];

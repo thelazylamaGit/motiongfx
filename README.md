@@ -58,6 +58,11 @@ let track = [
 - [Website](https://motiongfx.voxell.dev): guides and live demos.
 - [`motiongfx`](crates/motiongfx): the core crate, with a full
   walkthrough.
+- [`motiongfx_authoring`](crates/motiongfx_authoring): shared typed scene,
+  sequence, signal and computed authoring.
+- [`motiongfx_2d`](crates/motiongfx_2d): portable 2D objects, styles and geometry.
+- [`vello_motiongfx`](crates/vello_motiongfx): Vello rendering and caches.
+- [`vello_winit_motiongfx`](crates/vello_winit_motiongfx): native preview host.
 - [`bevy_motiongfx`](crates/bevy_motiongfx): the Bevy backend.
 - [Moxie](https://github.com/voxell-tech/moxie): a visual editor for
   MotionGfx.

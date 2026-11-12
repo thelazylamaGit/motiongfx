@@ -113,6 +113,12 @@ pub struct SignalValues {
     values: Vec<Box<dyn Any + Send + Sync>>,
 }
 impl SignalValues {
+    pub fn registered_value<T: ThreadSafe>(
+        &self,
+        signal: &Signal<T>,
+    ) -> Option<&T> {
+        self.get(*self.ids.get(&signal.0.id)?)
+    }
     pub fn register<T: Clone + ThreadSafe>(
         &mut self,
         signal: &Signal<T>,

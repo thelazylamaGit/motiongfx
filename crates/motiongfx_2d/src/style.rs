@@ -5,18 +5,18 @@ use crate::{Object, SceneObject};
 /// A reusable property set applicable to one concrete object type.
 /// Implementations apply through ordinary object setters so reactive wiring
 /// and last-setter-wins semantics stay identical to explicit authoring.
-pub trait ApplyStyle<T: SceneObject> {
-    fn apply(&self, object: Object<T>) -> Object<T>;
+pub trait ApplyStyle<T: SceneObject<M>, M: crate::Model2d> {
+    fn apply(&self, object: Object<T, M>) -> Object<T, M>;
 }
 
-impl<T: SceneObject> Object<T> {
+impl<T: SceneObject<M>, M: crate::Model2d> Object<T, M> {
     /// Apply only the properties configured in this style. Later setters or
     /// styles override earlier ones. The object retains its own inputs; the
     /// style is not stored or evaluated in playback.
     ///
     /// ```
     /// use motiongfx::prelude::s;
-    /// use vello_motiongfx::{signal, Scene, Text, TextStyle};
+    /// use motiongfx_2d::{Animation2dExt,signal, Scene, Text, TextStyle};
     /// let size = signal(24.0);
     /// let labels = TextStyle::new().font_size(&size);
     /// let mut scene = Scene::new();
@@ -29,10 +29,10 @@ impl<T: SceneObject> Object<T> {
     /// ```
     /// Incompatible styles fail at compile time:
     /// ```compile_fail
-    /// use vello_motiongfx::{Circle, TextStyle};
-    /// Circle::new(10.0).style(&TextStyle::new());
+    /// use motiongfx_2d::{Animation2dExt,Circle, TextStyle};
+    /// let _: motiongfx_2d::Object<Circle> = Circle::new(10.0).style(&TextStyle::new());
     /// ```
-    pub fn style(self, style: &impl ApplyStyle<T>) -> Self {
+    pub fn style(self, style: &impl ApplyStyle<T, M>) -> Self {
         style.apply(self)
     }
 }
@@ -45,19 +45,21 @@ macro_rules! partial_style {
         /// remain unchanged. Inputs may be constants, signals, or computations.
         /// Clone to derive another preset; changing a preset does not mutate
         /// existing objects. Animate shared inputs to coordinate those objects.
-        #[derive(Clone, Default)]
-        pub struct $style {
-            $($field: Option<crate::Input<$value>>,)*
+
+        pub struct $style<M:crate::Model2d=crate::Graphics> {
+            $($field: Option<crate::Input<$value,M>>,)*
         }
-        impl $style {
+        impl<M:crate::Model2d> Default for $style<M> { fn default()->Self { Self { $($field:None,)* } } }
+        impl<M:crate::Model2d> Clone for $style<M> { fn clone(&self)->Self { Self { $($field:self.$field.clone(),)* } } }
+        impl<M:crate::Model2d> $style<M> {
             pub fn new() -> Self { Self::default() }
-            $(pub fn $field(mut self, value: impl Into<crate::Input<$value>>) -> Self {
+            $(pub fn $field(mut self, value: impl Into<crate::Input<$value,M>>) -> Self {
                 self.$field = Some(value.into());
                 self
             })*
         }
-        impl crate::ApplyStyle<$state> for $style {
-            fn apply(&self, mut object: crate::Object<$state>) -> crate::Object<$state> {
+        impl<M:crate::Model2d> crate::ApplyStyle<$state,M> for $style<M> {
+            fn apply(&self, mut object: crate::Object<$state,M>) -> crate::Object<$state,M> {
                 $(if let Some(value) = &self.$field {
                     object = object.$field(value.clone());
                 })*

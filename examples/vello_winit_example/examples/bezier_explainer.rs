@@ -4,11 +4,11 @@
 //! are no per-object update callbacks, custom World, or renderer in this file.
 
 use motiongfx::prelude::{ease, ms, s};
-use vello::kurbo::Rect;
-use vello_motiongfx::{
+use motiongfx_2d::{
     Circle, Color, Input, Line, LineHandle, Path, Point, Rectangle,
     Scene, Text, computed, signal,
 };
+use vello::kurbo::Rect;
 use vello_winit_motiongfx::{PlaybackMode, Window};
 
 const INK: Color = Color::from_rgb8(230, 235, 246);

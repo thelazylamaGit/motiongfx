@@ -51,6 +51,44 @@ type, allowing string literals for shared-string text properties.
 This crate has no Vello, Winit, or scene-document dependency. Custom Rust
 subject types can expose their own typed `Property` fields.
 
+## Shared scene lifecycle
+
+`Scene<M>` owns an application-selected model `M`, one native binding plan,
+and the ordered native update callbacks. `World<M>` wraps the model with
+scene-local signal storage and sampled time. Models implement the core
+`SubjectSource<ModelId, ModelState> for World<M>` using model-owned typed IDs.
+There is no rendering dependency, closed list of shape kinds, or per-sample
+type registry in this shared layer.
+
+`SceneObject<M>::insert_into` registers state and returns typed handles.
+`ObjectDefinition<T, M>` supplies reusable descriptor/property wiring; model
+crates may wrap it to expose their own inherent builders and input conversions.
+`Input<M, T>` prepares fixed/signal/computed/property inputs. `SampleTime`
+provides the clamped sample time as an explicit source through `scene.time()`.
+
+`scene.try_animate(|sequence| ...)` creates the existing core registry/timeline,
+validates the binding plan, bakes relative targets, and samples time zero.
+`animate` is the panicking convenience. `Animation<M>::sample(time)` applies
+the core timeline, evaluates bindings, then runs direct callbacks in registration
+order. `model()` exposes a read-only sampled model; `state()` also exposes
+shared time and registered signal inspection. Renderers consume these views
+separately and own their own caches/resources.
+
+`UpdateTargets<M>` prepares a native callback with model-specific safe target
+borrowing. The optional `UpdateStorage`/`UpdateHandle` contracts implement
+array/tuple target collections without a renderer-specific collection engine.
+Direct callbacks run on every sample, have no dependency/writer sorting, and
+must assign from sampled inputs for arbitrary-time seeking. Mutable models
+and callbacks remain native Rust; this does not add a scripting runtime.
+
+`prepare_with<Key>(...)` is an integration hook for final configuration such
+as last-setter-wins backgrounds. It runs during construction and is keyed by
+type only there. It is not a per-frame system registry.
+
+See [headless shared model tests](tests/shared_scene.rs) and the
+[portable 2D model](../motiongfx_2d/README.md) for complete adapters. Standalone
+`Sequence<W>` and `BindingPlan<W>` remain usable without this scene lifecycle.
+
 ## Native derived relationships
 
 `BindingPlan<W>` optionally calculates properties after timeline sampling.
@@ -79,7 +117,7 @@ randomness and numerical validity are not statically checked.
 
 This is optional native binding support, not automatic dependency tracking or
 a scripting interpreter. Ordinary property handles still do not identify their
-owning scene; mixing handles between scenes is unsupported. A Vello `Scene`
+owning scene; mixing handles between scenes is unsupported. The shared `Scene<M>`
 owns the plan and finalizes it through `try_animate` (returns `BindingError`)
 or `animate` (panics on a binding error during construction).
 
@@ -96,7 +134,7 @@ helper can return a description without retaining references to its arguments.
 deduplicates its computed nodes. Integrations implement `SignalWorld` with
 `SignalValues` storage and `SubjectSource<SignalId, T>` access, and construct
 `Sequence::with_signals` so even roots used only in actions are registered.
-The Vello integration does this automatically and supplies `computed!` to
+The shared scene lifecycle does this automatically; `computed!` is provided here to
 avoid repeating dependency names. Regular core-property sequences still use
 `Sequence::new` without signal storage.
 
@@ -109,7 +147,7 @@ dependency wiring, not automatic tracking, effects, or an interpreter.
 ## Optional authoring macro
 
 `animate!` is a `macro_rules!` convenience in this crate, also re-exported by
-`vello_motiongfx`. It introduces no new crate, parser dependency, or per-frame
+`motiongfx_2d` and `vello_motiongfx`. It introduces no new crate, parser dependency, or per-frame
 execution layer. The first argument is a mutable `Sequence` reference:
 
 ```rust

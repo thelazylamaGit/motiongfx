@@ -74,7 +74,7 @@ mod tests {
 
     #[test]
     fn geometry_is_reused_for_transform_style_and_size_changes() {
-        let mut text = Text::new("Abc\n123");
+        let mut text: crate::Object<Text> = Text::new("Abc\n123");
         let mut layout = TextLayout::new(&text);
         let mut scene = vello::Scene::new();
         layout.render(&text, &mut scene, Affine::IDENTITY);

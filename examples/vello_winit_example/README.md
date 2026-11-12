@@ -79,7 +79,7 @@ timeline. The host samples it and renders the stored rectangle each frame.
 Coordinates are centered logical canvas units with positive y upward;
 rotation is counterclockwise radians. There is no scripting or expression
 graph evaluator. The low-level-equivalence and seek tests now live in
-`crates/vello_motiongfx/src/lib.rs`.
+`crates/vello_motiongfx/src/tests.rs`.
 
 The **insertion sort** example recreates the supplied Canvas Commons scene
 using typed rectangle/text handles and `Sequence::play_all`:
@@ -237,3 +237,12 @@ custom world, subject registration, timeline sampling, or Vello draw loop in
 the example. Its reusable ring/crosshair/dot component and procedural math
 remain visible in the animation file. Headless conversion regressions live
 separately in `examples/support/lissajous_tests.rs`.
+
+## Crate boundaries
+
+Authored examples import their shapes, styles, signals and 2D scene alias from
+`motiongfx_2d`. The shared lifecycle lives in `motiongfx_authoring`.
+`vello_winit_motiongfx::Window` samples that animation and uses a separate
+`vello_motiongfx::Renderer` to record Vello commands. Geometry and text caches
+belong to the renderer. Existing low-level examples intentionally keep their
+custom Vello drawing. See [architecture](../../docs/architecture.md).

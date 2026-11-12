@@ -148,6 +148,7 @@ fn duplicate_targets_are_rejected_during_registration() {
 
 #[test]
 fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
+    let mut renderer = Renderer::default();
     let mut scene = Scene::new();
     let bend = signal(0.0);
     let t = signal(0.0);
@@ -213,18 +214,19 @@ fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
         );
         rendered.reset();
         let size = Size::new(1120.0, 800.0);
-        animation.render(&mut rendered, size, size, 1.0);
+        renderer.render(&animation, &mut rendered, size, size, 1.0);
         let geometry = animation.path(curve).geometry.clone();
-        let rebuilds = animation.path_geometry[curve.id.0].rebuilds;
+        let rebuilds =
+            renderer.path_geometry[curve.id().index()].rebuilds;
         animation.sample(ms(time));
         rendered.reset();
-        animation.render(&mut rendered, size, size, 1.0);
+        renderer.render(&animation, &mut rendered, size, size, 1.0);
         assert!(Arc::ptr_eq(
             &geometry,
             &animation.path(curve).geometry
         ));
         assert_eq!(
-            animation.path_geometry[curve.id.0].rebuilds,
+            renderer.path_geometry[curve.id().index()].rebuilds,
             rebuilds
         );
     }

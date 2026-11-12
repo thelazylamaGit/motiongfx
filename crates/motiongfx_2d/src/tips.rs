@@ -1,8 +1,8 @@
 //! Endpoint placement is separate from the ordinary shape implementation.
 
 use crate::*;
+use motiongfx::prelude::ThreadSafe;
 use std::ops::Deref;
-use vello::kurbo::Affine;
 
 /// Marker for an endpoint without a tip. It has no animation properties.
 #[derive(Clone, Copy, Default)]
@@ -19,31 +19,34 @@ pub enum EndpointTip {
 mod sealed {
     pub trait Sealed {}
     impl Sealed for super::NoTip {}
-    impl Sealed for crate::Object<crate::Circle> {}
-    impl Sealed for crate::Object<crate::Triangle> {}
-    impl Sealed for crate::Object<crate::Chevron> {}
+    impl<M: crate::Model2d> Sealed for crate::Object<crate::Circle, M> {}
+    impl<M: crate::Model2d> Sealed for crate::Object<crate::Triangle, M> {}
+    impl<M: crate::Model2d> Sealed for crate::Object<crate::Chevron, M> {}
 }
 /// Supported inline tip descriptions. Registration retains the shape's concrete
 /// handle type. Tips are drawn by their line, not as independent draw entries.
-pub trait LineTip: sealed::Sealed {
+pub trait LineTip<M: Model2d = Graphics>: sealed::Sealed {
     type Handle: Copy + ThreadSafe;
     #[doc(hidden)]
     fn attach(
         self,
-        scene: &mut Scene,
+        scene: &mut motiongfx_authoring::Scene<M>,
     ) -> (Self::Handle, Option<EndpointTip>);
 }
-impl LineTip for NoTip {
+impl<M: Model2d> LineTip<M> for NoTip {
     type Handle = NoTip;
-    fn attach(self, _: &mut Scene) -> (NoTip, Option<EndpointTip>) {
+    fn attach(
+        self,
+        _: &mut motiongfx_authoring::Scene<M>,
+    ) -> (NoTip, Option<EndpointTip>) {
         (self, None)
     }
 }
-impl LineTip for Object<Circle> {
+impl<M: Model2d> LineTip<M> for Object<Circle, M> {
     type Handle = CircleHandle;
     fn attach(
         self,
-        scene: &mut Scene,
+        scene: &mut motiongfx_authoring::Scene<M>,
     ) -> (CircleHandle, Option<EndpointTip>) {
         assert!(
             self.parent.is_none(),
@@ -57,11 +60,11 @@ impl LineTip for Object<Circle> {
 }
 macro_rules! attach {
     ($shape:ident, $handle:ident) => {
-        impl LineTip for Object<$shape> {
+        impl<M: Model2d> LineTip<M> for Object<$shape, M> {
             type Handle = $handle;
             fn attach(
                 self,
-                scene: &mut Scene,
+                scene: &mut motiongfx_authoring::Scene<M>,
             ) -> ($handle, Option<EndpointTip>) {
                 let handle = self
                     .insert_with(scene, |shape, scene| {
@@ -76,7 +79,11 @@ attach!(Triangle, TriangleHandle);
 attach!(Chevron, ChevronHandle);
 
 impl EndpointTip {
-    pub(crate) fn extent(self, graphics: &Graphics) -> f64 {
+    pub(crate) fn extent(
+        self,
+        graphics: &Graphics,
+        triangle_geometry: impl FnOnce(TriangleId) -> Geometry,
+    ) -> f64 {
         match self {
             Self::Circle(id) => {
                 let c = &graphics.circles[id.0];
@@ -85,7 +92,7 @@ impl EndpointTip {
             }
             Self::Triangle(id) => {
                 let triangle = &graphics.triangles[id.0];
-                graphics.triangle_geometry[id.0].geometry.extent(
+                triangle_geometry(id).extent(
                     triangle.position,
                     triangle.rotation,
                     triangle.scale,
@@ -102,48 +109,22 @@ impl EndpointTip {
             _ => extent,
         }
     }
-    pub(crate) fn render(
-        self,
-        graphics: &Graphics,
-        scene: &mut vello::Scene,
-        transform: Affine,
-        inherited_opacity: f32,
-    ) {
-        match self {
-            Self::Circle(id) => graphics.circles[id.0].render(
-                scene,
-                transform,
-                inherited_opacity,
-            ),
-            Self::Triangle(id) => graphics.triangles[id.0].render(
-                scene,
-                transform,
-                inherited_opacity,
-                graphics.triangle_geometry[id.0].geometry,
-            ),
-            Self::Chevron(id) => graphics.chevrons[id.0].render(
-                scene,
-                transform,
-                inherited_opacity,
-            ),
-        }
-    }
 }
 
 /// Construction-only wrapper retaining each tip's concrete shape type.
 #[derive(Clone)]
-pub struct LineWithTips<S = NoTip, E = NoTip> {
-    line: Object<Line>,
+pub struct LineWithTips<S = NoTip, E = NoTip, M: Model2d = Graphics> {
+    line: Object<Line, M>,
     start_tip: S,
     end_tip: E,
 }
-impl Object<Line> {
+impl<M: Model2d> Object<Line, M> {
     /// Attach an ordinary shape at the start. Its style stays independent;
     /// position and rotation become local offsets in the outward endpoint frame.
     ///
     /// ```
     /// use motiongfx::prelude::s;
-    /// use vello_motiongfx::{Circle, Line, Scene, Triangle};
+    /// use motiongfx_2d::{Animation2dExt,Circle, Line, Scene, Triangle};
     /// let mut scene = Scene::new();
     /// let line = scene.add(Line::new((0.0, 0.0), (200.0, 0.0))
     ///     .start_tip(Circle::new(6.0))
@@ -157,23 +138,26 @@ impl Object<Line> {
     /// ```
     /// Tip-specific properties are checked at compile time:
     /// ```compile_fail
-    /// use vello_motiongfx::{Circle, Line, Scene};
+    /// use motiongfx_2d::{Animation2dExt,Circle, Line, Scene};
     /// let mut scene = Scene::new();
     /// let line = scene.add(Line::new((0.0, 0.0), (200.0, 0.0))
     ///     .start_tip(Circle::new(6.0)));
     /// line.start_tip.angle.to(0.6); // A circle has radius, not an opening angle.
     /// ```
-    pub fn start_tip<S: LineTip>(self, tip: S) -> LineWithTips<S> {
+    pub fn start_tip<S: LineTip<M>>(
+        self,
+        tip: S,
+    ) -> LineWithTips<S, NoTip, M> {
         LineWithTips {
             line: self,
             start_tip: tip,
             end_tip: NoTip,
         }
     }
-    pub fn end_tip<E: LineTip>(
+    pub fn end_tip<E: LineTip<M>>(
         self,
         tip: E,
-    ) -> LineWithTips<NoTip, E> {
+    ) -> LineWithTips<NoTip, E, M> {
         LineWithTips {
             line: self,
             start_tip: NoTip,
@@ -181,15 +165,21 @@ impl Object<Line> {
         }
     }
 }
-impl<S, E> LineWithTips<S, E> {
-    pub fn start_tip<T: LineTip>(self, tip: T) -> LineWithTips<T, E> {
+impl<S, E, M: Model2d> LineWithTips<S, E, M> {
+    pub fn start_tip<T: LineTip<M>>(
+        self,
+        tip: T,
+    ) -> LineWithTips<T, E, M> {
         LineWithTips {
             line: self.line,
             start_tip: tip,
             end_tip: self.end_tip,
         }
     }
-    pub fn end_tip<T: LineTip>(self, tip: T) -> LineWithTips<S, T> {
+    pub fn end_tip<T: LineTip<M>>(
+        self,
+        tip: T,
+    ) -> LineWithTips<S, T, M> {
         LineWithTips {
             line: self.line,
             start_tip: self.start_tip,
@@ -198,8 +188,8 @@ impl<S, E> LineWithTips<S, E> {
     }
     pub fn stroke(
         mut self,
-        color: impl Into<Input<Color>>,
-        width: impl Into<Input<f64>>,
+        color: impl Into<Input<Color, M>>,
+        width: impl Into<Input<f64, M>>,
     ) -> Self {
         self.line = self.line.stroke(color, width);
         self
@@ -209,8 +199,8 @@ impl<S, E> LineWithTips<S, E> {
 // properties, reached through the returned handle's Deref implementation.
 macro_rules! setters {
     ($($field:ident: $ty:ty),* $(,)?) => {
-        impl<S, E> LineWithTips<S, E> {
-            $(pub fn $field(mut self, value: impl Into<Input<$ty>>) -> Self {
+        impl<S,E,M:Model2d> LineWithTips<S,E,M> {
+            $(pub fn $field(mut self, value: impl Into<Input<$ty,M>>) -> Self {
                 self.line = self.line.$field(value); self
             })*
         }
@@ -239,14 +229,21 @@ impl<S, E> From<LineTipHandle<S, E>> for LineHandle {
         handle.line
     }
 }
-impl<S: LineTip, E: LineTip> SceneObject for LineWithTips<S, E> {
+impl<M: Model2d, S: LineTip<M>, E: LineTip<M>> SceneObject<M>
+    for LineWithTips<S, E, M>
+{
     type Handle = LineTipHandle<S::Handle, E::Handle>;
-    fn insert_into(self, scene: &mut Scene) -> Self::Handle {
+    fn insert_into(
+        self,
+        scene: &mut motiongfx_authoring::Scene<M>,
+    ) -> Self::Handle {
         let line = self.line.insert_into(scene);
         let (start_tip, start) = self.start_tip.attach(scene);
         let (end_tip, end) = self.end_tip.attach(scene);
-        scene.graphics.lines[line.id.0].start_tip = start;
-        scene.graphics.lines[line.id.0].end_tip = end;
+        scene.model_mut().graphics_mut().lines[line.id.0].start_tip =
+            start;
+        scene.model_mut().graphics_mut().lines[line.id.0].end_tip =
+            end;
         LineTipHandle {
             line,
             start_tip,

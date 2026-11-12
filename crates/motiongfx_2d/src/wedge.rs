@@ -1,14 +1,13 @@
 //! Standalone triangles/chevrons and endpoint tips use the same geometry.
 
+use crate::World;
 use crate::rounded_triangle::{self, Geometry};
 use crate::{
-    Color, DrawObject, Graphics, Object, Point, Position, Scene,
-    SceneObject,
+    Color, DrawObject, Object, Point, Position, SceneObject,
 };
+use kurbo::Affine;
 use motiongfx::prelude::{SubjectSource, path};
 use motiongfx_authoring::Property;
-use vello::kurbo::{Affine, Stroke};
-use vello::peniko::Fill;
 
 // One definition for both pointed shapes. A chevron is an open outline;
 // a triangle closes and fills the same three vertices.
@@ -46,31 +45,17 @@ macro_rules! wedge {
             }
         }
         impl $shape {
-            pub fn new() -> Object<Self> { Object::new(Self::default()) }
+            pub fn new<M:crate::Model2d>() -> Object<Self,M> { Object::new(Self::default()) }
             pub(crate) fn vertices(&self) -> [Point; 3] { vertices(self.size, self.angle) }
-            pub(crate) fn transform(&self) -> Affine {
+            pub fn transform(&self) -> Affine {
                 Affine::translate((self.position.x, -self.position.y))
                     * Affine::rotate(-self.rotation) * Affine::scale(self.scale)
             }
-            fn render_geometry(&self, scene: &mut vello::Scene, parent_transform: Affine, inherited_opacity: f32, geometry: Geometry) {
-                let opacity = self.opacity.clamp(0.0, 1.0) as f32 * inherited_opacity;
-                let transform = parent_transform * self.transform();
-                if self.size <= 0.0 || opacity <= 0.0 || transform.determinant() == 0.0 { return; }
-                let geometry = geometry.canvas();
-                let outline = geometry.elements();
-                if $closed && self.fill.components[3] > 0.0 {
-                    scene.fill(Fill::NonZero, transform, self.fill.with_alpha(self.fill.components[3] * opacity), None, &outline);
-                }
-                if self.stroke_width > 0.0 && self.stroke.components[3] > 0.0 {
-                    scene.stroke(&Stroke::new(self.stroke_width).with_caps(self.line_cap).with_join(self.line_join), transform,
-                        self.stroke.with_alpha(self.stroke.components[3] * opacity), None, &outline);
-                }
-            }
-            pub(crate) fn insert(self, scene: &mut Scene, draw: bool) -> $handle {
-                let id = $id(scene.graphics.$storage.len());
-                scene.graphics.$storage.push(self);
-                $(scene.graphics.$cache.push(rounded_triangle::CachedTriangle::new(&scene.graphics.$storage[id.0]));)?
-                if draw { scene.graphics.order.push(DrawObject::$shape(id)); }
+            pub(crate) fn insert<M:crate::Model2d>(self, scene: &mut motiongfx_authoring::Scene<M>, draw: bool) -> $handle {
+                let id = $id(scene.model_mut().graphics_mut().$storage.len());
+                scene.model_mut().graphics_mut().$storage.push(self);
+
+                if draw { scene.model_mut().graphics_mut().order.push(DrawObject::$shape(id)); }
                 $handle {
                     id,
                     position: Position::new(id, path!($shape.position), path!($shape.position.x), path!($shape.position.y)),
@@ -91,6 +76,7 @@ macro_rules! wedge {
         crate::object::stroke_options!($shape);
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $id(pub(crate) usize);
+        impl $id { pub fn index(self)->usize { self.0 } }
         #[derive(Clone, Copy)]
         pub struct $handle {
             pub(crate) id: $id,
@@ -103,19 +89,18 @@ macro_rules! wedge {
             pub stroke_width: Property<$id, $shape, f64>, pub opacity: Property<$id, $shape, f64>,
             pub scale: Property<$id, $shape, f64>, pub rotation: Property<$id, $shape, f64>,
         }
-        impl SceneObject for $shape {
+        impl $handle {pub fn id(self)->$id {self.id}}
+        impl<M:crate::Model2d> SceneObject<M> for $shape {
             type Handle = $handle;
-            fn insert_into(self, scene: &mut Scene) -> $handle { self.insert(scene, true) }
+            fn insert_into(self, scene: &mut motiongfx_authoring::Scene<M>) -> $handle { self.insert(scene, true) }
         }
-        impl SubjectSource<$id, $shape> for Graphics {
-            fn get_source(&self, id: $id) -> Option<&$shape> { self.$storage.get(id.0) }
+        impl<M:crate::Model2d> SubjectSource<$id, $shape> for World<M> {
+            fn get_source(&self, id: $id) -> Option<&$shape> { self.model().graphics().$storage.get(id.0) }
             fn apply_source<R>(&mut self, id: $id, f: impl FnOnce(&mut $shape) -> R) -> Option<R> {
-                self.$storage.get_mut(id.0).map(f)
+                self.model_mut().graphics_mut().$storage.get_mut(id.0).map(f)
             }
         }
-        impl crate::Animation {
-            pub fn $accessor(&self, handle: $handle) -> &$shape { &self.graphics.$storage[handle.id.0] }
-        }
+
     };
 }
 wedge!(
@@ -130,47 +115,20 @@ wedge!(
 wedge!(Chevron, ChevronHandle, ChevronId, chevrons, chevron, false);
 
 impl Triangle {
-    pub(crate) fn geometry(&self) -> Geometry {
+    pub fn geometry(&self) -> Geometry {
         rounded_triangle::rounded(self.vertices(), self.radius)
-    }
-    pub(crate) fn render(
-        &self,
-        scene: &mut vello::Scene,
-        parent_transform: Affine,
-        inherited_opacity: f32,
-        geometry: Geometry,
-    ) {
-        self.render_geometry(
-            scene,
-            parent_transform,
-            inherited_opacity,
-            geometry,
-        );
     }
 }
 impl Chevron {
-    fn geometry(&self) -> Geometry {
+    pub fn geometry(&self) -> Geometry {
         Geometry::sharp(self.vertices(), false)
     }
-    pub(crate) fn extent(&self) -> f64 {
+    pub fn extent(&self) -> f64 {
         self.geometry().extent(
             self.position,
             self.rotation,
             self.scale,
         )
-    }
-    pub(crate) fn render(
-        &self,
-        scene: &mut vello::Scene,
-        parent_transform: Affine,
-        inherited_opacity: f32,
-    ) {
-        self.render_geometry(
-            scene,
-            parent_transform,
-            inherited_opacity,
-            self.geometry(),
-        );
     }
 }
 

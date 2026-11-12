@@ -1,7 +1,7 @@
 //! Manim's MovingAround, using typed native property handles.
 //! Creation happens once; the animation closure builds and bakes the timeline.
 
-use vello_motiongfx::{
+use motiongfx_2d::{
     Rectangle, Scene,
     colors::{BLUE, ORANGE},
 };

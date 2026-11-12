@@ -42,7 +42,8 @@ fn frame(animation: &mut Animation, time: Duration) -> vello::Scene {
     animation.sample(time);
     let mut frame = vello::Scene::new();
     let canvas = Size::new(CANVAS.0, CANVAS.1);
-    animation.render(&mut frame, canvas, canvas, 1.0);
+    vello_motiongfx::Renderer::default()
+        .render(&animation, &mut frame, canvas, canvas, 1.0);
     frame
 }
 

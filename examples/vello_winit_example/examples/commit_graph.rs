@@ -2,7 +2,7 @@
 //! A reusable component creates its own objects; choreography stays below.
 
 use motiongfx::prelude::{ease, ms, s};
-use vello_motiongfx::{
+use motiongfx_2d::{
     Circle, CircleHandle, Color, Path, Scene,
     colors::{MAUVE, PASTEL_BLUE, TRANSPARENT},
 };

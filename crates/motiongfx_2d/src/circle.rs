@@ -1,13 +1,11 @@
 //! Filled circles and stroked rings with typed animation targets.
 
 use crate::{
-    Color, DrawObject, Graphics, Parent, Point, Position, Scene,
-    SceneObject,
+    Color, DrawObject, Parent, Point, Position, SceneObject,
 };
+use kurbo::Affine;
 use motiongfx::prelude::{SubjectSource, path};
 use motiongfx_authoring::Property;
-use vello::kurbo::{Affine, Circle as CircleShape, Stroke};
-use vello::peniko::Fill;
 
 /// A circle with a local radius in canvas units. Scale transforms both the
 /// circle and its stroke, including children anchored with `relative_to`.
@@ -28,9 +26,9 @@ pub struct Circle {
 }
 
 impl Circle {
-    pub fn new(
-        radius: impl Into<crate::Input<f64>>,
-    ) -> crate::Object<Self> {
+    pub fn new<M: crate::Model2d>(
+        radius: impl Into<crate::Input<f64, M>>,
+    ) -> crate::Object<Self, M> {
         crate::Object::new(Self {
             radius: 0.0,
             position: Point::ZERO,
@@ -45,49 +43,10 @@ impl Circle {
         .radius(radius)
     }
 
-    pub(crate) fn transform(&self) -> Affine {
+    pub fn transform(&self) -> Affine {
         Affine::translate((self.position.x, -self.position.y))
             * Affine::rotate(-self.rotation)
             * Affine::scale(self.scale)
-    }
-
-    pub(crate) fn render(
-        &self,
-        scene: &mut vello::Scene,
-        parent_transform: Affine,
-        inherited_opacity: f32,
-    ) {
-        let opacity =
-            self.opacity.clamp(0.0, 1.0) as f32 * inherited_opacity;
-        let transform = parent_transform * self.transform();
-        if opacity == 0.0
-            || self.radius <= 0.0
-            || transform.determinant() == 0.0
-        {
-            return;
-        }
-        let shape = CircleShape::new(Point::ZERO, self.radius);
-        if self.fill.components[3] > 0.0 {
-            scene.fill(
-                Fill::NonZero,
-                transform,
-                self.fill
-                    .with_alpha(self.fill.components[3] * opacity),
-                None,
-                &shape,
-            );
-        }
-        if self.stroke_width > 0.0 && self.stroke.components[3] > 0.0
-        {
-            scene.stroke(
-                &Stroke::new(self.stroke_width),
-                transform,
-                self.stroke
-                    .with_alpha(self.stroke.components[3] * opacity),
-                None,
-                &shape,
-            );
-        }
     }
 }
 
@@ -96,7 +55,7 @@ crate::object::properties!(Circle;
     scale: f64, rotation: f64, stroke_width: f64,
 );
 crate::object::stroke!(Circle);
-impl crate::Object<Circle> {
+impl<M: crate::Model2d> crate::Object<Circle, M> {
     /// Inherit the parent's transform; style and opacity remain independent.
     pub fn relative_to(mut self, parent: impl Into<Parent>) -> Self {
         self.parent = Some(parent.into());
@@ -108,6 +67,11 @@ impl crate::Object<Circle> {
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
 pub struct CircleId(pub(crate) usize);
+impl CircleId {
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct CircleHandle {
@@ -121,23 +85,36 @@ pub struct CircleHandle {
     pub scale: Property<CircleId, Circle, f64>,
     pub rotation: Property<CircleId, Circle, f64>,
 }
+impl CircleHandle {
+    pub fn id(self) -> CircleId {
+        self.id
+    }
+}
 
-impl SceneObject for Circle {
+impl<M: crate::Model2d> SceneObject<M> for Circle {
     type Handle = CircleHandle;
-    fn insert_into(self, scene: &mut Scene) -> Self::Handle {
+    fn insert_into(
+        self,
+        scene: &mut motiongfx_authoring::Scene<M>,
+    ) -> Self::Handle {
         self.insert(scene, true)
     }
 }
 impl Circle {
-    pub(crate) fn insert(
+    pub(crate) fn insert<M: crate::Model2d>(
         self,
-        scene: &mut Scene,
+        scene: &mut motiongfx_authoring::Scene<M>,
         draw: bool,
     ) -> CircleHandle {
-        let id = CircleId(scene.graphics.circles.len());
-        scene.graphics.circles.push(self);
+        let id =
+            CircleId(scene.model_mut().graphics_mut().circles.len());
+        scene.model_mut().graphics_mut().circles.push(self);
         if draw {
-            scene.graphics.order.push(DrawObject::Circle(id));
+            scene
+                .model_mut()
+                .graphics_mut()
+                .order
+                .push(DrawObject::Circle(id));
         }
         CircleHandle {
             id,
@@ -162,15 +139,17 @@ impl Circle {
     }
 }
 
-impl SubjectSource<CircleId, Circle> for Graphics {
+impl<M: crate::Model2d> SubjectSource<CircleId, Circle>
+    for motiongfx_authoring::World<M>
+{
     fn get_source(&self, id: CircleId) -> Option<&Circle> {
-        self.circles.get(id.0)
+        self.model().graphics().circles.get(id.0)
     }
     fn apply_source<R>(
         &mut self,
         id: CircleId,
         f: impl FnOnce(&mut Circle) -> R,
     ) -> Option<R> {
-        self.circles.get_mut(id.0).map(f)
+        self.model_mut().graphics_mut().circles.get_mut(id.0).map(f)
     }
 }

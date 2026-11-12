@@ -1,4 +1,4 @@
-//! Setup-only property descriptions that lower to ordinary MotionGfx actions.
+//! Renderer-independent scene authoring over ordinary MotionGfx timelines.
 //! Timeline descriptions lower to core actions. Optional native bindings
 //! evaluate explicit property relationships after timeline sampling.
 
@@ -8,7 +8,18 @@ use std::ops::{Add, Mul};
 use std::time::Duration;
 
 pub mod bindings;
+mod input;
 mod macros;
+mod object;
+mod scene;
+pub use input::{Input, PreparedInput};
+pub use object::{ObjectDefinition, Register};
+mod values;
+pub use scene::{
+    Animation, NativeUpdate, Scene, SceneObject, SceneSequence,
+    UpdateTargets, World,
+};
+pub use values::SampleTime;
 mod signals;
 mod source;
 pub use bindings::{BindingError, BindingPlan, BindingSource};
@@ -360,3 +371,6 @@ impl<I, S, T> Property<I, S, T> {
         Computed::new(self, calculate)
     }
 }
+
+mod updates;
+pub use updates::{UpdateHandle, UpdateStorage};
