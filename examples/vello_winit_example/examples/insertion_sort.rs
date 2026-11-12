@@ -7,7 +7,7 @@ use vello_motiongfx::{
 };
 use vello_winit_motiongfx::Window;
 
-const VALUES: &[u32] = &[5, 2, 8, 1, 6, 3];
+const VALUES: &[u32] = &[8, 4, 1, 2, 5, 6, 3, 7];
 
 fn slot(index: usize, count: usize) -> f64 {
     let middle = (count as f64 - 1.0) / 2.0;
