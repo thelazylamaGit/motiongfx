@@ -1,16 +1,17 @@
-use core::f64;
+//! A Lissajous table built with ordinary shapes, reactive inputs and one timeline.
+//! The grid introduction plays once; diagonal draw/hold/erase waves then loop.
+#![allow(clippy::needless_return)] // Explicit returns clarify multi-statement math.
+
+use std::f64::consts::{FRAC_PI_4, TAU};
 use std::time::Duration;
 
-use kurbo::{Affine, BezPath, Vec2};
-use motiongfx::prelude::*;
-use peniko::{Color, Fill};
-use peniko_motiongfx::prelude::*;
-use vello::peniko::color::palette::css;
-use vello_winit_example::{
-    PlaybackConfig, PlaybackMode, PlaybackState, VelloDemo,
-    VelloWinitApp,
+use motiongfx::prelude::{TrackOrdering, cs, ease, ms};
+use vello_motiongfx::{
+    Animation, Circle, Color, Line, Path, Point, Scene, Signal,
+    colors::{TRANSPARENT, WHITE},
+    computed, signal,
 };
-use winit::event_loop::EventLoop;
+use vello_winit_motiongfx::{PlaybackMode, Window};
 
 const N_X: usize = 12;
 const N_Y: usize = 6;
@@ -18,414 +19,185 @@ const CELL_W: f64 = 110.0;
 const CELL_H: f64 = 113.0;
 const CURVE_R: f64 = 42.0;
 const REF_R: f64 = 36.0;
-const DELTA: f64 = f64::consts::PI / 4.0;
 const DRAW_DUR: Duration = cs(150);
 const HOLD_DUR: Duration = cs(80);
-const STAGGER: Duration = cs(8); // per diagonal
+const STAGGER: Duration = cs(8); // Delay between successive diagonals.
+const CANVAS: (f64, f64) =
+    ((N_X + 1) as f64 * CELL_W, (N_Y + 1) as f64 * CELL_H);
+const GRID: Color = Color::from_rgb8(105, 105, 140);
+const CROSSHAIR: Color = Color::from_rgb8(90, 90, 110);
+const REFERENCE: Color = Color::from_rgb8(220, 220, 220);
 
-fn curve_color(c: usize) -> Color {
-    let t = (c - 1) as f64 / (N_X - 1) as f64;
-    Color::from_rgba8(220, (t * 130.0) as u8, 0, 255)
-}
-
-fn lissajous_pt(
-    a: f64,
-    b: f64,
-    t: f64,
-    cx: f64,
-    cy: f64,
-) -> (f64, f64) {
-    (
-        cx + CURVE_R * (a * t + DELTA).sin(),
-        cy + CURVE_R * (b * t).sin(),
+// Row/column zero contain the reference circles. The canvas is centred, y up.
+fn cell(column: usize, row: usize) -> Point {
+    Point::new(
+        (column as f64 + 0.5) * CELL_W - CANVAS.0 / 2.0,
+        CANVAS.1 / 2.0 - (row as f64 + 0.5) * CELL_H,
     )
 }
 
-#[derive(Clone)]
-struct GridLine {
-    line: kurbo::Line,
-    width: f64,
-    color: Color,
+fn curve_id(column: usize, row: usize) -> usize {
+    (row - 1) * N_X + column - 1
 }
 
-#[derive(Clone)]
-struct CurveState {
-    tracer: PathTracer,
+fn curve_point(column: usize, row: usize, angle: f64) -> Point {
+    cell(column, row)
+        + (
+            CURVE_R * (column as f64 * angle + FRAC_PI_4).sin(),
+            -CURVE_R * (row as f64 * angle).sin(),
+        )
 }
 
-struct TableWorld {
-    grid_lines: Vec<GridLine>,
-    curves: Vec<CurveState>,
+fn curve_color(column: usize) -> Color {
+    let fraction = (column - 1) as f64 / (N_X - 1).max(1) as f64;
+    Color::from_rgb8(220, (fraction * 130.0) as u8, 0)
 }
 
-impl SubjectSource<usize, GridLine> for TableWorld {
-    fn get_source(&self, id: usize) -> Option<&GridLine> {
-        self.grid_lines.get(id)
+// A reusable component: fixed ring/crosshairs plus a dot driven by one input.
+fn reference_circle(
+    scene: &mut Scene,
+    center: Point,
+    progress: &Signal<f64>,
+    rate: f64,
+    phase: f64,
+) {
+    scene.add(
+        Circle::new(REF_R)
+            .position(center)
+            .fill(TRANSPARENT)
+            .stroke(REFERENCE, 1.0),
+    );
+    scene.add(
+        Line::new(center + (0.0, -REF_R), center + (0.0, REF_R))
+            .stroke(CROSSHAIR, 0.5),
+    );
+    scene.add(
+        Line::new(center + (-REF_R, 0.0), center + (REF_R, 0.0))
+            .stroke(CROSSHAIR, 0.5),
+    );
+    scene.add(Circle::new(3.5).fill(WHITE).position(progress.map(
+        move |progress| {
+            let angle = rate * progress * TAU + phase;
+            return center
+                + (REF_R * angle.sin(), REF_R * angle.cos());
+        },
+    )));
+}
+
+fn build_animation() -> (Animation, Duration) {
+    let mut scene = Scene::new();
+    // Each curve has a visible range: reveal its end, hold, then advance its start.
+    // Separate sources let reference dots exist before their curves in draw order.
+    let ranges: Vec<_> =
+        (0..N_X * N_Y).map(|_| (signal(0.0), signal(0.0))).collect();
+    let top_left = Point::new(-CANVAS.0 / 2.0, CANVAS.1 / 2.0);
+    let verticals: Vec<_> = (0..=N_X + 1)
+        .map(|column| {
+            let start = top_left + (column as f64 * CELL_W, 0.0);
+            scene.add(
+                Line::new(start, start + (0.0, -CANVAS.1))
+                    .stroke(GRID, 0.5)
+                    .reveal(0.0),
+            )
+        })
+        .collect();
+    let horizontals: Vec<_> = (0..=N_Y + 1)
+        .map(|row| {
+            let start = top_left + (0.0, -(row as f64) * CELL_H);
+            scene.add(
+                Line::new(start, start + (CANVAS.0, 0.0))
+                    .stroke(GRID, 0.5)
+                    .reveal(0.0),
+            )
+        })
+        .collect();
+
+    for column in 1..=N_X {
+        reference_circle(
+            &mut scene,
+            cell(column, 0),
+            &ranges[curve_id(column, 1)].1,
+            column as f64,
+            FRAC_PI_4,
+        );
     }
-
-    fn apply_source<R>(
-        &mut self,
-        id: usize,
-        f: impl FnOnce(&mut GridLine) -> R,
-    ) -> Option<R> {
-        self.grid_lines.get_mut(id).map(f)
+    for row in 1..=N_Y {
+        reference_circle(
+            &mut scene,
+            cell(0, row),
+            &ranges[curve_id(1, row)].1,
+            row as f64,
+            0.0,
+        );
     }
-}
-
-impl SubjectSource<usize, CurveState> for TableWorld {
-    fn get_source(&self, id: usize) -> Option<&CurveState> {
-        self.curves.get(id)
-    }
-
-    fn apply_source<R>(
-        &mut self,
-        id: usize,
-        f: impl FnOnce(&mut CurveState) -> R,
-    ) -> Option<R> {
-        self.curves.get_mut(id).map(f)
-    }
-}
-
-fn curve_id(c: usize, r: usize) -> usize {
-    (r - 1) * N_X + (c - 1)
-}
-
-struct LissajousTableDemo {
-    registry: Registry,
-    world: TableWorld,
-    timeline: Timeline<TableWorld>,
-    grid_duration: Duration,
-    curve_duration: Duration,
-    window_size: kurbo::Size,
-}
-
-impl LissajousTableDemo {
-    pub fn new() -> Self {
-        let table_w = (N_X + 1) as f64 * CELL_W;
-        let table_h = (N_Y + 1) as f64 * CELL_H;
-
-        let mut registry = Registry::new();
-        let mut world = TableWorld {
-            grid_lines: Vec::new(),
-            curves: (0..N_X * N_Y)
-                .map(|id| {
-                    let c = id % N_X + 1;
-                    let r = id / N_X + 1;
-                    let a = c as f64;
-                    let b = r as f64;
-                    let cx = c as f64 * CELL_W + CELL_W / 2.0;
-                    let cy = r as f64 * CELL_H + CELL_H / 2.0;
-                    let samples = a.max(b) as usize * 80 + 2;
-                    let mut path = BezPath::new();
-                    let (px, py) = lissajous_pt(a, b, 0.0, cx, cy);
-                    path.move_to((px, py));
-                    for i in 1..=samples {
-                        let t = i as f64 / samples as f64
-                            * f64::consts::TAU;
-                        let (px, py) = lissajous_pt(a, b, t, cx, cy);
-                        path.line_to((px, py));
-                    }
-                    CurveState {
-                        tracer: PathTracer {
-                            path,
-                            t_start: 0.0,
-                            t_end: 0.0,
-                        },
-                    }
-                })
-                .collect(),
-        };
-
-        // Grid lines: p1 starts at p0 (zero length) so they draw in.
-        let grid_col = Color::from_rgba8(105, 105, 140, 255);
-        let mut vert_entries: Vec<(usize, kurbo::Point)> = Vec::new();
-        let mut horiz_entries: Vec<(usize, kurbo::Point)> =
-            Vec::new();
-        for c in 0..=(N_X + 1) {
-            let x = c as f64 * CELL_W;
-            let p0 = kurbo::Point::new(x, 0.0);
-            let id = world.grid_lines.len();
-            world.grid_lines.push(GridLine {
-                line: kurbo::Line::new(p0, p0),
-                width: 0.5,
-                color: grid_col,
-            });
-            vert_entries.push((id, kurbo::Point::new(x, table_h)));
+    for row in 1..=N_Y {
+        for column in 1..=N_X {
+            let (start, end) = &ranges[curve_id(column, row)];
+            let samples = column.max(row) * 80 + 2;
+            // Hide tiny remnants at both ends, matching the original demo.
+            let opacity = computed!((start, end) =>
+                if end - start < 0.01 || 1.0 - start < 0.01 { 0.0 } else { 1.0 }
+            );
+            scene.add(
+                Path::new((0..=samples).map(|index| {
+                    let angle = index as f64 / samples as f64 * TAU;
+                    return curve_point(column, row, angle);
+                }))
+                .stroke(curve_color(column), 2.0)
+                .start(start)
+                .end(end)
+                .opacity(opacity),
+            );
         }
-        for r in 0..=(N_Y + 1) {
-            let y = r as f64 * CELL_H;
-            let p0 = kurbo::Point::new(0.0, y);
-            let id = world.grid_lines.len();
-            world.grid_lines.push(GridLine {
-                line: kurbo::Line::new(p0, p0),
-                width: 0.5,
-                color: grid_col,
-            });
-            horiz_entries.push((id, kurbo::Point::new(table_w, y)));
-        }
+    }
 
-        let mut b = registry.create_builder::<TableWorld>();
-
-        // Track 0: one column + one row draw in simultaneously per step.
-        let n_steps = vert_entries.len().max(horiz_entries.len());
-        let mut pair_tracks = Vec::with_capacity(n_steps);
-        for i in 0..n_steps {
-            let v = vert_entries.get(i).map(|&(id, p1)| {
-                b.act(id, path!(GridLine.line.p1), move |_| p1)
-                    .with_ease(ease::cubic::ease_in_out)
-                    .play(cs(60))
-            });
-            let h = horiz_entries.get(i).map(|&(id, p1)| {
-                b.act(id, path!(GridLine.line.p1), move |_| p1)
-                    .with_ease(ease::cubic::ease_in_out)
-                    .play(cs(60))
-            });
-            pair_tracks.push(match (v, h) {
-                (Some(v), Some(h)) => [v, h].ord_flow(ms(25)),
-                (Some(v), None) => v,
-                (None, Some(h)) => h,
-                (None, None) => unreachable!(),
-            });
-        }
-        let grid_track =
-            pair_tracks.into_iter().ord_flow(cs(5)).compile();
-
-        // Track 1: curves draw in and out, looped by the caller.
-        let max_diag = N_X + N_Y;
-        let curve_track = (2..=max_diag)
-            .map(|d| {
-                (1..=N_X)
-                    .filter_map(|c| {
-                        let r = d.checked_sub(c)?;
-                        if !(1..=N_Y).contains(&r) {
-                            return None;
-                        }
-                        let id = curve_id(c, r);
-                        let draw_in = b
-                            .act(
-                                id,
-                                path!(CurveState.tracer.t_end),
-                                |_| 1.0f32,
-                            )
-                            .with_ease(ease::cubic::ease_in_out)
-                            .play(DRAW_DUR);
-                        let draw_out = b
-                            .act(
-                                id,
-                                path!(CurveState.tracer.t_start),
-                                |_| 1.0f32,
-                            )
-                            .with_ease(ease::cubic::ease_in_out)
-                            .play(DRAW_DUR);
-                        Some(
-                            [draw_in, draw_out]
-                                .ord_flow(DRAW_DUR + HOLD_DUR),
-                        )
-                    })
-                    .ord_all()
+    let mut loop_start = Duration::ZERO;
+    let animation = scene.animate(|sequence| {
+        sequence.defaults(cs(60), ease::cubic::ease_in_out);
+        // Existing MotionGfx flow combinators express the nested grid stagger:
+        // rows follow columns by 25ms; successive pairs begin 50ms apart.
+        let grid = (0..verticals.len().max(horizontals.len()))
+            .map(|index| {
+                let column = verticals
+                    .get(index)
+                    .map(|line| sequence.action(line.reveal.to(1.0)));
+                let row = horizontals
+                    .get(index)
+                    .map(|line| sequence.action(line.reveal.to(1.0)));
+                column.into_iter().chain(row).ord_flow(ms(25))
             })
-            .ord_flow(STAGGER)
-            .compile();
-        let mut timeline =
-            b.compile(TrackList(nonempty![grid_track, curve_track]));
-        timeline.bake_actions(&registry, &world);
-        let grid_duration = timeline.tracks()[0].duration();
-        let curve_duration = timeline.tracks()[1].duration();
+            .ord_flow(cs(5));
+        loop_start = grid.duration();
+        sequence.append(grid);
 
-        Self {
-            registry,
-            world,
-            timeline,
-            grid_duration,
-            curve_duration,
-            window_size: kurbo::Size::new(
-                (N_X + 1) as f64 * CELL_W,
-                (N_Y + 1) as f64 * CELL_H,
-            ),
-        }
-    }
-}
-
-impl VelloDemo for LissajousTableDemo {
-    fn window_title(&self) -> &'static str {
-        "Lissajous Table"
-    }
-
-    fn initial_logical_size(&self) -> (f64, f64) {
-        ((N_X + 1) as f64 * CELL_W, (N_Y + 1) as f64 * CELL_H)
-    }
-
-    fn size_changed(&mut self, size: kurbo::Size) {
-        self.window_size = size;
-    }
-
-    fn playback_config(&self) -> PlaybackConfig {
-        PlaybackConfig::new(self.grid_duration + self.curve_duration)
-            .with_mode(PlaybackMode::LoopFrom(self.grid_duration))
-    }
-
-    fn rebuild_scene(
-        &mut self,
-        scene: &mut vello::Scene,
-        scale_factor: f64,
-        playback: PlaybackState,
-    ) {
-        // The host supplies one seekable clock for both chapters.
-        // It plays the grid introduction once, then loops the curves.
-        if playback.time < self.grid_duration {
-            self.timeline.set_target_track(0);
-            self.timeline.set_target_time(playback.time);
-        } else {
-            self.timeline.set_target_track(1);
-            self.timeline
-                .set_target_time(playback.time - self.grid_duration);
-        }
-        self.timeline.queue_actions();
-        self.timeline
-            .sample_queued_actions(&self.registry, &mut self.world);
-
-        // Centre the table in the window.
-        let table_w = (N_X + 1) as f64 * CELL_W;
-        let table_h = (N_Y + 1) as f64 * CELL_H;
-        let ox = (self.window_size.width - table_w).max(0.0) / 2.0;
-        let oy = (self.window_size.height - table_h).max(0.0) / 2.0;
-        let xf = Affine::scale(scale_factor)
-            .pre_translate(Vec2::new(ox, oy));
-
-        // Grid lines
-        for line in &self.world.grid_lines {
-            scene.stroke(
-                &kurbo::Stroke::new(line.width),
-                xf,
-                line.color,
-                None,
-                &line.line,
-            );
-        }
-
-        // Reference circles: dot tracks the curve tip of row 1 / col 1.
-        let xhair_col = Color::from_rgba8(90, 90, 110, 255);
-        let xhair_st = kurbo::Stroke::new(0.5);
-        let ref_st = kurbo::Stroke::new(1.0);
-
-        for c in 1..=N_X {
-            let a = c as f64;
-            let cx = c as f64 * CELL_W + CELL_W / 2.0;
-            let cy = CELL_H / 2.0;
-            scene.stroke(
-                &ref_st,
-                xf,
-                css::GAINSBORO,
-                None,
-                &kurbo::Circle::new((cx, cy), REF_R),
-            );
-            scene.stroke(
-                &xhair_st,
-                xf,
-                xhair_col,
-                None,
-                &kurbo::Line::new((cx, cy - REF_R), (cx, cy + REF_R)),
-            );
-            scene.stroke(
-                &xhair_st,
-                xf,
-                xhair_col,
-                None,
-                &kurbo::Line::new((cx - REF_R, cy), (cx + REF_R, cy)),
-            );
-            // x-component of curve tip: sin(a * t_end + DELTA)
-            let t_end = self.world.curves[curve_id(c, 1)].tracer.t_end
-                as f64
-                * f64::consts::TAU;
-            let angle = a * t_end + DELTA - f64::consts::FRAC_PI_2;
-            scene.fill(
-                Fill::NonZero,
-                xf,
-                css::WHITE,
-                None,
-                &kurbo::Circle::new(
-                    (
-                        cx + REF_R * angle.cos(),
-                        cy + REF_R * angle.sin(),
-                    ),
-                    3.5,
-                ),
-            );
-        }
-
-        for r in 1..=N_Y {
-            let b = r as f64;
-            let cx = CELL_W / 2.0;
-            let cy = r as f64 * CELL_H + CELL_H / 2.0;
-            scene.stroke(
-                &ref_st,
-                xf,
-                css::GAINSBORO,
-                None,
-                &kurbo::Circle::new((cx, cy), REF_R),
-            );
-            scene.stroke(
-                &xhair_st,
-                xf,
-                xhair_col,
-                None,
-                &kurbo::Line::new((cx, cy - REF_R), (cx, cy + REF_R)),
-            );
-            scene.stroke(
-                &xhair_st,
-                xf,
-                xhair_col,
-                None,
-                &kurbo::Line::new((cx - REF_R, cy), (cx + REF_R, cy)),
-            );
-            // y-component of curve tip: sin(b * t_end)
-            let t_end = self.world.curves[curve_id(1, r)].tracer.t_end
-                as f64
-                * f64::consts::TAU;
-            let angle = b * t_end - f64::consts::FRAC_PI_2;
-            scene.fill(
-                Fill::NonZero,
-                xf,
-                css::WHITE,
-                None,
-                &kurbo::Circle::new(
-                    (
-                        cx + REF_R * angle.cos(),
-                        cy + REF_R * angle.sin(),
-                    ),
-                    3.5,
-                ),
-            );
-        }
-
-        // Lissajous curves driven by timeline world state
-        for r in 1..=N_Y {
-            for c in 1..=N_X {
-                let id = curve_id(c, r);
-                let state = &self.world.curves[id];
-
-                const MIN_ARC: f32 = 0.01;
-                if state.tracer.t_end - state.tracer.t_start < MIN_ARC
-                    || 1.0 - state.tracer.t_start < MIN_ARC
-                {
-                    continue;
+        // Every curve's branch runs alongside the others. Equal column+row
+        // sums share a delay, so each diagonal starts together.
+        sequence.parallel(|sequence| {
+            for row in 1..=N_Y {
+                for column in 1..=N_X {
+                    let (start, end) = &ranges[curve_id(column, row)];
+                    sequence.chain(|sequence| {
+                        sequence.wait(
+                            STAGGER * (column + row - 2) as u32,
+                        );
+                        sequence.play(end.to(1.0).over(DRAW_DUR));
+                        sequence.wait(HOLD_DUR);
+                        sequence.play(start.to(1.0).over(DRAW_DUR));
+                    });
                 }
-
-                let visible = state.tracer.trace();
-                scene.stroke(
-                    &kurbo::Stroke::new(2.0),
-                    xf,
-                    curve_color(c),
-                    None,
-                    &visible,
-                );
             }
-        }
-    }
+        });
+    });
+    (animation, loop_start)
 }
 
-fn main() {
-    let event_loop = EventLoop::new().unwrap();
-    let mut app = VelloWinitApp::new(LissajousTableDemo::new());
-    event_loop.run_app(&mut app).unwrap();
+fn main() -> Result<(), winit::error::EventLoopError> {
+    let (animation, loop_start) = build_animation();
+    Window::new("MotionGfx | Lissajous table", CANVAS)
+        .playback_mode(PlaybackMode::LoopFrom(loop_start))
+        .run(animation)
 }
+
+#[cfg(test)]
+#[path = "support/lissajous_tests.rs"]
+mod tests;

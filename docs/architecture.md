@@ -230,6 +230,11 @@ Useful comparison cases:
 - `bezier_explainer`: standalone signals, shared computed points, exact dynamic
   quadratic geometry, reusable grid construction, and timed chapter changes.
 - `radius_area`: inline `.map` inputs and computed text/geometry from one signal.
+- `lissajous`: precomputed procedural paths, per-curve range signals, reactive
+  reference dots and nested diagonal timing on one sequence. The intro duration
+  is read from its track fragment to configure `LoopFrom`; no separate timeline
+  or custom renderer is used for either chapter. It uses standard canvas fitting
+  on resize. Headless seek/timing regressions are in the example support folder.
 - `camera_zoom`: camera transforms without changing the underlying objects.
 
 Native `Text` currently uses temporary vector lettering, not general font

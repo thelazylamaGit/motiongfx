@@ -26,6 +26,10 @@ subject types. Sequence defaults set inside a block remain in effect after it.
 intervals and waits for the last end, using the existing `ord_flow` operation.
 For custom/staggered ordering, lower descriptions with `Sequence::action`, order those fragments
 with MotionGfx's `ord_all` / `ord_flow`, then `Sequence::append` the result.
+`TrackFragment::duration()` reads a fragment's reserved span before it is
+appended, useful for a playback chapter boundary without repeating timing
+constants. Resolving conflicting actions during compilation can extend that
+span, so it is not a replacement for the final compiled track's duration.
 The first draft deliberately reuses those combinators. No procedural macro
 or new timeline implementation is involved.
 

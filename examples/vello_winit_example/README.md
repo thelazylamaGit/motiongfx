@@ -1,6 +1,6 @@
 # Vello / Winit examples
 
-`moving_square`, `insertion_sort`, `commit_graph`, `camera_zoom`, `sine_unit_circle`
+`moving_square`, `insertion_sort`, `commit_graph`, `camera_zoom`, `sine_unit_circle`, `lissajous`
 and `bezier_explainer` / `radius_area` use the plain native
 authoring API.
 The optional `animate!` macro remains available, but these examples do not
@@ -12,6 +12,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 
 | Example | Source | What it exercises |
 | --- | --- | --- |
+| `lissajous` | Lissajous table | Procedural path construction, reactive reference dots, nested timing, one-time grid intro and a looping curve chapter |
 | `procedural_wave_low_level` | Custom host integration | Direct Vello drawing from preview time; no MotionGfx timeline, with shared pause/seek controls |
 | `insertion_sort` | Canvas Commons sorting | Procedural creation, nested position targets, moving text labels, discrete pass captions |
 | `insertion_sort_low_level` | Previous annotated version | Same sorting choreography using raw MotionGfx and Vello calls |
@@ -61,9 +62,9 @@ The authoring crate supplies those duration/easing defaults, and the shared
 palette supplies `BLUE`/`ORANGE`; the example only declares overrides.
 The sine scene uses the same 0.25 turns/second for 8.5s, then holds for the
 source's final default one-second wait. It precomputes a `Path` and animates
-its `end`, rather than accumulating segments in a dt updater. `scene.bind`
-calculates the dot position from the sampled reveal. `Line` endpoints follow
-the dot and a tuple of reveal/y inputs, using native Rust functions. Bindings
+its `end` from a progress signal, rather than accumulating segments in a dt
+updater. `.map` calculates a shared orbit position, and `computed!` calculates
+the connector's curve endpoint. Object builders connect these inputs. Bindings
 are ordered/validated during construction and skip calculations for unchanged
 inputs. The same relationships reconstruct when seeking backwards. There are
 no manual registry, world, sampler, geometry cache, or window implementations
@@ -216,3 +217,20 @@ The existing, more elaborate Lissajous table is also available:
 ```sh
 cargo run -p vello_winit_example --example lissajous
 ```
+
+This example now uses `Scene`, `Line`, `Circle`, and precomputed `Path` objects.
+Each curve has start/end signals: reveal the end, hold, then advance the start
+to erase it. Reference dots derive their positions from the appropriate first
+row/column end signal. All curves on a diagonal start together, with 80ms
+between diagonals; each draws for 1.5s, holds for 0.8s, then erases for 1.5s.
+The original 1% cutoff hides tiny curve remnants at both ends.
+
+One timeline runs the staggered grid intro and then parallel curve branches.
+`TrackFragment::duration()` supplies the intro boundary to `LoopFrom`, keeping
+playback timing derived from the authored actions. At the default 12x6 size,
+the intro is 1.25s and the curve chapter is 5.08s. Drawing uses centred y-up
+coordinates and the standard host's canvas fitting on resize. There is no
+custom world, subject registration, timeline sampling, or Vello draw loop in
+the example. Its reusable ring/crosshair/dot component and procedural math
+remain visible in the animation file. Headless conversion regressions live
+separately in `examples/support/lissajous_tests.rs`.

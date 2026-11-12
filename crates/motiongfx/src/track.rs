@@ -157,6 +157,14 @@ pub struct TrackFragment {
 }
 
 impl TrackFragment {
+    /// Duration reserved by this fragment's actions and ordering combinators.
+    /// Useful for locating a chapter boundary before appending the fragment
+    /// to a larger sequence. Final compilation can extend the span when
+    /// resolving conflicting actions on the same field.
+    pub fn duration(&self) -> Duration {
+        self.duration
+    }
+
     pub fn new() -> Self {
         Self {
             sequences: HashMap::new(),
