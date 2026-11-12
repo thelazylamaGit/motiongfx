@@ -24,17 +24,23 @@ mod path_renderer;
 mod properties;
 mod text;
 mod text_renderer;
+mod updates;
+mod values;
 pub use camera::{Camera, CameraHandle, CameraId};
 pub use circle::{Circle, CircleHandle, CircleId};
 pub use line::{Line, LineHandle, LineId};
 pub use parent::Parent;
 pub use path::{BezPath, Path, PathHandle, PathId};
 use path_renderer::PathGeometry;
+pub use updates::UpdateTargets;
+pub use values::{SampleTime, ValueId};
 
 #[cfg(test)]
 mod binding_tests;
 #[cfg(test)]
 mod graphics_tests;
+#[cfg(test)]
+mod update_tests;
 pub use properties::Position;
 pub use text::{Text, TextAlign, TextHandle, TextId};
 use text_renderer::TextLayout;
@@ -126,6 +132,8 @@ pub struct RectangleHandle {
 
 #[derive(Default)]
 pub struct Graphics {
+    values: Vec<Box<dyn std::any::Any + Send + Sync>>,
+    sample_time: Duration,
     camera: Camera,
     rectangles: Vec<Rectangle>,
     circles: Vec<Circle>,
@@ -182,6 +190,7 @@ impl SubjectSource<TextId, Text> for Graphics {
 pub struct Scene {
     graphics: Graphics,
     bindings: BindingPlan<Graphics>,
+    updates: Vec<updates::NativeUpdate>,
 }
 
 impl Scene {
@@ -320,6 +329,7 @@ impl Scene {
             registry,
             timeline,
             bindings: self.bindings,
+            updates: self.updates,
         };
         animation.sample(Duration::ZERO);
         Ok(animation)
@@ -350,6 +360,7 @@ pub struct Animation {
     text_layouts: Vec<TextLayout>,
     path_geometry: Vec<PathGeometry>,
     bindings: BindingPlan<Graphics>,
+    updates: Vec<updates::NativeUpdate>,
 }
 
 impl Animation {
@@ -364,12 +375,16 @@ impl Animation {
 
     pub fn sample(&mut self, time: Duration) {
         self.timeline.set_target_time(time);
+        self.graphics.sample_time = self.timeline.target_time();
         self.timeline.queue_actions();
         self.timeline.sample_queued_actions(
             &self.registry,
             &mut self.graphics,
         );
         self.bindings.evaluate(&mut self.graphics);
+        for update in &mut self.updates {
+            update.run(&mut self.graphics, &self.bindings);
+        }
     }
 
     pub fn rectangle(&self, handle: RectangleHandle) -> &Rectangle {

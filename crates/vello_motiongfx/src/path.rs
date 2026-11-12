@@ -22,6 +22,39 @@ pub struct Path {
 }
 
 impl Path {
+    /// Exact quadratic geometry, rather than sampling a polyline.
+    pub fn quadratic(
+        start: impl Into<Point>,
+        control: impl Into<Point>,
+        end: impl Into<Point>,
+    ) -> Self {
+        let mut path = Self::from_bez_path(BezPath::new());
+        path.set_quadratic(start, control, end);
+        path
+    }
+
+    /// Change a quadratic only when its control points differ. Fixed geometry
+    /// is reused through pauses and repeated samples; style/reveal stay intact.
+    pub fn set_quadratic(
+        &mut self,
+        start: impl Into<Point>,
+        control: impl Into<Point>,
+        end: impl Into<Point>,
+    ) {
+        let (start, control, end) =
+            (start.into(), control.into(), end.into());
+        use vello::kurbo::PathEl;
+        if self.geometry.elements()
+            == [PathEl::MoveTo(start), PathEl::QuadTo(control, end)]
+        {
+            return;
+        }
+        let geometry = Arc::make_mut(&mut self.geometry);
+        geometry.truncate(0);
+        geometry.move_to(start);
+        geometry.quad_to(control, end);
+    }
+
     /// Create a polyline from canvas points (positive y points up).
     pub fn new<P: Into<Point>>(
         points: impl IntoIterator<Item = P>,

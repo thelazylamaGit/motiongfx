@@ -27,6 +27,7 @@ pub use playback::{
 pub struct Window {
     title: &'static str,
     canvas: Size,
+    playback_mode: PlaybackMode,
 }
 
 impl Window {
@@ -38,7 +39,16 @@ impl Window {
         let canvas = Size::new(width, height);
         assert!(canvas.width.is_finite() && canvas.width > 0.0);
         assert!(canvas.height.is_finite() && canvas.height > 0.0);
-        Self { title, canvas }
+        Self {
+            title,
+            canvas,
+            playback_mode: PlaybackMode::Once,
+        }
+    }
+
+    pub fn playback_mode(mut self, mode: PlaybackMode) -> Self {
+        self.playback_mode = mode;
+        self
     }
 
     pub fn run(
@@ -51,6 +61,7 @@ impl Window {
             title: self.title,
             canvas: self.canvas,
             viewport: self.canvas,
+            playback_mode: self.playback_mode,
         });
         event_loop.run_app(&mut app)
     }
@@ -61,6 +72,7 @@ struct AnimationDemo {
     title: &'static str,
     canvas: Size,
     viewport: Size,
+    playback_mode: PlaybackMode,
 }
 
 impl VelloDemo for AnimationDemo {
@@ -75,6 +87,7 @@ impl VelloDemo for AnimationDemo {
     }
     fn playback_config(&self) -> PlaybackConfig {
         PlaybackConfig::new(self.animation.duration())
+            .with_mode(self.playback_mode)
     }
     fn rebuild_scene(
         &mut self,

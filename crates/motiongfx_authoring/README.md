@@ -43,7 +43,7 @@ subject types can expose their own typed `Property` fields.
 `bind(destination, source, function)` stores an ordinary native Rust closure;
 `derive(source, function)` returns a typed, copyable `Derived<T>` handle for
 sharing one cached calculation. Sources can be properties, derived handles,
-or tuples of two to four sources. Multiple source values arrive as a tuple.
+or tuples of two to five sources. Multiple source values arrive as a tuple.
 Input/output types are checked by Rust; input values implement `PartialEq`
 so unchanged inputs skip calculation and writes. Sources and cached outputs
 are cloned by value; choose cheap/shared types for large data.

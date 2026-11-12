@@ -1,6 +1,7 @@
 # Vello / Winit examples
 
-`moving_square`, `insertion_sort`, `commit_graph`, `camera_zoom` and `sine_unit_circle` use the plain native
+`moving_square`, `insertion_sort`, `commit_graph`, `camera_zoom`, `sine_unit_circle`
+and `bezier_explainer` use the plain native
 authoring API.
 The optional `animate!` macro remains available, but these examples do not
 use it. The other comparison scenes retain the low-level MotionGfx API.
@@ -15,12 +16,14 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `moving_square` | Manim `MovingAround` | Typed property handles, sequential translation, fill interpolation, relative scale, and rotation |
 | `camera_zoom` | Manim-style `Zoom` | Parallel camera pan/zoom, a hold, and returning to the original view |
 | `sine_unit_circle` | Manim `SineCurveUnitCircle` | Native typed bindings, dependent line endpoints, and cached path reveal |
+| `bezier_explainer` | Quadratic Bézier lesson | Direct object callbacks, standalone parameters, grouped targets, exact quadratic geometry, and ping-pong playback |
 
 ```sh
 cargo run -p vello_winit_example --example commit_graph
 cargo run -p vello_winit_example --example moving_square
 cargo run -p vello_winit_example --example camera_zoom
 cargo run -p vello_winit_example --example sine_unit_circle
+cargo run -p vello_winit_example --example bezier_explainer
 ```
 
 The commit graph preserves the source's blue/mauve fallbacks and timing
@@ -153,28 +156,28 @@ Its wave is a pure function of time, so scrubbing reconstructs the picture
 directly. Stateful simulations need their own reset/replay or checkpoints
 to reconstruct earlier states; the clock cannot make them seekable alone.
 
-Read `examples/bezier_explainer.rs` in its numbered sections:
+Read `examples/bezier_explainer.rs` in order: math, object creation, direct
+updates, then the timeline. It creates lines/circles/text once and uses
+`scene.value` for grid reveal, guide opacity, probe position and bend.
+`scene.update(targets, sources, callback)` supplies mutable objects directly;
+tuples/arrays allow one function to update several targets. Callbacks run in
+registration order after sampling, with no dependency graph for these updates.
+The construction line deliberately reads A/B after their callback runs.
 
-1. **Math:** three linear interpolations generate a quadratic curve.
-2. **World:** a plain struct and `SubjectSource` connect data to MotionGfx.
-3. **Timeline:** typed paths, target functions, easing, parallel/serial
-   composition, relative actions, silent pauses, compilation, and baking.
-4. **Drawing:** sampled scalar parameters produce all the geometry.
-5. **App:** sample an absolute time, fit the canvas, and render with the
-   existing window/GPU harness.
+The lesson keeps its original 14.4-second timing and automatic reverse playback,
+using `Window::playback_mode(PlaybackMode::PingPong)`. An exact quadratic replaces
+the old 180-segment curve; changing bend updates its control point, while holds
+reuse geometry. Labels are anchored `Text` objects. Chapter/readout callbacks
+read `scene.time()`, and the shared controls display pause/reverse status rather
+than a duplicate scene status label. The scene footer gives input instructions.
 
-Start experimenting with the three positions in `Diagram::points`, the
-relative offsets in `build_timeline`, or the action durations. The gold
-line and pink marker are computed from the current control points every
-frame, so they remain consistent as you change the shape. Coordinates
-are screen coordinates: positive y points down.
-
-`src/labels.rs` is only a small font-free label renderer;
-you can skip it while learning MotionGfx. The numerical construction and
-backward seeking can be checked without opening a window:
+Start experimenting with `control_points`, the relative bend offsets, or action
+durations. Coordinates now use the shared authoring convention: centered, with
+positive y upward. Callback borrowing/order, exact curve math, cache reuse and
+backward seeking are covered by reusable backend tests:
 
 ```sh
-cargo test -p vello_winit_example --example bezier_explainer
+cargo test -p vello_motiongfx
 ```
 
 To include the shared clock/control tests and all demos:

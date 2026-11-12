@@ -169,7 +169,7 @@ scene.bind(connector.end, (curve.end, dot.position.y), move |(reveal, y)| {
 Closures that capture local constants/configuration use `move` to own those
 captures. They are stored, not executed during the author callback. A source
 supplies its current sampled value, not an implicit progress parameter.
-Properties, `Derived<T>` handles, and tuples of two to four sources are
+Properties, `Derived<T>` handles, and tuples of two to five sources are
 supported. All values are local object state, not transformed world positions.
 For a shared calculation use `let orbit = scene.derive(curve.end, function)`;
 then `scene.bind(dot.position, orbit, |position| position)`. Derived handles are
@@ -183,7 +183,8 @@ time zero. Bound fields can feed other bindings; execution order is prepared
 once regardless of registration order. Ordinary property handles still must
 belong to this scene; scene identity validation is not implemented.
 
-`Animation::sample` runs MotionGfx first, then bindings, then rendering reads
+`Animation::sample` runs MotionGfx first, then bindings, then direct updates;
+rendering reads
 the resulting state. Changed inputs execute native Rust closures; unchanged
 inputs skip calculation/writes. This adds source reads/comparisons and native
 closure dispatch; it is not zero-cost and not a scripting interpreter. Binding
@@ -191,3 +192,47 @@ functions must be deterministic functions of their declared inputs. Stateful
 dt updaters, automatic dependency tracking and runtime rebinding are not
 implemented. The sine example needs none of those: it reveals precomputed
 geometry and derives the dot/line endpoints from the same sampled reveal.
+
+## Direct object updates
+
+```rust
+let progress = scene.value(0.0);
+let dot = scene.add(Circle::new(6.4).fill(YELLOW));
+scene.update(dot, progress, |circle, progress| {
+    let angle = progress * std::f64::consts::TAU;
+    circle.position = Point::new(80.0 * angle.cos(), 80.0 * angle.sin());
+});
+```
+
+`scene.value(initial)` returns a typed, standalone animation property. It is
+not a drawable or a dependency node. Animate it with the existing `.to`,
+`.offset`, `.over`, and sequence methods. Values use scene-local storage, so
+their handles have the same ownership restriction as object handles.
+`scene.time()` is an explicit source of sampled `Duration`, clamped to the
+timeline range, not elapsed frame time.
+
+`scene.update(targets, sources, callback)` registers an ordinary `FnMut` Rust
+function. It receives mutable objects directly and source values by value.
+Targets may be one object handle, a tuple of two to four handles, or an array
+of one handle type. Group/array order matches the caller's order, even when it
+differs from storage order. Duplicate mutable targets and missing sources are
+rejected with a construction-time panic. Target borrowing uses safe disjoint
+slice access; no `unsafe`, runtime borrow cells, or per-sample target allocation.
+Sources may also be tuples, existing bound properties, or shared derived values.
+
+Callbacks run on **every sample**, including initialization, repeated times,
+holds and backward seeks. They run after all bindings, in registration order.
+There is no automatic dependency sorting, writer-conflict checking or input
+caching for direct updates. Use the sampled inputs to assign positions rather
+than incrementing previous positions if the animation must seek correctly.
+A later callback may read an earlier callback's updated property; a binding
+cannot depend on a later callback and see that write in the same sample. Avoid
+giving both a binding and a callback ownership of the same output. Side effects
+inside callbacks are not made deterministic by Rust's type system.
+
+The callback incurs a stored function call plus source reads/object selection
+and the math it contains; this is a thin native API, not a claim of zero cost.
+For expensive work, cache explicitly or use the separate derived-value API.
+The Bézier example caches readout formatting and edits quadratic geometry only
+when control points change. `Path::quadratic` and `set_quadratic` use exact
+quadratic segments, retaining the normal `start`/`end` reveal properties.

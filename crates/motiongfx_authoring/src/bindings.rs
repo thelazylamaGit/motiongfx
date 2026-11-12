@@ -235,6 +235,7 @@ macro_rules! tuple_source {
 tuple_source!(A:0, B:1);
 tuple_source!(A:0, B:1, C:2);
 tuple_source!(A:0, B:1, C:2, D:3);
+tuple_source!(A:0, B:1, C:2, D:3, E:4);
 
 type Evaluate<W> =
     Box<dyn FnMut(&mut W, &mut DerivedValues, bool) + Send + Sync>;
@@ -272,6 +273,34 @@ impl<W> Default for BindingPlan<W> {
 }
 
 impl<W: 'static> BindingPlan<W> {
+    /// Read a typed source after evaluation, including a cached derived value.
+    pub fn read_source<S: BindingSource<W>>(
+        &self,
+        world: &W,
+        source: &S,
+    ) -> Option<S::Value> {
+        source.read(world, &self.values)
+    }
+
+    /// Validate a source used outside the dependency graph, such as an update.
+    pub fn validate_source<S: BindingSource<W>>(
+        &self,
+        world: &W,
+        source: &S,
+    ) -> Result<(), BindingError> {
+        source.validate(world)?;
+        for BindingDependency(dependency) in source.dependencies() {
+            if let Dependency::Derived { plan, index } = dependency
+                && (plan != self.id
+                    || index >= self.nodes.len()
+                    || self.nodes[index].destination.is_some())
+            {
+                return Err(BindingError::ForeignDerived);
+            }
+        }
+        Ok(())
+    }
+
     pub fn bind<I, S, T, Source, F>(
         &mut self,
         destination: impl Into<Property<I, S, T>>,
