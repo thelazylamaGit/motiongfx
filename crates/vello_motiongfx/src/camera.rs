@@ -189,6 +189,7 @@ mod tests {
                     * Affine::translate((200.0, 150.0))
                     * Affine::scale(1.5)
                     * view,
+                1.0,
             );
             assert_eq!(
                 actual.encoding().transforms,

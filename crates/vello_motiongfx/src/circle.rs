@@ -54,18 +54,12 @@ impl Circle {
     pub(crate) fn render(
         &self,
         scene: &mut vello::Scene,
-        parent: Affine,
+        parent_transform: Affine,
+        inherited_opacity: f32,
     ) {
-        self.render_with_opacity(scene, parent, 1.0);
-    }
-    pub(crate) fn render_with_opacity(
-        &self,
-        scene: &mut vello::Scene,
-        parent: Affine,
-        inherited: f32,
-    ) {
-        let opacity = self.opacity.clamp(0.0, 1.0) as f32 * inherited;
-        let transform = parent * self.transform();
+        let opacity =
+            self.opacity.clamp(0.0, 1.0) as f32 * inherited_opacity;
+        let transform = parent_transform * self.transform();
         if opacity == 0.0
             || self.radius <= 0.0
             || transform.determinant() == 0.0

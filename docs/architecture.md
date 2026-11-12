@@ -144,6 +144,13 @@ shaft trimming, and multiplies their opacity by its own. Typed `LineTipHandle`
 exposes shape-specific properties (`radius` versus `angle`/`size`) without
 runtime variant checks in authoring code. Standalone and attached shapes use
 the same definitions/renderers. No ECS or general hierarchy is introduced.
+Circle, Triangle and Chevron each expose one internal `render` entry point
+with explicit parent transform and inherited opacity. Standalone calls pass
+opacity `1.0`; endpoint attachments pass the line opacity. Each renderer
+multiplies its own opacity exactly once. Triangle also receives its cached
+geometry; the shared wedge painting helper avoids duplicating triangle/chevron
+fill/stroke logic. No default-opacity wrappers or general render-context
+framework are needed for these arguments.
 See the [tip API](../crates/vello_motiongfx/README.md#inline-endpoint-shapes)
 for geometry, short-line fitting and current attachment limitations.
 

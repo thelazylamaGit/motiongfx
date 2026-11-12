@@ -107,19 +107,25 @@ impl EndpointTip {
         graphics: &Graphics,
         scene: &mut vello::Scene,
         transform: Affine,
-        opacity: f32,
+        inherited_opacity: f32,
     ) {
         match self {
-            Self::Circle(id) => graphics.circles[id.0]
-                .render_with_opacity(scene, transform, opacity),
+            Self::Circle(id) => graphics.circles[id.0].render(
+                scene,
+                transform,
+                inherited_opacity,
+            ),
             Self::Triangle(id) => graphics.triangles[id.0].render(
                 scene,
                 transform,
-                opacity,
+                inherited_opacity,
                 graphics.triangle_geometry[id.0].geometry,
             ),
-            Self::Chevron(id) => graphics.chevrons[id.0]
-                .render(scene, transform, opacity),
+            Self::Chevron(id) => graphics.chevrons[id.0].render(
+                scene,
+                transform,
+                inherited_opacity,
+            ),
         }
     }
 }

@@ -52,9 +52,9 @@ macro_rules! wedge {
                 Affine::translate((self.position.x, -self.position.y))
                     * Affine::rotate(-self.rotation) * Affine::scale(self.scale)
             }
-            fn render_geometry(&self, scene: &mut vello::Scene, parent: Affine, inherited: f32, geometry: Geometry) {
-                let opacity = self.opacity.clamp(0.0, 1.0) as f32 * inherited;
-                let transform = parent * self.transform();
+            fn render_geometry(&self, scene: &mut vello::Scene, parent_transform: Affine, inherited_opacity: f32, geometry: Geometry) {
+                let opacity = self.opacity.clamp(0.0, 1.0) as f32 * inherited_opacity;
+                let transform = parent_transform * self.transform();
                 if self.size <= 0.0 || opacity <= 0.0 || transform.determinant() == 0.0 { return; }
                 let geometry = geometry.canvas();
                 let outline = geometry.elements();
@@ -136,11 +136,16 @@ impl Triangle {
     pub(crate) fn render(
         &self,
         scene: &mut vello::Scene,
-        parent: Affine,
-        inherited: f32,
+        parent_transform: Affine,
+        inherited_opacity: f32,
         geometry: Geometry,
     ) {
-        self.render_geometry(scene, parent, inherited, geometry);
+        self.render_geometry(
+            scene,
+            parent_transform,
+            inherited_opacity,
+            geometry,
+        );
     }
 }
 impl Chevron {
@@ -157,13 +162,13 @@ impl Chevron {
     pub(crate) fn render(
         &self,
         scene: &mut vello::Scene,
-        parent: Affine,
-        inherited: f32,
+        parent_transform: Affine,
+        inherited_opacity: f32,
     ) {
         self.render_geometry(
             scene,
-            parent,
-            inherited,
+            parent_transform,
+            inherited_opacity,
             self.geometry(),
         );
     }

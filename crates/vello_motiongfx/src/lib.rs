@@ -538,7 +538,7 @@ impl Animation {
                     let circle = &self.graphics.circles[id.0];
                     let parent =
                         self.graphics.parent_transform(circle.parent);
-                    circle.render(scene, screen * parent);
+                    circle.render(scene, screen * parent, 1.0);
                 }
                 DrawObject::Path(id) => self.path_geometry[id.0]
                     .render(
