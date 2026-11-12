@@ -1,6 +1,6 @@
 //! Headless conversion regressions kept outside the animation description.
 use super::*;
-use motiongfx::prelude::TrackFragment;
+use motiongfx::prelude::{TrackFragment, TrackOrdering};
 use vello_motiongfx::Size;
 
 // Original two-track ordering, using silent fragments to measure its schedule.

@@ -231,8 +231,10 @@ Useful comparison cases:
   quadratic geometry, reusable grid construction, and timed chapter changes.
 - `radius_area`: inline `.map` inputs and computed text/geometry from one signal.
 - `lissajous`: precomputed procedural paths, per-curve range signals, reactive
-  reference dots and nested diagonal timing on one sequence. The intro duration
-  is read from its track fragment to configure `LoopFrom`; no separate timeline
+  reference dots and nested diagonal timing on one sequence. Scoped
+  `sequence.staggered` groups delegate to core `ord_flow`, alongside `parallel`
+  (`ord_all`) and `chain` (`ord_chain`), without manual delay calculations.
+  The intro group returns its reserved duration to configure `LoopFrom`; no separate timeline
   or custom renderer is used for either chapter. It uses standard canvas fitting
   on resize. Headless seek/timing regressions are in the example support folder.
 - `camera_zoom`: camera transforms without changing the underlying objects.

@@ -246,6 +246,18 @@ impl<'a, W: 'static, C> Sequence<'a, W, C> {
         self.append(fragments.ord_flow(interval));
     }
 
+    /// Start successive children at fixed intervals between their starts.
+    /// A child can be a change or a nested chain/parallel/staggered block.
+    /// Lowers directly to core `ord_flow`; returns the group's reserved
+    /// duration (not its absolute end time). Empty blocks return zero.
+    pub fn staggered(
+        &mut self,
+        interval: Duration,
+        author: impl FnOnce(&mut Self),
+    ) -> Duration {
+        self.group(author, |children| children.ord_flow(interval))
+    }
+
     /// Accepts existing `.ord_all()` / `.ord_flow()` fragments as well.
     pub fn append(&mut self, fragment: TrackFragment) {
         self.fragments.push(fragment);
@@ -258,20 +270,29 @@ impl<'a, W: 'static, C> Sequence<'a, W, C> {
     /// Start all actions authored inside this block at the same sequence time.
     /// Unlike `play_all`, a block can contain different subject/property types.
     pub fn parallel(&mut self, author: impl FnOnce(&mut Self)) {
-        let start = self.fragments.len();
-        author(self);
-        let children: Vec<_> =
-            self.fragments.drain(start..).collect();
-        self.append(children.ord_all());
+        self.group(author, |children| children.ord_all());
     }
 
     /// Collect a sequential branch, useful inside a parallel block.
     pub fn chain(&mut self, author: impl FnOnce(&mut Self)) {
+        self.group(author, |children| children.ord_chain());
+    }
+
+    // All scoped helpers collect the same typed fragments; core ordering
+    // remains responsible for scheduling, including overlapping children.
+    fn group(
+        &mut self,
+        author: impl FnOnce(&mut Self),
+        order: impl FnOnce(Vec<TrackFragment>) -> TrackFragment,
+    ) -> Duration {
         let start = self.fragments.len();
         author(self);
         let children: Vec<_> =
             self.fragments.drain(start..).collect();
-        self.append(children.ord_chain());
+        let fragment = order(children);
+        let duration = fragment.duration();
+        self.append(fragment);
+        duration
     }
 
     /// Set a property at the current sequence time without consuming time.

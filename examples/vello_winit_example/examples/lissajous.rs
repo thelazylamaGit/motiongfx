@@ -5,7 +5,7 @@
 use std::f64::consts::{FRAC_PI_4, TAU};
 use std::time::Duration;
 
-use motiongfx::prelude::{TrackOrdering, cs, ease, ms};
+use motiongfx::prelude::{cs, ease, ms};
 use vello_motiongfx::{
     Animation, Circle, Color, Line, Path, Point, Scene, Signal,
     colors::{TRANSPARENT, WHITE},
@@ -154,37 +154,42 @@ fn build_animation() -> (Animation, Duration) {
     let mut loop_start = Duration::ZERO;
     let animation = scene.animate(|sequence| {
         sequence.defaults(cs(60), ease::cubic::ease_in_out);
-        // Existing MotionGfx flow combinators express the nested grid stagger:
-        // rows follow columns by 25ms; successive pairs begin 50ms apart.
-        let grid = (0..verticals.len().max(horizontals.len()))
-            .map(|index| {
-                let column = verticals
-                    .get(index)
-                    .map(|line| sequence.action(line.reveal.to(1.0)));
-                let row = horizontals
-                    .get(index)
-                    .map(|line| sequence.action(line.reveal.to(1.0)));
-                column.into_iter().chain(row).ord_flow(ms(25))
-            })
-            .ord_flow(cs(5));
-        loop_start = grid.duration();
-        sequence.append(grid);
+        // Rows follow columns by 25ms; successive pairs start 50ms apart.
+        loop_start = sequence.staggered(ms(50), |sequence| {
+            for index in 0..verticals.len().max(horizontals.len()) {
+                sequence.staggered(ms(25), |sequence| {
+                    if let Some(column) = verticals.get(index) {
+                        sequence.play(column.reveal.to(1.0));
+                    }
+                    if let Some(row) = horizontals.get(index) {
+                        sequence.play(row.reveal.to(1.0));
+                    }
+                });
+            }
+        });
 
-        // Every curve's branch runs alongside the others. Equal column+row
-        // sums share a delay, so each diagonal starts together.
-        sequence.parallel(|sequence| {
-            for row in 1..=N_Y {
-                for column in 1..=N_X {
-                    let (start, end) = &ranges[curve_id(column, row)];
-                    sequence.chain(|sequence| {
-                        sequence.wait(
-                            STAGGER * (column + row - 2) as u32,
-                        );
-                        sequence.play(end.to(1.0).over(DRAW_DUR));
-                        sequence.wait(HOLD_DUR);
-                        sequence.play(start.to(1.0).over(DRAW_DUR));
-                    });
-                }
+        // Diagonals stagger; curves within a diagonal run together.
+        sequence.staggered(STAGGER, |sequence| {
+            for diagonal in 2..=N_X + N_Y {
+                sequence.parallel(|sequence| {
+                    for column in 1..=N_X {
+                        let Some(row) = diagonal.checked_sub(column)
+                        else {
+                            continue;
+                        };
+                        if !(1..=N_Y).contains(&row) {
+                            continue;
+                        }
+                        let (start, end) =
+                            &ranges[curve_id(column, row)];
+                        sequence.chain(|sequence| {
+                            sequence.play(end.to(1.0).over(DRAW_DUR));
+                            sequence.wait(HOLD_DUR);
+                            sequence
+                                .play(start.to(1.0).over(DRAW_DUR));
+                        });
+                    }
+                });
             }
         });
     });

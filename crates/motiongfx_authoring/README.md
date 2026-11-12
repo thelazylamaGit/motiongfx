@@ -23,8 +23,15 @@ Its elements must have the same change type, such as many rectangle x moves.
 subject types. Sequence defaults set inside a block remain in effect after it.
 `Sequence::chain` builds one sequential branch inside a parallel block.
 `Sequence::stagger(interval, changes)` starts successive changes at fixed
-intervals and waits for the last end, using the existing `ord_flow` operation.
-For custom/staggered ordering, lower descriptions with `Sequence::action`, order those fragments
+intervals and waits for the latest end, using the existing `ord_flow` operation.
+`Sequence::staggered(interval, |sequence| { ... })` is the scoped form:
+each authored action or nested group is one child, with fixed spacing between
+child starts. Use nested `parallel` blocks to start batches together and
+`chain` blocks to stagger whole sequential branches. It returns the group's
+reserved duration, excluding preceding actions; an empty block returns zero.
+Like `parallel` and `chain`, it collects fragments during construction and
+delegates scheduling to core ordering, adding no playback evaluator.
+For custom ordering, lower descriptions with `Sequence::action`, order those fragments
 with MotionGfx's `ord_all` / `ord_flow`, then `Sequence::append` the result.
 `TrackFragment::duration()` reads a fragment's reserved span before it is
 appended, useful for a playback chapter boundary without repeating timing

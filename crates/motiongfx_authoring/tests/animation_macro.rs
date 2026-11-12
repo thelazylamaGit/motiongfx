@@ -167,6 +167,7 @@ fn empty_groups_and_collections_add_no_time() {
     let mut sequence = Sequence::<World>::new(&mut registry);
     let empty: [Property<usize, Item, f64>; 0] = [];
     animate!(&mut sequence, {});
+    assert_eq!(sequence.staggered(ms(50), |_| {}), Duration::ZERO);
     animate!(&mut sequence, {
         parallel {};
         chain {}
@@ -177,4 +178,84 @@ fn empty_groups_and_collections_add_no_time() {
     let mut timeline = sequence.compile();
     assert_eq!(timeline.tracks()[0].duration(), ms(10));
     timeline.bake_actions(&registry, &world);
+}
+
+fn nested_stagger(
+    scoped: bool,
+) -> (Registry, Timeline<World>, World) {
+    let world = World(vec![Item::default(); 3]);
+    let mut registry = Registry::new();
+    let mut sequence = Sequence::<World>::new(&mut registry);
+    sequence.defaults(ms(80), ease::linear);
+    let y = Property::new(0usize, path!(Item.y));
+    let caption = Property::discrete(0usize, path!(Item.caption));
+    sequence.wait(ms(50));
+    if scoped {
+        let mut calls = 0;
+        let duration = sequence.staggered(ms(100), |sequence| {
+            calls += 1;
+            sequence.chain(|sequence| {
+                sequence.play(x(0).to(10.0).over(ms(300)));
+                sequence.wait(ms(50));
+            });
+            sequence.parallel(|sequence| {
+                sequence.play(x(1).to(20.0).over(ms(50)));
+                sequence.play(caption.set("ready"));
+            });
+            sequence.staggered(ms(25), |sequence| {
+                sequence.play(x(2).to(30.0));
+                sequence.play(y.to(40.0).over(ms(20)));
+            });
+        });
+        assert_eq!(calls, 1);
+        // The first branch outlasts the last; the existing 50ms prefix is
+        // excluded from this group's returned duration.
+        assert_eq!(duration, ms(350));
+    } else {
+        let first = [
+            sequence.action(x(0).to(10.0).over(ms(300))),
+            TrackFragment::silent(ms(50)),
+        ]
+        .ord_chain();
+        let second = [
+            sequence.action(x(1).to(20.0).over(ms(50))),
+            sequence.action(caption.set("ready")),
+        ]
+        .ord_all();
+        let third = [
+            sequence.action(x(2).to(30.0)),
+            sequence.action(y.to(40.0).over(ms(20))),
+        ]
+        .ord_flow(ms(25));
+        sequence.append([first, second, third].ord_flow(ms(100)));
+    }
+    sequence.play(x(2).offset(5.0).over(ms(100)));
+    let mut timeline = sequence.compile();
+    assert_eq!(timeline.tracks()[0].duration(), ms(500));
+    timeline.bake_actions(&registry, &world);
+    (registry, timeline, world)
+}
+
+#[test]
+fn scoped_stagger_matches_core_flow_for_mixed_nested_groups_and_backward_seeks()
+ {
+    let (registry, mut timeline, mut world) = nested_stagger(true);
+    let (
+        reference_registry,
+        mut reference_timeline,
+        mut reference_world,
+    ) = nested_stagger(false);
+    for time in [
+        0, 50, 100, 150, 175, 200, 250, 300, 330, 399, 400, 450, 500,
+        250, 0,
+    ] {
+        sample(&registry, &mut timeline, &mut world, ms(time));
+        sample(
+            &reference_registry,
+            &mut reference_timeline,
+            &mut reference_world,
+            ms(time),
+        );
+        assert_eq!(world.0, reference_world.0, "sample at {time}ms");
+    }
 }

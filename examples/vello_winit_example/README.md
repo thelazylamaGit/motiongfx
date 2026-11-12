@@ -225,9 +225,12 @@ row/column end signal. All curves on a diagonal start together, with 80ms
 between diagonals; each draws for 1.5s, holds for 0.8s, then erases for 1.5s.
 The original 1% cutoff hides tiny curve remnants at both ends.
 
-One timeline runs the staggered grid intro and then parallel curve branches.
-`TrackFragment::duration()` supplies the intro boundary to `LoopFrom`, keeping
-playback timing derived from the authored actions. At the default 12x6 size,
+One timeline runs the grid intro and then the staggered diagonal groups.
+Nested `sequence.staggered` blocks describe the grid pairs; parallel diagonal
+groups contain each curve's reveal/hold/erase chain. These helpers use core
+ordering without manual delay calculations or raw fragment plumbing.
+The intro block returns its reserved duration for `LoopFrom`, keeping playback
+timing derived from the authored actions. At the default 12x6 size,
 the intro is 1.25s and the curve chapter is 5.08s. Drawing uses centred y-up
 coordinates and the standard host's canvas fitting on resize. There is no
 custom world, subject registration, timeline sampling, or Vello draw loop in
