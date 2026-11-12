@@ -70,7 +70,7 @@ fn shared_derived_values_compute_once_and_support_offsets_and_multiple_inputs()
     let line = scene.add(Line::new(Point::ZERO, Point::ZERO));
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
-    let shared = scene.derive(
+    let shared = scene.computed(
         (source.position, source.radius),
         move |(position, radius)| {
             counter.fetch_add(1, Ordering::Relaxed);
@@ -78,7 +78,7 @@ fn shared_derived_values_compute_once_and_support_offsets_and_multiple_inputs()
         },
     );
     let offset =
-        scene.derive(shared, |position| position + (0.0, 30.0));
+        scene.computed(shared, |position| position + (0.0, 30.0));
     scene.bind(dot.position, shared, |position| position);
     scene.bind(line.start, shared, |position| position);
     scene.bind(line.end, offset, |position| position);
@@ -134,7 +134,7 @@ fn binding_validation_rejects_feedback_and_cycles_through_derived_values()
     let a = scene.add(Circle::new(2.0));
     let b = scene.add(Circle::new(2.0));
     let derived =
-        scene.derive(b.position, |position| position + (1.0, 0.0));
+        scene.computed(b.position, |position| position + (1.0, 0.0));
     scene.bind(a.position, derived, |position| position);
     scene.bind(b.position, a.position, |position| position);
     assert!(matches!(
@@ -188,7 +188,7 @@ fn binding_validation_rejects_foreign_derived_values_and_missing_properties()
  {
     let mut first = Scene::new();
     let a = first.add(Circle::new(2.0));
-    let shared = first.derive(a.radius, |r| r * 2.0);
+    let shared = first.computed(a.radius, |r| r * 2.0);
     let mut second = Scene::new();
     let b = second.add(Circle::new(2.0));
     second.bind(b.radius, shared, |r| r);

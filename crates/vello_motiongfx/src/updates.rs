@@ -250,7 +250,7 @@ impl Scene {
     /// use motiongfx::prelude::{ease, ms};
     /// use vello_motiongfx::{Circle, Point, Scene};
     /// let mut scene = Scene::new();
-    /// let x = scene.value(0.0);
+    /// let x = scene.signal(0.0);
     /// let dot = scene.add(Circle::new(10.0));
     /// scene.update(dot, x, |circle, x| {
     ///     circle.position = Point::new(x, 30.0);
@@ -266,7 +266,7 @@ impl Scene {
     /// ```compile_fail
     /// use vello_motiongfx::{Circle, Point, Scene};
     /// let mut scene = Scene::new();
-    /// let x = scene.value(0.0);
+    /// let x = scene.signal(0.0);
     /// let dot = scene.add(Circle::new(10.0));
     /// scene.update(dot, x, |circle, _| {
     ///     circle.end = Point::ZERO; // A circle has no line endpoint.

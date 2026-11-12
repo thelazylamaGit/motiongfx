@@ -2,7 +2,9 @@
 
 Native graphics integration with rectangles, circles, lines, stroked paths and text,
 used by `moving_square`, `insertion_sort`, `commit_graph` and `sine_unit_circle`. `Scene::add` creates stored object
-state and returns typed authoring properties. Handles belong to the scene
+state and returns typed authoring properties. Shape constructors produce
+`Object<T>` authoring descriptors; `scene.add` stores their plain state and
+registers any driven fields. Handles belong to the scene
 that created them; do not mix handles between scenes.
 
 `Rectangle::new(width, height)` applies the other defaults internally. Optional
@@ -149,11 +151,59 @@ Fill and stroke colors are independent. `smooth` reproduces Manim's default
 normalized sigmoid easing for comparisons.
 
 `Line::new(start, end)` stores endpoints without allocating a path buffer.
-Its handle exposes `start`/`end` (including `.x`/`.y`), stroke, stroke width
-and opacity. Endpoints use positive-y-up coordinates and receive the camera
+Its handle exposes `start`/`end` (including `.x`/`.y`), stroke, stroke width,
+opacity and `reveal`. Endpoints use positive-y-up coordinates and receive the camera
 transform like all other objects.
 
-## Native property bindings
+## Signals and computed properties
+
+```rust
+let progress = scene.signal(0.0);
+let radius = scene.signal(80.0);
+let position = scene.computed((progress, radius), |(progress, radius)| {
+    let angle = progress * std::f64::consts::TAU;
+    (radius * angle.cos(), radius * angle.sin())
+});
+let dot = scene.add(Circle::new(6.4).position(position).fill(YELLOW));
+let line = scene.add(Line::new((0.0, 0.0), position).stroke(BLUE, 2.0));
+```
+
+`Signal<T>` is writable timeline state; `Computed<T>` is read-only, cached
+native math. Both are cheap, copyable handles. Object properties are sources
+too. The earlier `scene.value` / `scene.derive` names have been replaced, not
+retained as aliases. Schedule signal changes with the same `sequence.play`,
+`.to`, `.offset`, `.multiply`, `.over`, and `.ease` APIs as object properties.
+`signal.set(value)` describes a zero-duration action, not an immediate write.
+
+Storage requires `Clone + Send + Sync + 'static`; comparison-based sources
+also require `PartialEq`. Numbers, points and colors have existing tween
+interpolation. Arrays, vectors, booleans, strings and custom types can be
+stored and replaced with `.set`, or used in computed values. Tweening those
+requires a meaningful interpolation implementation; generic array/vector
+interpolation is not added here. Large source values may incur cloning and
+comparison work; use shared buffers or direct mutation where appropriate.
+
+Circle, rectangle, line, text, path and camera descriptor setters accept fixed
+values, signals, computed values and matching object-property sources. Position
+also accepts fixed tuples and computed `(f64, f64)` outputs. Constants create
+no binding. Repeated setters replace earlier wiring for that field. Signal
+relationships are stripped from the descriptor during insertion: stored object
+fields remain plain points/numbers/colors, with evaluation in the existing
+binding plan. Clone a descriptor to create objects that share the same inputs.
+
+For an inline computation, first build the descriptor, then call `scene.add`.
+Nesting `scene.computed` inside `scene.add` would attempt two overlapping mutable
+borrows of the scene. No dependency reads are tracked automatically; all inputs
+remain explicit, and calculations are evaluated once per changed input tuple.
+The current plan still reads/compares registered inputs on each sample. It is
+not zero-cost and does not require a UI signals framework.
+
+`Path::quadratic(start, control, end)` accepts sources for any control point.
+Its exact geometry is cached until those points change; reveal/style animation
+does not regenerate the source path. `Line::reveal` exposes a normalized visible
+fraction without creating a path buffer, useful for animated grid lines.
+
+## Advanced explicit bindings
 
 ```rust
 scene.bind(dot.position, curve.end, move |reveal| {
@@ -169,10 +219,10 @@ scene.bind(connector.end, (curve.end, dot.position.y), move |(reveal, y)| {
 Closures that capture local constants/configuration use `move` to own those
 captures. They are stored, not executed during the author callback. A source
 supplies its current sampled value, not an implicit progress parameter.
-Properties, `Derived<T>` handles, and tuples of two to five sources are
+Properties, `Computed<T>` handles, and tuples of two to five sources are
 supported. All values are local object state, not transformed world positions.
-For a shared calculation use `let orbit = scene.derive(curve.end, function)`;
-then `scene.bind(dot.position, orbit, |position| position)`. Derived handles are
+For a shared calculation use `let orbit = scene.computed(curve.end, function)`;
+then `scene.bind(dot.position, orbit, |position| position)`. Computed handles are
 copyable, and their output is cached once per changed input for all consumers.
 
 `scene.try_animate(...)` returns `Result<Animation, BindingError>` and rejects
@@ -196,7 +246,7 @@ geometry and derives the dot/line endpoints from the same sampled reveal.
 ## Direct object updates
 
 ```rust
-let progress = scene.value(0.0);
+let progress = scene.signal(0.0);
 let dot = scene.add(Circle::new(6.4).fill(YELLOW));
 scene.update(dot, progress, |circle, progress| {
     let angle = progress * std::f64::consts::TAU;
@@ -204,7 +254,7 @@ scene.update(dot, progress, |circle, progress| {
 });
 ```
 
-`scene.value(initial)` returns a typed, standalone animation property. It is
+`scene.signal(initial)` returns a typed, standalone animation property. It is
 not a drawable or a dependency node. Animate it with the existing `.to`,
 `.offset`, `.over`, and sequence methods. Values use scene-local storage, so
 their handles have the same ownership restriction as object handles.
@@ -233,6 +283,6 @@ inside callbacks are not made deterministic by Rust's type system.
 The callback incurs a stored function call plus source reads/object selection
 and the math it contains; this is a thin native API, not a claim of zero cost.
 For expensive work, cache explicitly or use the separate derived-value API.
-The Bézier example caches readout formatting and edits quadratic geometry only
-when control points change. `Path::quadratic` and `set_quadratic` use exact
+The Bézier example now uses computed inputs and source-aware builders, with
+no direct updates. `Path::quadratic` and `set_quadratic` use exact
 quadratic segments, retaining the normal `start`/`end` reveal properties.

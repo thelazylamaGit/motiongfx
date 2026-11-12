@@ -16,7 +16,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `moving_square` | Manim `MovingAround` | Typed property handles, sequential translation, fill interpolation, relative scale, and rotation |
 | `camera_zoom` | Manim-style `Zoom` | Parallel camera pan/zoom, a hold, and returning to the original view |
 | `sine_unit_circle` | Manim `SineCurveUnitCircle` | Native typed bindings, dependent line endpoints, and cached path reveal |
-| `bezier_explainer` | Quadratic Bézier lesson | Direct object callbacks, standalone parameters, grouped targets, exact quadratic geometry, and ping-pong playback |
+| `bezier_explainer` | Quadratic Bézier lesson | Typed signals/computed values, source-aware object creation, exact quadratic geometry, and ping-pong playback |
 
 ```sh
 cargo run -p vello_winit_example --example commit_graph
@@ -156,24 +156,25 @@ Its wave is a pure function of time, so scrubbing reconstructs the picture
 directly. Stateful simulations need their own reset/replay or checkpoints
 to reconstruct earlier states; the clock cannot make them seekable alone.
 
-Read `examples/bezier_explainer.rs` in order: math, object creation, direct
-updates, then the timeline. It creates lines/circles/text once and uses
-`scene.value` for grid reveal, guide opacity, probe position and bend.
-`scene.update(targets, sources, callback)` supplies mutable objects directly;
-tuples/arrays allow one function to update several targets. Callbacks run in
-registration order after sampling, with no dependency graph for these updates.
-The construction line deliberately reads A/B after their callback runs.
+Read `examples/bezier_explainer.rs` in order: reusable grid construction,
+signals/computed geometry, object creation, then the timeline. It uses
+`scene.signal` for guide opacity, probe position and bend. Shared computed
+positions feed circles, connecting lines and the exact quadratic directly in
+their constructors; no `scene.update` or explicit `scene.bind` calls are used.
+The reusable grid helper creates styled lines whose `reveal` properties are
+animated together in the timeline without procedural point-buffer updates.
 
 The lesson keeps its original 14.4-second timing and automatic reverse playback,
 using `Window::playback_mode(PlaybackMode::PingPong)`. An exact quadratic replaces
 the old 180-segment curve; changing bend updates its control point, while holds
-reuse geometry. Labels are anchored `Text` objects. Chapter/readout callbacks
-read `scene.time()`, and the shared controls display pause/reverse status rather
-than a duplicate scene status label. The scene footer gives input instructions.
+reuse geometry. Labels are anchored `Text` objects. Chapter changes are discrete
+timeline events, so changing durations does not require fixing time thresholds.
+The readout is computed from `t` and `scene.time()`; the shared controls display
+pause/reverse status. The scene footer gives input instructions.
 
-Start experimenting with `control_points`, the relative bend offsets, or action
+Start experimenting with the control points, relative bend offsets, or action
 durations. Coordinates now use the shared authoring convention: centered, with
-positive y upward. Callback borrowing/order, exact curve math, cache reuse and
+positive y upward. Signal/builder type safety, exact curve math, cache reuse and
 backward seeking are covered by reusable backend tests:
 
 ```sh

@@ -25,9 +25,11 @@ pub struct Circle {
 }
 
 impl Circle {
-    pub fn new(radius: f64) -> Self {
-        Self {
-            radius,
+    pub fn new(
+        radius: impl Into<crate::Input<f64>>,
+    ) -> crate::Object<Self> {
+        crate::Object::new(Self {
+            radius: 0.0,
             position: Point::ZERO,
             fill: Color::WHITE,
             stroke: Color::TRANSPARENT,
@@ -36,38 +38,8 @@ impl Circle {
             scale: 1.0,
             rotation: 0.0,
             parent: None,
-        }
-    }
-    pub fn position(mut self, position: impl Into<Point>) -> Self {
-        self.position = position.into();
-        self
-    }
-    pub fn fill(mut self, fill: Color) -> Self {
-        self.fill = fill;
-        self
-    }
-    pub fn stroke(mut self, stroke: Color, width: f64) -> Self {
-        self.stroke = stroke;
-        self.stroke_width = width;
-        self
-    }
-    pub fn opacity(mut self, opacity: f64) -> Self {
-        self.opacity = opacity;
-        self
-    }
-    pub fn scale(mut self, scale: f64) -> Self {
-        self.scale = scale;
-        self
-    }
-    pub fn rotation(mut self, rotation: f64) -> Self {
-        self.rotation = rotation;
-        self
-    }
-    /// Inherit a rectangle or circle's transform, with an independently
-    /// animated local position/scale/rotation and independent style/opacity.
-    pub fn relative_to(mut self, parent: impl Into<Parent>) -> Self {
-        self.parent = Some(parent.into());
-        self
+        })
+        .radius(radius)
     }
 
     pub(crate) fn transform(&self) -> Affine {
@@ -111,6 +83,19 @@ impl Circle {
                 &shape,
             );
         }
+    }
+}
+
+crate::object::properties!(Circle;
+    position: Point, radius: f64, fill: Color, opacity: f64,
+    scale: f64, rotation: f64, stroke_width: f64,
+);
+crate::object::stroke!(Circle);
+impl crate::Object<Circle> {
+    /// Inherit the parent's transform; style and opacity remain independent.
+    pub fn relative_to(mut self, parent: impl Into<Parent>) -> Self {
+        self.parent = Some(parent.into());
+        self
     }
 }
 

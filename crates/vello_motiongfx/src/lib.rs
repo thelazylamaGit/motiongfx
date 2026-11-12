@@ -3,7 +3,9 @@
 
 use motiongfx::prelude::*;
 use motiongfx_authoring::BindingPlan;
-pub use motiongfx_authoring::{BindingError, BindingSource, Derived};
+pub use motiongfx_authoring::{
+    BindingError, BindingSource, Computed,
+};
 use motiongfx_authoring::{Property, Sequence};
 pub use motiongfx_authoring::{animate, smooth};
 use peniko_motiongfx as _;
@@ -16,8 +18,10 @@ use vello::peniko::Fill;
 mod camera;
 mod circle;
 pub mod colors;
+mod input;
 pub mod lettering;
 mod line;
+mod object;
 mod parent;
 mod path;
 mod path_renderer;
@@ -28,17 +32,21 @@ mod updates;
 mod values;
 pub use camera::{Camera, CameraHandle, CameraId};
 pub use circle::{Circle, CircleHandle, CircleId};
+pub use input::Input;
 pub use line::{Line, LineHandle, LineId};
+pub use object::Object;
 pub use parent::Parent;
 pub use path::{BezPath, Path, PathHandle, PathId};
 use path_renderer::PathGeometry;
 pub use updates::UpdateTargets;
-pub use values::{SampleTime, ValueId};
+pub use values::{SampleTime, Signal, SignalId};
 
 #[cfg(test)]
 mod binding_tests;
 #[cfg(test)]
 mod graphics_tests;
+#[cfg(test)]
+mod signal_tests;
 #[cfg(test)]
 mod update_tests;
 pub use properties::Position;
@@ -78,41 +86,25 @@ impl Default for Rectangle {
 impl Rectangle {
     /// Create initial rectangle state with the remaining properties defaulted.
     /// Register this value with `Scene::add` to obtain animation handles.
-    pub fn new(width: f64, height: f64) -> Self {
-        Self {
+    pub fn new(width: f64, height: f64) -> Object<Self> {
+        Object::new(Self {
             size: Size::new(width, height),
             ..Self::default()
-        }
+        })
     }
 
     /// Create a rectangle from a `(width, height)` tuple, `Vec2`, or `Size`.
-    pub fn from_size(size: impl Into<(f64, f64)>) -> Self {
+    pub fn from_size(size: impl Into<(f64, f64)>) -> Object<Self> {
         let (width, height) = size.into();
         Self::new(width, height)
     }
-
-    pub fn fill(mut self, color: Color) -> Self {
-        self.fill = color;
-        self
-    }
-
-    pub fn position(mut self, position: impl Into<Point>) -> Self {
-        self.position = position.into();
-        self
-    }
-
-    /// Corner radius in unscaled canvas units, clamped to the shape by Kurbo.
-    pub fn radius(mut self, radius: f64) -> Self {
-        self.radius = radius;
-        self
-    }
-
-    pub fn stroke(mut self, color: Color, width: f64) -> Self {
-        self.stroke = color;
-        self.stroke_width = width;
-        self
-    }
 }
+
+crate::object::properties!(Rectangle;
+    size: Size, position: Point, fill: Color, radius: f64,
+    scale: f64, rotation: f64, stroke_width: f64,
+);
+crate::object::stroke!(Rectangle);
 
 /// Typed subject identity; separate from authoring handles and sampled state.
 #[derive(
@@ -128,6 +120,10 @@ pub struct RectangleHandle {
     pub fill: Property<RectangleId, Rectangle, Color>,
     pub scale: Property<RectangleId, Rectangle, f64>,
     pub rotation: Property<RectangleId, Rectangle, f64>,
+    pub size: Property<RectangleId, Rectangle, Size>,
+    pub radius: Property<RectangleId, Rectangle, f64>,
+    pub stroke: Property<RectangleId, Rectangle, Color>,
+    pub stroke_width: Property<RectangleId, Rectangle, f64>,
 }
 
 #[derive(Default)]
@@ -198,6 +194,8 @@ impl Scene {
         Self::default()
     }
 
+    /// Advanced explicit wiring after object creation. Object builders normally
+    /// register this automatically when a property receives a signal/computed.
     /// Calculate a property from explicit sources after timeline sampling.
     /// Sources may be properties, shared derived values, or tuples of either.
     /// Values use the object's local coordinates; parent transforms are applied
@@ -227,18 +225,46 @@ impl Scene {
         self.bindings.bind(destination, source, calculate);
     }
 
-    /// Calculate and cache a value shared by multiple downstream bindings.
-    pub fn derive<Source, T, F>(
+    /// A read-only native calculation from explicit typed inputs. Cached once
+    /// per changed input, including when shared by several objects. This is not
+    /// an effect and cannot itself be animated; animate its source signals.
+    ///
+    /// A computed can be inline in a descriptor before `scene.add`:
+    /// ```
+    /// use motiongfx::prelude::{ease, ms};
+    /// use vello_motiongfx::{Circle, Point, Scene};
+    /// let mut scene = Scene::new();
+    /// let progress = scene.signal(0.0);
+    /// let circle = Circle::new(6.4).position(
+    ///     scene.computed(progress, |p| (p * 100.0, 30.0)),
+    /// );
+    /// let dot = scene.add(circle);
+    /// let mut animation = scene.animate(|sequence| {
+    ///     sequence.play(progress.to(1.0).ease(ease::linear));
+    /// });
+    /// animation.sample(ms(500));
+    /// assert_eq!(animation.circle(dot).position, Point::new(50.0, 30.0));
+    /// ```
+    ///
+    /// Computed outputs are read-only:
+    /// ```compile_fail
+    /// use vello_motiongfx::Scene;
+    /// let mut scene = Scene::new();
+    /// let input = scene.signal(0.0);
+    /// let output = scene.computed(input, |x| x * 2.0);
+    /// output.to(10.0);
+    /// ```
+    pub fn computed<Source, T, F>(
         &mut self,
         source: Source,
         calculate: F,
-    ) -> Derived<T>
+    ) -> Computed<T>
     where
         Source: BindingSource<Graphics>,
         T: Clone + PartialEq + ThreadSafe,
         F: Fn(Source::Value) -> T + ThreadSafe,
     {
-        self.bindings.derive(source, calculate)
+        self.bindings.computed(source, calculate)
     }
 
     /// Store and register an object in one operation. Dispatch is resolved
@@ -265,6 +291,13 @@ impl Scene {
             fill: Property::new(id, path!(Rectangle.fill)),
             scale: Property::new(id, path!(Rectangle.scale)),
             rotation: Property::new(id, path!(Rectangle.rotation)),
+            size: Property::new(id, path!(Rectangle.size)),
+            radius: Property::new(id, path!(Rectangle.radius)),
+            stroke: Property::new(id, path!(Rectangle.stroke)),
+            stroke_width: Property::new(
+                id,
+                path!(Rectangle.stroke_width),
+            ),
         }
     }
 
@@ -286,6 +319,7 @@ impl Scene {
             opacity: Property::new(id, path!(Text.opacity)),
             scale: Property::new(id, path!(Text.scale)),
             rotation: Property::new(id, path!(Text.rotation)),
+            align: Property::discrete(id, path!(Text.align)),
         }
     }
 
@@ -313,18 +347,8 @@ impl Scene {
         self.bindings.prepare(&self.graphics, &timeline)?;
         timeline.bake_actions(&registry, &self.graphics);
         let mut animation = Animation {
-            path_geometry: self
-                .graphics
-                .paths
-                .iter()
-                .map(PathGeometry::new)
-                .collect(),
-            text_layouts: self
-                .graphics
-                .texts
-                .iter()
-                .map(TextLayout::new)
-                .collect(),
+            path_geometry: Vec::new(),
+            text_layouts: Vec::new(),
             graphics: self.graphics,
             registry,
             timeline,
@@ -332,6 +356,20 @@ impl Scene {
             updates: self.updates,
         };
         animation.sample(Duration::ZERO);
+        // Initialize render caches from evaluated sources, not placeholder
+        // descriptor values. This avoids rebuilding them on the first draw.
+        animation.path_geometry = animation
+            .graphics
+            .paths
+            .iter()
+            .map(PathGeometry::new)
+            .collect();
+        animation.text_layouts = animation
+            .graphics
+            .texts
+            .iter()
+            .map(TextLayout::new)
+            .collect();
         Ok(animation)
     }
 }
@@ -511,7 +549,7 @@ mod tests {
         // Independent baseline: the original low-level builder, not the
         // convenience methods under test. Both use the same initial graphics.
         let mut world = Graphics {
-            rectangles: vec![initial],
+            rectangles: vec![(*initial).clone()],
             ..Graphics::default()
         };
         let mut registry = Registry::new();

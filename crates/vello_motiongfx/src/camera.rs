@@ -29,21 +29,13 @@ impl Default for Camera {
 }
 
 impl Camera {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new() -> crate::Object<Self> {
+        crate::Object::new(Self::default())
     }
-    pub fn position(mut self, position: impl Into<Point>) -> Self {
-        self.position = position.into();
-        self
-    }
-    pub fn scale(mut self, scale: f64) -> Self {
-        self.scale = scale;
-        self
-    }
-    pub fn rotation(mut self, rotation: f64) -> Self {
-        self.rotation = rotation;
-        self
-    }
+}
+
+crate::object::properties!(Camera; position: Point, scale: f64, rotation: f64);
+impl crate::Object<Camera> {
     /// Follow an already-created rectangle or circle in this scene. Only
     /// its world position is inherited, including its ancestors' transforms.
     /// The camera's position remains an offset in world axes; target rotation
@@ -52,7 +44,9 @@ impl Camera {
         self.target = Some(target.into());
         self
     }
+}
 
+impl Camera {
     fn view_transform(&self, graphics: &Graphics) -> Affine {
         assert!(
             self.scale.is_finite() && self.scale > 0.0,
@@ -108,9 +102,19 @@ impl Scene {
 
     /// Configure initial camera state, optionally attached to an object.
     /// This replaces the scene's single camera rather than adding another.
-    pub fn set_camera(&mut self, camera: Camera) -> CameraHandle {
-        self.graphics.camera = camera;
-        self.camera()
+    pub fn set_camera(
+        &mut self,
+        camera: impl crate::SceneObject<Handle = CameraHandle>,
+    ) -> CameraHandle {
+        camera.insert_into(self)
+    }
+}
+
+impl crate::SceneObject for Camera {
+    type Handle = CameraHandle;
+    fn insert_into(self, scene: &mut Scene) -> CameraHandle {
+        scene.graphics.camera = self;
+        scene.camera()
     }
 }
 

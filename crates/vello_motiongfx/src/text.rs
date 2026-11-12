@@ -5,7 +5,7 @@ use motiongfx_authoring::Property;
 use std::sync::Arc;
 
 /// Horizontal alignment relative to the text object's position.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum TextAlign {
     #[default]
     Left,
@@ -30,9 +30,11 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn new(content: impl Into<Arc<str>>) -> Self {
-        Self {
-            content: content.into(),
+    pub fn new(
+        content: impl Into<crate::Input<Arc<str>>>,
+    ) -> crate::Object<Self> {
+        crate::Object::new(Self {
+            content: Arc::from(""),
             position: Point::ZERO,
             font_size: 24.0,
             fill: Color::WHITE,
@@ -41,42 +43,21 @@ impl Text {
             rotation: 0.0,
             align: TextAlign::Left,
             parent: None,
-        }
+        })
+        .content(content)
     }
-    pub fn position(mut self, position: impl Into<Point>) -> Self {
-        self.position = position.into();
-        self
-    }
+}
 
+crate::object::properties!(Text;
+    content: Arc<str>, position: Point, font_size: f64, fill: Color,
+    opacity: f64, scale: f64, rotation: f64, align: TextAlign,
+);
+impl crate::Object<Text> {
     /// Make position local to a rectangle or circle. Its translation, rotation,
     /// and scale are inherited; text style and local animations stay independent.
     /// The parent must belong to the same scene as this text.
     pub fn relative_to(mut self, parent: impl Into<Parent>) -> Self {
         self.parent = Some(parent.into());
-        self
-    }
-    pub fn font_size(mut self, size: f64) -> Self {
-        self.font_size = size;
-        self
-    }
-    pub fn fill(mut self, fill: Color) -> Self {
-        self.fill = fill;
-        self
-    }
-    pub fn opacity(mut self, opacity: f64) -> Self {
-        self.opacity = opacity;
-        self
-    }
-    pub fn scale(mut self, scale: f64) -> Self {
-        self.scale = scale;
-        self
-    }
-    pub fn rotation(mut self, rotation: f64) -> Self {
-        self.rotation = rotation;
-        self
-    }
-    pub fn align(mut self, align: TextAlign) -> Self {
-        self.align = align;
         self
     }
 }
@@ -98,6 +79,7 @@ pub struct TextHandle {
     pub opacity: Property<TextId, Text, f64>,
     pub scale: Property<TextId, Text, f64>,
     pub rotation: Property<TextId, Text, f64>,
+    pub align: Property<TextId, Text, TextAlign>,
 }
 
 impl SceneObject for Text {

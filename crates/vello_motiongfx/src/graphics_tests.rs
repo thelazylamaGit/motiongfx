@@ -66,7 +66,8 @@ fn path_cache_handles_bezier_geometry_and_style_changes() {
     path.rotation = 0.4;
     cache.render(&path, &mut rendered, Affine::IDENTITY);
     assert_eq!(cache.rebuilds, 1);
-    path.geometry = Path::new([(0.0, 0.0), (40.0, 0.0)]).geometry;
+    path.geometry =
+        Path::new([(0.0, 0.0), (40.0, 0.0)]).geometry.clone();
     rendered.reset();
     cache.render(&path, &mut rendered, Affine::IDENTITY);
     assert_eq!(

@@ -11,11 +11,11 @@ use vello::kurbo::{ParamCurve, QuadBez};
 fn updates_run_after_bindings_in_registration_order_on_every_sample()
 {
     let mut scene = Scene::new();
-    let progress = scene.value(0.0);
+    let progress = scene.signal(0.0);
     let a = scene.add(Circle::new(2.0));
     let b = scene.add(Circle::new(2.0));
     let line = scene.add(Line::new(Point::ZERO, Point::ZERO));
-    let doubled = scene.derive(progress, |p| p * 2.0);
+    let doubled = scene.computed(progress, |p| p * 2.0);
     scene.bind(a.position.x, doubled, |x| x);
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
@@ -74,7 +74,7 @@ fn updates_run_after_bindings_in_registration_order_on_every_sample()
 fn grouped_targets_preserve_caller_order_and_borrow_disjoint_objects()
 {
     let mut scene = Scene::new();
-    let amount = scene.value(0.0);
+    let amount = scene.signal(0.0);
     let a = scene.add(Circle::new(1.0));
     let _unselected = scene.add(Circle::new(99.0));
     let b = scene.add(Circle::new(2.0));
@@ -111,7 +111,7 @@ fn grouped_targets_preserve_caller_order_and_borrow_disjoint_objects()
 #[test]
 fn array_targets_preserve_order_and_support_empty_arrays() {
     let mut scene = Scene::new();
-    let amount = scene.value(0.0);
+    let amount = scene.signal(0.0);
     let lines: [_; 3] = std::array::from_fn(|_| {
         scene.add(Line::new(Point::ZERO, Point::ZERO))
     });
@@ -149,8 +149,8 @@ fn duplicate_targets_are_rejected_during_registration() {
 #[test]
 fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
     let mut scene = Scene::new();
-    let bend = scene.value(0.0);
-    let t = scene.value(0.0);
+    let bend = scene.signal(0.0);
+    let t = scene.signal(0.0);
     let start = Point::new(-400.0, -150.0);
     let end = Point::new(400.0, -150.0);
     let curve = scene.add(Path::quadratic(start, (0.0, 170.0), end));

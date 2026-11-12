@@ -127,10 +127,10 @@ pub struct BindingDependency(Dependency);
 #[derive(Clone)]
 enum Dependency {
     Property(PropertyKey),
-    Derived { plan: u64, index: usize },
+    Computed { plan: u64, index: usize },
 }
 
-/// Type-erased cached outputs. Only typed `Derived<T>` handles can read them.
+/// Type-erased cached outputs. Only typed `Computed<T>` handles can read them.
 #[doc(hidden)]
 #[derive(Default)]
 pub struct DerivedValues(Vec<Option<Box<dyn Any + Send + Sync>>>);
@@ -179,19 +179,19 @@ where
 }
 
 /// Read-only handle to one shared, cached native calculation.
-pub struct Derived<T> {
+pub struct Computed<T> {
     plan: u64,
     index: usize,
     marker: PhantomData<fn() -> T>,
 }
-impl<T> Copy for Derived<T> {}
-impl<T> Clone for Derived<T> {
+impl<T> Copy for Computed<T> {}
+impl<T> Clone for Computed<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 impl<W, T: Clone + PartialEq + ThreadSafe> BindingSource<W>
-    for Derived<T>
+    for Computed<T>
 {
     type Value = T;
     fn read(&self, _: &W, values: &DerivedValues) -> Option<T> {
@@ -203,7 +203,7 @@ impl<W, T: Clone + PartialEq + ThreadSafe> BindingSource<W>
             .cloned()
     }
     fn dependencies(&self) -> Vec<BindingDependency> {
-        vec![BindingDependency(Dependency::Derived {
+        vec![BindingDependency(Dependency::Computed {
             plan: self.plan,
             index: self.index,
         })]
@@ -290,7 +290,7 @@ impl<W: 'static> BindingPlan<W> {
     ) -> Result<(), BindingError> {
         source.validate(world)?;
         for BindingDependency(dependency) in source.dependencies() {
-            if let Dependency::Derived { plan, index } = dependency
+            if let Dependency::Computed { plan, index } = dependency
                 && (plan != self.id
                     || index >= self.nodes.len()
                     || self.nodes[index].destination.is_some())
@@ -349,11 +349,11 @@ impl<W: 'static> BindingPlan<W> {
         self.values.0.push(None);
     }
 
-    pub fn derive<Source, T, F>(
+    pub fn computed<Source, T, F>(
         &mut self,
         source: Source,
         calculate: F,
-    ) -> Derived<T>
+    ) -> Computed<T>
     where
         Source: BindingSource<W>,
         T: Clone + PartialEq + ThreadSafe,
@@ -388,7 +388,7 @@ impl<W: 'static> BindingPlan<W> {
             }),
         });
         self.values.0.push(None);
-        Derived {
+        Computed {
             plan: self.id,
             index,
             marker: PhantomData,
@@ -444,7 +444,7 @@ impl<W: 'static> BindingPlan<W> {
             let mut predecessors = Vec::new();
             for BindingDependency(dependency) in &node.dependencies {
                 match dependency {
-                    Dependency::Derived { plan, index } => {
+                    Dependency::Computed { plan, index } => {
                         if *plan != self.id
                             || *index >= count
                             || self.nodes[*index]

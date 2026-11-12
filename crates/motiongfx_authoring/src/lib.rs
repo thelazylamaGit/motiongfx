@@ -10,7 +10,7 @@ use std::time::Duration;
 pub mod bindings;
 mod macros;
 pub use bindings::{
-    BindingError, BindingPlan, BindingSource, Derived,
+    BindingError, BindingPlan, BindingSource, Computed,
 };
 
 /// Library-wide authoring defaults. Individual sequences and changes may

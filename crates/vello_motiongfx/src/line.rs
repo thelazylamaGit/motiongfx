@@ -14,28 +14,24 @@ pub struct Line {
     pub stroke: Color,
     pub stroke_width: f64,
     pub opacity: f64,
+    /// Visible fraction from start towards end, clamped to 0..1 in rendering.
+    pub reveal: f64,
 }
 impl Line {
     pub fn new(
-        start: impl Into<Point>,
-        end: impl Into<Point>,
-    ) -> Self {
-        Self {
-            start: start.into(),
-            end: end.into(),
+        start: impl Into<crate::Input<Point>>,
+        end: impl Into<crate::Input<Point>>,
+    ) -> crate::Object<Self> {
+        crate::Object::new(Self {
+            start: Point::ZERO,
+            end: Point::ZERO,
             stroke: Color::WHITE,
             stroke_width: 1.0,
             opacity: 1.0,
-        }
-    }
-    pub fn stroke(mut self, color: Color, width: f64) -> Self {
-        self.stroke = color;
-        self.stroke_width = width;
-        self
-    }
-    pub fn opacity(mut self, opacity: f64) -> Self {
-        self.opacity = opacity;
-        self
+            reveal: 1.0,
+        })
+        .start(start)
+        .end(end)
     }
     pub(crate) fn render(
         &self,
@@ -43,12 +39,17 @@ impl Line {
         screen: Affine,
     ) {
         let opacity = self.opacity.clamp(0.0, 1.0) as f32;
-        if opacity == 0.0 || self.stroke_width <= 0.0 {
+        if opacity == 0.0
+            || self.stroke_width <= 0.0
+            || self.reveal <= 0.0
+        {
             return;
         }
+        let end = self.start
+            + (self.end - self.start) * self.reveal.clamp(0.0, 1.0);
         let shape = LineShape::new(
             (self.start.x, -self.start.y),
-            (self.end.x, -self.end.y),
+            (end.x, -end.y),
         );
         scene.stroke(
             &Stroke::new(self.stroke_width),
@@ -60,6 +61,9 @@ impl Line {
         );
     }
 }
+
+crate::object::properties!(Line; start: Point, end: Point, opacity: f64, stroke_width: f64, reveal: f64);
+crate::object::stroke!(Line);
 
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
@@ -73,6 +77,7 @@ pub struct LineHandle {
     pub stroke: Property<LineId, Line, Color>,
     pub stroke_width: Property<LineId, Line, f64>,
     pub opacity: Property<LineId, Line, f64>,
+    pub reveal: Property<LineId, Line, f64>,
 }
 impl SceneObject for Line {
     type Handle = LineHandle;
@@ -97,6 +102,7 @@ impl SceneObject for Line {
             stroke: Property::new(id, path!(Line.stroke)),
             stroke_width: Property::new(id, path!(Line.stroke_width)),
             opacity: Property::new(id, path!(Line.opacity)),
+            reveal: Property::new(id, path!(Line.reveal)),
         }
     }
 }

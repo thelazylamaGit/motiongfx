@@ -41,7 +41,7 @@ subject types can expose their own typed `Property` fields.
 
 `BindingPlan<W>` optionally calculates properties after timeline sampling.
 `bind(destination, source, function)` stores an ordinary native Rust closure;
-`derive(source, function)` returns a typed, copyable `Derived<T>` handle for
+`computed(source, function)` returns a typed, copyable `Computed<T>` handle for
 sharing one cached calculation. Sources can be properties, derived handles,
 or tuples of two to five sources. Multiple source values arrive as a tuple.
 Input/output types are checked by Rust; input values implement `PartialEq`

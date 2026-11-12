@@ -24,13 +24,41 @@ pub struct Path {
 impl Path {
     /// Exact quadratic geometry, rather than sampling a polyline.
     pub fn quadratic(
-        start: impl Into<Point>,
-        control: impl Into<Point>,
-        end: impl Into<Point>,
-    ) -> Self {
-        let mut path = Self::from_bez_path(BezPath::new());
-        path.set_quadratic(start, control, end);
-        path
+        start: impl Into<crate::Input<Point>>,
+        control: impl Into<crate::Input<Point>>,
+        end: impl Into<crate::Input<Point>>,
+    ) -> crate::Object<Self> {
+        let inputs = (start.into(), control.into(), end.into());
+        if let (
+            crate::Input::Fixed(start),
+            crate::Input::Fixed(control),
+            crate::Input::Fixed(end),
+        ) = &inputs
+        {
+            return Self::from_bez_path(quadratic_geometry(
+                *start, *control, *end,
+            ));
+        }
+        let mut object = Self::from_bez_path(BezPath::new());
+        object.on_insert(
+            path!(Path.geometry).field.untyped(),
+            Arc::new(move |scene, handle| {
+                let geometry = scene.computed(
+                    inputs.clone(),
+                    |(start, control, end)| {
+                        Arc::new(quadratic_geometry(
+                            start, control, end,
+                        ))
+                    },
+                );
+                scene.bind(
+                    handle.geometry,
+                    geometry,
+                    std::convert::identity,
+                );
+            }),
+        );
+        object
     }
 
     /// Change a quadratic only when its control points differ. Fixed geometry
@@ -58,7 +86,7 @@ impl Path {
     /// Create a polyline from canvas points (positive y points up).
     pub fn new<P: Into<Point>>(
         points: impl IntoIterator<Item = P>,
-    ) -> Self {
+    ) -> crate::Object<Self> {
         let mut geometry = BezPath::new();
         let mut points = points.into_iter();
         if let Some(point) = points.next() {
@@ -71,8 +99,8 @@ impl Path {
     }
 
     /// Use arbitrary line, quadratic or cubic geometry generated in Rust.
-    pub fn from_bez_path(geometry: BezPath) -> Self {
-        Self {
+    pub fn from_bez_path(geometry: BezPath) -> crate::Object<Self> {
+        crate::Object::new(Self {
             geometry: Arc::new(geometry),
             position: Point::ZERO,
             stroke: Color::WHITE,
@@ -82,30 +110,25 @@ impl Path {
             rotation: 0.0,
             start: 0.0,
             end: 1.0,
-        }
-    }
-    pub fn position(mut self, position: impl Into<Point>) -> Self {
-        self.position = position.into();
-        self
-    }
-    pub fn stroke(mut self, color: Color, width: f64) -> Self {
-        self.stroke = color;
-        self.stroke_width = width;
-        self
-    }
-    pub fn opacity(mut self, opacity: f64) -> Self {
-        self.opacity = opacity;
-        self
-    }
-    pub fn start(mut self, start: f64) -> Self {
-        self.start = start;
-        self
-    }
-    pub fn end(mut self, end: f64) -> Self {
-        self.end = end;
-        self
+        })
     }
 }
+
+fn quadratic_geometry(
+    start: Point,
+    control: Point,
+    end: Point,
+) -> BezPath {
+    let mut geometry = BezPath::new();
+    geometry.move_to(start);
+    geometry.quad_to(control, end);
+    geometry
+}
+crate::object::properties!(Path;
+    position: Point, start: f64, end: f64, opacity: f64,
+    scale: f64, rotation: f64, stroke_width: f64, geometry: Arc<BezPath>,
+);
+crate::object::stroke!(Path);
 
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
@@ -123,6 +146,7 @@ pub struct PathHandle {
     pub rotation: Property<PathId, Path, f64>,
     pub start: Property<PathId, Path, f64>,
     pub end: Property<PathId, Path, f64>,
+    pub geometry: Property<PathId, Path, Arc<BezPath>>,
 }
 
 impl SceneObject for Path {
@@ -146,6 +170,7 @@ impl SceneObject for Path {
             rotation: Property::new(id, path!(Path.rotation)),
             start: Property::new(id, path!(Path.start)),
             end: Property::new(id, path!(Path.end)),
+            geometry: Property::discrete(id, path!(Path.geometry)),
         }
     }
 }
