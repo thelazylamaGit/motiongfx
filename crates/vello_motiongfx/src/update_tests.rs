@@ -11,12 +11,12 @@ use vello::kurbo::{ParamCurve, QuadBez};
 fn updates_run_after_bindings_in_registration_order_on_every_sample()
 {
     let mut scene = Scene::new();
-    let progress = scene.signal(0.0);
+    let progress = signal(0.0);
     let a = scene.add(Circle::new(2.0));
     let b = scene.add(Circle::new(2.0));
     let line = scene.add(Line::new(Point::ZERO, Point::ZERO));
-    let doubled = scene.computed(progress, |p| p * 2.0);
-    scene.bind(a.position.x, doubled, |x| x);
+    let doubled = computed(&progress, |p| p * 2.0);
+    scene.bind(a.position.x, &doubled, |x| x);
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
     // Reads the just-sampled binding. This native callback itself is uncached.
@@ -26,7 +26,7 @@ fn updates_run_after_bindings_in_registration_order_on_every_sample()
     });
     scene.update(
         line,
-        (b.position, doubled),
+        (b.position, &doubled),
         |line, (position, doubled)| {
             line.start = position;
             line.end = Point::new(doubled, 80.0);
@@ -74,13 +74,13 @@ fn updates_run_after_bindings_in_registration_order_on_every_sample()
 fn grouped_targets_preserve_caller_order_and_borrow_disjoint_objects()
 {
     let mut scene = Scene::new();
-    let amount = scene.signal(0.0);
+    let amount = signal(0.0);
     let a = scene.add(Circle::new(1.0));
     let _unselected = scene.add(Circle::new(99.0));
     let b = scene.add(Circle::new(2.0));
     let line = scene.add(Line::new(Point::ZERO, Point::ZERO));
     // Reverse storage order and mix object types in one tuple.
-    scene.update((b, line, a), amount, |(b, line, a), amount| {
+    scene.update((b, line, a), &amount, |(b, line, a), amount| {
         b.position = Point::new(amount + 20.0, 0.0);
         a.position = Point::new(amount + 10.0, 0.0);
         line.start = a.position;
@@ -91,7 +91,7 @@ fn grouped_targets_preserve_caller_order_and_borrow_disjoint_objects()
     let camera = scene.camera();
     scene.update(
         (rect, text, camera),
-        amount,
+        &amount,
         |(rect, text, camera), amount| {
             rect.rotation = amount;
             text.position = rect.position;
@@ -111,20 +111,20 @@ fn grouped_targets_preserve_caller_order_and_borrow_disjoint_objects()
 #[test]
 fn array_targets_preserve_order_and_support_empty_arrays() {
     let mut scene = Scene::new();
-    let amount = scene.signal(0.0);
+    let amount = signal(0.0);
     let lines: [_; 3] = std::array::from_fn(|_| {
         scene.add(Line::new(Point::ZERO, Point::ZERO))
     });
     scene.update(
         [lines[2], lines[0], lines[1]],
-        amount,
+        &amount,
         |lines, amount| {
             for (index, line) in lines.into_iter().enumerate() {
                 line.end.x = amount + index as f64;
             }
         },
     );
-    scene.update([] as [LineHandle; 0], amount, |lines, _| {
+    scene.update([] as [LineHandle; 0], &amount, |lines, _| {
         assert!(lines.is_empty())
     });
     let mut animation = scene.animate(|sequence| {
@@ -149,8 +149,8 @@ fn duplicate_targets_are_rejected_during_registration() {
 #[test]
 fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
     let mut scene = Scene::new();
-    let bend = scene.signal(0.0);
-    let t = scene.signal(0.0);
+    let bend = signal(0.0);
+    let t = signal(0.0);
     let start = Point::new(-400.0, -150.0);
     let end = Point::new(400.0, -150.0);
     let curve = scene.add(Path::quadratic(start, (0.0, 170.0), end));
@@ -158,12 +158,12 @@ fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
     let b = scene.add(Circle::new(1.0));
     let q = scene.add(Circle::new(1.0));
     let line = scene.add(Line::new(start, end));
-    scene.update(curve, bend, move |curve, bend| {
+    scene.update(curve, &bend, move |curve, bend| {
         curve.set_quadratic(start, (0.0, 170.0 - bend), end);
     });
     scene.update(
         (a, b, q),
-        (bend, t),
+        (&bend, &t),
         move |(a, b, q), (bend, t)| {
             let control = Point::new(0.0, 170.0 - bend);
             a.position = start + (control - start) * t;

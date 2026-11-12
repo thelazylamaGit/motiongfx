@@ -177,20 +177,40 @@ Offsets trim the full line first, then `reveal` selects its visible prefix.
 ## Signals and computed properties
 
 ```rust
-let progress = scene.signal(0.0);
-let radius = scene.signal(80.0);
-let position = scene.computed((progress, radius), |(progress, radius)| {
+use vello_motiongfx::{computed, signal};
+
+let progress = signal(0.0);
+let radius = signal(80.0);
+let position = computed!((progress, radius) => {
     let angle = progress * std::f64::consts::TAU;
-    (radius * angle.cos(), radius * angle.sin())
+    return (radius * angle.cos(), radius * angle.sin());
 });
-let dot = scene.add(Circle::new(6.4).position(position).fill(YELLOW));
-let line = scene.add(Line::new((0.0, 0.0), position).stroke(BLUE, 2.0));
+let dot = scene.add(Circle::new(6.4).position(&position).fill(YELLOW));
+let line = scene.add(Line::new((0.0, 0.0), &position).stroke(BLUE, 2.0));
+
+// Single-source calculations can be inline, without borrowing scene.
+scene.add(Circle::new(radius.map(|r| { return r * 2.0; })));
 ```
 
 `Signal<T>` is writable timeline state; `Computed<T>` is read-only, cached
-native math. Both are cheap, copyable handles. Object properties are sources
-too. The earlier `scene.value` / `scene.derive` names have been replaced, not
-retained as aliases. Schedule signal changes with the same `sequence.play`,
+native math. Both are standalone, cloneable descriptions, not `Copy` IDs or
+mutable cells. Pass references to reuse them; retained dependencies are owned
+internally. Each scene registers its own independent sampled state. Helpers can
+return reactive descriptors without taking `&mut Scene`. Object properties are
+sources too, but their handles remain scene-local.
+
+`signal(initial)` is shorthand for `Signal::new(initial)`. Likewise,
+`computed(inputs, calculate)` calls `Computed::new(inputs, calculate)`.
+`computed!((progress, radius) => { ... })` expands to
+`computed((&progress, &radius), move |(progress, radius)| { ... })`.
+It removes repeated names while keeping dependencies explicit and fully typed.
+For a single expression, omit the block:
+`computed!((progress, radius) => progress * radius)`.
+Both explicit `return` and Rust's final-expression return work. Position builders
+accept either a `Point` or a computed coordinate tuple.
+
+The old scene-owned constructors have been replaced, not retained as aliases.
+Schedule signal changes with the same `sequence.play`,
 `.to`, `.offset`, `.multiply`, `.over`, and `.ease` APIs as object properties.
 `signal.set(value)` describes a zero-duration action, not an immediate write.
 
@@ -210,12 +230,14 @@ relationships are stripped from the descriptor during insertion: stored object
 fields remain plain points/numbers/colors, with evaluation in the existing
 binding plan. Clone a descriptor to create objects that share the same inputs.
 
-For an inline computation, first build the descriptor, then call `scene.add`.
-Nesting `scene.computed` inside `scene.add` would attempt two overlapping mutable
-borrows of the scene. No dependency reads are tracked automatically; all inputs
-remain explicit, and calculations are evaluated once per changed input tuple.
-The current plan still reads/compares registered inputs on each sample. It is
-not zero-cost and does not require a UI signals framework.
+Standalone descriptions register when used by object builders, bindings,
+updates, or timeline actions. Unused descriptions never evaluate. Registration
+deduplicates shared calculations per scene; playback uses prepared indices,
+without description lookups or dependency sorting. No dependency reads are
+tracked automatically. Registered calculations evaluate once per changed input
+tuple. The plan still reads/compares inputs on each sample and dispatches native
+closures; it is not zero-cost or a lazy UI signals framework. Construction adds
+shared description allocations and registration maps.
 
 `Path::quadratic(start, control, end)` accepts sources for any control point.
 Its exact geometry is cached until those points change; reveal/style animation
@@ -240,9 +262,9 @@ captures. They are stored, not executed during the author callback. A source
 supplies its current sampled value, not an implicit progress parameter.
 Properties, `Computed<T>` handles, and tuples of two to five sources are
 supported. All values are local object state, not transformed world positions.
-For a shared calculation use `let orbit = scene.computed(curve.end, function)`;
-then `scene.bind(dot.position, orbit, |position| position)`. Computed handles are
-copyable, and their output is cached once per changed input for all consumers.
+For a shared calculation use `let orbit = curve.end.map(function)`;
+then `scene.bind(dot.position, &orbit, |position| position)`. Its output is cached
+once per changed input for all consumers. Tuples support one to five sources.
 
 `scene.try_animate(...)` returns `Result<Animation, BindingError>` and rejects
 cycles, overlapping binding destinations, and timeline writes to bound fields.
@@ -265,18 +287,18 @@ geometry and derives the dot/line endpoints from the same sampled reveal.
 ## Direct object updates
 
 ```rust
-let progress = scene.signal(0.0);
+let progress = signal(0.0);
 let dot = scene.add(Circle::new(6.4).fill(YELLOW));
-scene.update(dot, progress, |circle, progress| {
+scene.update(dot, &progress, |circle, progress| {
     let angle = progress * std::f64::consts::TAU;
     circle.position = Point::new(80.0 * angle.cos(), 80.0 * angle.sin());
 });
 ```
 
-`scene.signal(initial)` returns a typed, standalone animation property. It is
+`signal(initial)` returns a typed, standalone animation property. It is
 not a drawable or a dependency node. Animate it with the existing `.to`,
-`.offset`, `.over`, and sequence methods. Values use scene-local storage, so
-their handles have the same ownership restriction as object handles.
+`.offset`, `.over`, and sequence methods. Sampled values use scene-local storage;
+the descriptions themselves can be reused across scenes independently.
 `scene.time()` is an explicit source of sampled `Duration`, clamped to the
 timeline range, not elapsed frame time.
 

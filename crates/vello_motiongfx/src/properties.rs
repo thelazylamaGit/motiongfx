@@ -74,3 +74,24 @@ where
         self.whole.validate(world)
     }
 }
+
+impl<W, I, S> motiongfx_authoring::Source<W> for Position<I, S>
+where
+    I: motiongfx::subject::SubjectId,
+    S: 'static,
+    W: motiongfx::world::SubjectSource<I, S>,
+{
+    type Value = Point;
+    type Prepared = Self;
+    type Owned = Self;
+    fn owned(&self) -> Self {
+        *self
+    }
+    fn register(
+        &self,
+        _: &mut W,
+        _: &mut motiongfx_authoring::BindingPlan<W>,
+    ) -> Self {
+        *self
+    }
+}

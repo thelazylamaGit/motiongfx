@@ -1,4 +1,5 @@
 //! Source-aware authoring contracts, independent of example choreography.
+#![allow(clippy::needless_return)] // Exercise explicit-return authoring syntax.
 
 use super::*;
 use std::sync::{
@@ -11,8 +12,8 @@ use vello::kurbo::{ParamCurve, QuadBez};
 fn background_sources_sample_without_geometry_and_last_configuration_wins()
  {
     let mut scene = Scene::new();
-    let color = scene.signal(colors::BLUE);
-    scene.set_background(color);
+    let color = signal(colors::BLUE);
+    scene.set_background(&color);
     let mut animation = scene.animate(|sequence| {
         sequence.play(color.to(colors::ORANGE));
     });
@@ -33,7 +34,7 @@ fn background_sources_sample_without_geometry_and_last_configuration_wins()
     assert_eq!(rendered.encoding().n_paths, 0);
 
     let mut scene = Scene::new();
-    let obsolete = scene.signal(colors::RED);
+    let obsolete = signal(colors::RED);
     scene.set_background(obsolete);
     // A later fixed setting must remove obsolete source wiring, otherwise
     // directly animating this property would be rejected as a writer conflict.
@@ -53,28 +54,27 @@ fn background_sources_sample_without_geometry_and_last_configuration_wins()
 fn shared_computed_sources_drive_builders_and_skip_unchanged_inputs()
 {
     let mut scene = Scene::new();
-    let progress = scene.signal(0.0);
-    let radius = scene.signal(10.0);
-    let fill = scene.signal(colors::BLUE);
+    let progress = signal(0.0);
+    let radius = signal(10.0);
+    let fill = signal(colors::BLUE);
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
     // Tuple output converts to a Point in position/start/end builders.
-    let position =
-        scene.computed((progress, radius), move |(p, r)| {
-            counter.fetch_add(1, Ordering::Relaxed);
-            (p * r, r)
-        });
-    let opacity = scene.computed(progress, |p| 1.0 - p);
-    let descriptor = Circle::new(radius)
-        .position(position)
-        .fill(fill)
-        .opacity(opacity);
+    let position = computed((&progress, &radius), move |(p, r)| {
+        counter.fetch_add(1, Ordering::Relaxed);
+        (p * r, r)
+    });
+    let opacity = computed(&progress, |p| 1.0 - p);
+    let descriptor = Circle::new(&radius)
+        .position(&position)
+        .fill(&fill)
+        .opacity(&opacity);
     let a = scene.add(descriptor.clone());
     let b = scene.add(descriptor);
     let line = scene.add(
-        Line::new((0.0, 0.0), position)
-            .stroke(fill, 2.0)
-            .opacity(opacity),
+        Line::new((0.0, 0.0), &position)
+            .stroke(&fill, 2.0)
+            .opacity(&opacity),
     );
     let mut animation = scene.animate(|sequence| {
         sequence.parallel(|sequence| {
@@ -112,24 +112,22 @@ fn shared_computed_sources_drive_builders_and_skip_unchanged_inputs()
 fn point_signals_discrete_arrays_text_and_camera_use_the_same_source_model()
  {
     let mut scene = Scene::new();
-    let center = scene.signal(Point::ZERO);
-    let points = scene
-        .signal([Point::new(10.0, 20.0), Point::new(30.0, 40.0)]);
-    let visible = scene.signal(false); // No boolean interpolation is required.
-    let opacity = scene
-        .computed(visible, |visible| if visible { 1.0 } else { 0.0 });
-    let selected = scene.computed(points, |points| points[1]);
-    let content =
-        scene.computed((center, points), |(center, points)| {
-            Arc::<str>::from(format!("{} {}", center.x, points[0].x))
-        });
+    let center = signal(Point::ZERO);
+    let points =
+        signal([Point::new(10.0, 20.0), Point::new(30.0, 40.0)]);
+    let visible = signal(false); // No boolean interpolation is required.
+    let opacity =
+        computed(&visible, |visible| if visible { 1.0 } else { 0.0 });
+    let selected = computed(&points, |points| points[1]);
+    let content = computed((&center, &points), |(center, points)| {
+        Arc::<str>::from(format!("{} {}", center.x, points[0].x))
+    });
     let text = scene
-        .add(Text::new(content).position(center).opacity(opacity));
-    let line = scene.add(Line::new(center, selected));
-    let size =
-        scene.computed(center, |p| Size::new(10.0 + p.x, 20.0));
+        .add(Text::new(content).position(&center).opacity(&opacity));
+    let line = scene.add(Line::new(&center, selected));
+    let size = computed(&center, |p| Size::new(10.0 + p.x, 20.0));
     let rect = scene.add(Rectangle::new(10.0, 20.0).size(size));
-    scene.set_camera(Camera::new().position(center));
+    scene.set_camera(Camera::new().position(&center));
     let mut animation = scene.animate(|sequence| {
         sequence.play(center.to((100.0, 50.0)).ease(ease::linear));
         sequence.play(visible.set(true));
@@ -164,18 +162,17 @@ fn point_signals_discrete_arrays_text_and_camera_use_the_same_source_model()
 fn source_driven_quadratic_matches_math_and_preserves_render_caches()
 {
     let mut scene = Scene::new();
-    let bend = scene.signal(0.0);
-    let t = scene.signal(0.0);
+    let bend = signal(0.0);
+    let t = signal(0.0);
     let start = Point::new(-400.0, -150.0);
     let end = Point::new(400.0, -150.0);
     let control =
-        scene.computed(bend, |bend| Point::new(0.0, 170.0 - bend));
-    let position = scene
-        .computed((control, t), move |(control, t)| {
-            QuadBez::new(start, control, end).eval(t)
-        });
+        computed(&bend, |bend| Point::new(0.0, 170.0 - bend));
+    let position = computed((&control, &t), move |(control, t)| {
+        QuadBez::new(start, control, end).eval(t)
+    });
     let curve = scene.add(Path::quadratic(start, control, end));
-    let dot = scene.add(Circle::new(6.0).position(position));
+    let dot = scene.add(Circle::new(6.0).position(&position));
     let mut animation = scene.animate(|sequence| {
         sequence.play(t.to(0.5).ease(ease::linear));
         for offset in [200.0, -240.0, 40.0] {
@@ -232,9 +229,9 @@ fn source_driven_quadratic_matches_math_and_preserves_render_caches()
 fn repeated_setters_replace_wiring_and_source_aware_fields_reject_timeline_writers()
  {
     let mut scene = Scene::new();
-    let radius = scene.signal(10.0);
+    let radius = signal(10.0);
     // Last setter wins; obsolete wiring must not survive a fixed override.
-    let dot = scene.add(Circle::new(radius).radius(5.0));
+    let dot = scene.add(Circle::new(&radius).radius(5.0));
     let mut animation = scene
         .try_animate(|sequence| {
             sequence.play(dot.radius.to(20.0).ease(ease::linear));
@@ -244,8 +241,8 @@ fn repeated_setters_replace_wiring_and_source_aware_fields_reject_timeline_write
     assert_eq!(animation.circle(dot).radius, 12.5);
 
     let mut scene = Scene::new();
-    let radius = scene.signal(10.0);
-    let dot = scene.add(Circle::new(radius));
+    let radius = signal(10.0);
+    let dot = scene.add(Circle::new(&radius));
     assert!(matches!(
         scene.try_animate(|sequence| {
             sequence.play(dot.radius.to(20.0));
@@ -253,25 +250,22 @@ fn repeated_setters_replace_wiring_and_source_aware_fields_reject_timeline_write
         Err(BindingError::AnimatedDestination(_))
     ));
 
-    let mut first = Scene::new();
-    let source = first.signal(0.0);
-    let foreign = first.computed(source, |v| (v, v));
+    let source = signal(0.0);
+    let standalone = computed(source, |v| (v, v));
     let mut second = Scene::new();
-    second.add(Circle::new(1.0).position(foreign));
-    assert!(matches!(
-        second.try_animate(|_| {}),
-        Err(BindingError::ForeignDerived)
-    ));
+    let dot = second.add(Circle::new(1.0).position(standalone));
+    let animation = second.try_animate(|_| {}).unwrap();
+    assert_eq!(animation.circle(dot).position, Point::ZERO);
 }
 
 #[test]
 fn line_reveal_uses_interpolated_endpoint_without_a_path_buffer() {
     let mut scene = Scene::new();
-    let reveal = scene.signal(0.0);
+    let reveal = signal(0.0);
     scene.add(
         Line::new((0.0, 10.0), (80.0, 50.0))
             .stroke(colors::BLUE, 2.0)
-            .reveal(reveal),
+            .reveal(&reveal),
     );
     let mut animation = scene.animate(|sequence| {
         sequence.play(reveal.to(1.0).ease(ease::linear));
@@ -309,4 +303,79 @@ fn line_reveal_uses_interpolated_endpoint_without_a_path_buffer() {
             expected.encoding().draw_data
         );
     }
+}
+
+#[test]
+fn standalone_helpers_macro_and_shared_descriptions_have_independent_playback()
+ {
+    // A component needs no scene access, and retains its inputs after return.
+    fn marker(progress: &Signal<f64>) -> Object<Circle> {
+        let radius = signal(10.0);
+        let position = computed!((progress, radius) => (progress * radius, radius));
+        return Circle::new(2.0).position(position);
+    }
+
+    let progress = signal(0.0);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = calls.clone();
+    let shared = progress.map(move |p| {
+        counter.fetch_add(1, Ordering::Relaxed);
+        return Point::new(p * 100.0, 20.0);
+    });
+    let descriptor = marker(&progress);
+    let mut first = Scene::new();
+    let a = first.add(descriptor.clone());
+    let b = first.add(Circle::new(3.0).position(&shared));
+    first.add(Circle::new(4.0).position(&shared));
+    // Native property .map works inline too.
+    let c = first.add(Circle::new(b.radius.map(|r| {
+        return r * 2.0;
+    })));
+    let mut first = first.animate(|sequence| {
+        sequence.play(progress.to(1.0).ease(ease::linear));
+    });
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+
+    let mut second = Scene::new();
+    let other = second.add(descriptor);
+    second.add(Circle::new(3.0).position(&shared));
+    let mut second = second.animate(|sequence| {
+        sequence.play(progress.to(2.0).ease(ease::linear));
+    });
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
+    first.sample(ms(500));
+    assert_eq!(first.circle(a).position, Point::new(5.0, 10.0));
+    assert_eq!(first.circle(b).position, Point::new(50.0, 20.0));
+    assert_eq!(first.circle(c).radius, 6.0);
+    assert_eq!(second.circle(other).position, Point::new(0.0, 10.0));
+    second.sample(s(1));
+    assert_eq!(second.circle(other).position, Point::new(20.0, 10.0));
+    first.sample(ms(0));
+    assert_eq!(first.circle(a).position, Point::new(0.0, 10.0));
+    assert_eq!(second.circle(other).position, Point::new(20.0, 10.0));
+}
+
+#[test]
+fn roots_used_only_by_actions_register_and_unused_computations_do_not_run()
+ {
+    let input = signal(2.0);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = calls.clone();
+    let _unused: Computed<f64> = input.map(move |x| {
+        counter.fetch_add(1, Ordering::Relaxed);
+        return x;
+    });
+    let mut animation = Scene::new().animate(|sequence| {
+        sequence.play(input.to(4.0).ease(ease::linear));
+        sequence.play(input.offset(2.0).ease(ease::linear));
+    });
+    for (time, expected) in [(500, 3.0), (1500, 5.0), (0, 2.0)] {
+        animation.sample(ms(time));
+        let id = animation.graphics.values.register(&input);
+        assert_eq!(
+            animation.graphics.values.get::<f64>(id),
+            Some(&expected)
+        );
+    }
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
 }

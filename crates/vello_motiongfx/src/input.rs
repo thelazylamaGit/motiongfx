@@ -6,7 +6,9 @@ use motiongfx::subject::SubjectId;
 use motiongfx_authoring::bindings::{
     BindingDependency, DerivedValues,
 };
-use motiongfx_authoring::{BindingError, BindingSource, Property};
+use motiongfx_authoring::{
+    BindingError, BindingPlan, BindingSource, Property, Source,
+};
 use std::sync::Arc;
 
 /// Fixed inputs create no binding. Sources use the existing dependency plan;
@@ -26,6 +28,14 @@ type Validate =
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct Reader<T> {
+    register: Arc<Register<T>>,
+}
+type Register<T> = dyn Fn(&mut Graphics, &mut BindingPlan<Graphics>) -> PreparedReader<T>
+    + Send
+    + Sync;
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct PreparedReader<T> {
     read: Arc<Read<T>>,
     validate: Arc<Validate>,
     dependencies: Vec<BindingDependency>,
@@ -33,17 +43,25 @@ pub struct Reader<T> {
 impl<T: Clone + PartialEq + ThreadSafe> Input<T> {
     fn mapped<S, F>(source: S, convert: F) -> Self
     where
-        S: BindingSource<Graphics>,
+        S: Source<Graphics>,
         F: Fn(S::Value) -> T + ThreadSafe,
     {
-        let validation_source = source.clone();
+        let source = source.owned();
+        let convert = Arc::new(convert);
         Self::Reader(Reader {
-            dependencies: source.dependencies(),
-            read: Arc::new(move |world, values| {
-                source.read(world, values).map(&convert)
-            }),
-            validate: Arc::new(move |world| {
-                validation_source.validate(world)
+            register: Arc::new(move |world, plan| {
+                let source = source.register(world, plan);
+                let validation_source = source.clone();
+                let convert = convert.clone();
+                PreparedReader {
+                    dependencies: source.dependencies(),
+                    read: Arc::new(move |world, values| {
+                        source.read(world, values).map(&*convert)
+                    }),
+                    validate: Arc::new(move |world| {
+                        validation_source.validate(world)
+                    }),
+                }
             }),
         })
     }
@@ -130,7 +148,7 @@ impl From<Signal<(f64, f64)>> for Input<Point> {
     }
 }
 impl<T: Clone + PartialEq + ThreadSafe> BindingSource<Graphics>
-    for Input<T>
+    for PreparedInput<T>
 {
     type Value = T;
     fn read(
@@ -148,9 +166,9 @@ impl<T: Clone + PartialEq + ThreadSafe> BindingSource<Graphics>
     fn dependencies(&self) -> Vec<BindingDependency> {
         match self {
             Self::Fixed(_) => Vec::new(),
-            Self::Signal(value) => value.dependencies(),
+            Self::Signal(value) => <Property<crate::SignalId, T, T> as BindingSource<Graphics>>::dependencies(value),
             Self::Computed(value) => {
-                <Computed<T> as BindingSource<Graphics>>::dependencies(
+                <motiongfx_authoring::bindings::ComputedSlot<T> as BindingSource<Graphics>>::dependencies(
                     value,
                 )
             }
@@ -162,6 +180,65 @@ impl<T: Clone + PartialEq + ThreadSafe> BindingSource<Graphics>
             Self::Fixed(_) | Self::Computed(_) => Ok(()),
             Self::Signal(value) => value.validate(world),
             Self::Reader(value) => (value.validate)(world),
+        }
+    }
+}
+
+impl<T: Clone> From<&Signal<T>> for Input<T> {
+    fn from(value: &Signal<T>) -> Self {
+        Self::Signal(value.clone())
+    }
+}
+impl<T> From<&Computed<T>> for Input<T> {
+    fn from(value: &Computed<T>) -> Self {
+        Self::Computed(value.clone())
+    }
+}
+impl From<&Computed<(f64, f64)>> for Input<Point> {
+    fn from(value: &Computed<(f64, f64)>) -> Self {
+        Self::mapped(value, Point::from)
+    }
+}
+impl From<&Signal<(f64, f64)>> for Input<Point> {
+    fn from(value: &Signal<(f64, f64)>) -> Self {
+        Self::mapped(value, Point::from)
+    }
+}
+
+/// Prepared once during scene construction; playback uses indexed sources.
+#[doc(hidden)]
+#[derive(Clone)]
+pub enum PreparedInput<T> {
+    Fixed(T),
+    Signal(Property<crate::SignalId, T, T>),
+    Computed(motiongfx_authoring::bindings::ComputedSlot<T>),
+    Reader(PreparedReader<T>),
+}
+impl<T: Clone + PartialEq + ThreadSafe> Source<Graphics>
+    for Input<T>
+{
+    type Value = T;
+    type Owned = Self;
+    type Prepared = PreparedInput<T>;
+    fn owned(&self) -> Self {
+        self.clone()
+    }
+    fn register(
+        &self,
+        world: &mut Graphics,
+        plan: &mut BindingPlan<Graphics>,
+    ) -> Self::Prepared {
+        match self {
+            Self::Fixed(value) => PreparedInput::Fixed(value.clone()),
+            Self::Signal(value) => {
+                PreparedInput::Signal(value.register(world, plan))
+            }
+            Self::Computed(value) => {
+                PreparedInput::Computed(value.register(world, plan))
+            }
+            Self::Reader(value) => {
+                PreparedInput::Reader((value.register)(world, plan))
+            }
         }
     }
 }

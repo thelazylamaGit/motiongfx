@@ -7,7 +7,7 @@ use motiongfx::prelude::{ease, ms, s};
 use vello::kurbo::Rect;
 use vello_motiongfx::{
     Circle, Color, Input, Line, LineHandle, Path, Point, Rectangle,
-    Scene, Text,
+    Scene, Text, computed, signal,
 };
 use vello_winit_motiongfx::{PlaybackMode, Window};
 
@@ -56,27 +56,19 @@ fn grid(
 
 fn main() -> Result<(), winit::error::EventLoopError> {
     let mut scene = Scene::new();
-    let guides = scene.signal(0.0);
-    let t = scene.signal(0.0);
-    let bend = scene.signal(0.0);
+    let guides = signal(0.0);
+    let t = signal(0.0);
+    let bend = signal(0.0);
 
     // One shared calculation for each construction point. Positive y is up.
     let p0 = Point::new(-400.0, -150.0);
     let p2 = Point::new(400.0, -150.0);
-    let p1 =
-        scene.computed(bend, |bend| Point::new(0.0, 170.0 - bend));
-    let a_position =
-        scene.computed((p1, t), move |(p1, t)| lerp(p0, p1, t));
-    let b_position =
-        scene.computed((p1, t), move |(p1, t)| lerp(p1, p2, t));
-    let q_position = scene
-        .computed((a_position, b_position, t), |(a, b, t)| {
-            lerp(a, b, t)
-        });
-    let polygon_opacity =
-        scene.computed(guides, |opacity| opacity * 0.6);
-    let halo_opacity =
-        scene.computed(guides, |opacity| opacity * 0.16);
+    let p1 = bend.map(|bend| Point::new(0.0, 170.0 - bend));
+    let a_position = computed!((p1, t) => lerp(p0, p1, t));
+    let b_position = computed!((p1, t) => lerp(p1, p2, t));
+    let q_position = computed!((a_position, b_position, t) => lerp(a_position, b_position, t));
+    let polygon_opacity = guides.map(|opacity| opacity * 0.6);
+    let halo_opacity = guides.map(|opacity| opacity * 0.16);
 
     scene.add(
         Rectangle::new(960.0, 440.0)
@@ -108,43 +100,43 @@ fn main() -> Result<(), winit::error::EventLoopError> {
     );
 
     scene.add(
-        Line::new(p0, p1)
+        Line::new(p0, &p1)
             .stroke(MUTED, 1.5)
-            .opacity(polygon_opacity),
+            .opacity(&polygon_opacity),
     );
     scene.add(
-        Line::new(p1, p2)
+        Line::new(&p1, p2)
             .stroke(MUTED, 1.5)
             .opacity(polygon_opacity),
     );
     let curve = scene
-        .add(Path::quadratic(p0, p1, p2).stroke(TEAL, 4.0).end(0.0));
+        .add(Path::quadratic(p0, &p1, p2).stroke(TEAL, 4.0).end(0.0));
     scene.add(
-        Line::new(a_position, b_position)
+        Line::new(&a_position, &b_position)
             .stroke(GOLD, 2.0)
-            .opacity(guides),
+            .opacity(&guides),
     );
     let a = scene.add(
         Circle::new(5.0)
-            .position(a_position)
+            .position(&a_position)
             .fill(GOLD)
-            .opacity(guides),
+            .opacity(&guides),
     );
     let b = scene.add(
         Circle::new(5.0)
-            .position(b_position)
+            .position(&b_position)
             .fill(GOLD)
-            .opacity(guides),
+            .opacity(&guides),
     );
 
     // The array mixes fixed and computed positions through one typed Input.
     let controls =
-        [Input::from(p0), p1.into(), p2.into()].map(|position| {
+        [Input::from(p0), (&p1).into(), p2.into()].map(|position| {
             scene.add(
                 Circle::new(6.0)
                     .position(position)
                     .fill(INK)
-                    .opacity(guides),
+                    .opacity(&guides),
             )
         });
     for (name, control) in
@@ -156,7 +148,7 @@ fn main() -> Result<(), winit::error::EventLoopError> {
                 .position((12.0, 25.0))
                 .font_size(14.0)
                 .fill(INK)
-                .opacity(guides),
+                .opacity(&guides),
         );
     }
     scene.add(
@@ -165,7 +157,7 @@ fn main() -> Result<(), winit::error::EventLoopError> {
             .position((-22.0, 25.0))
             .font_size(14.0)
             .fill(GOLD)
-            .opacity(guides),
+            .opacity(&guides),
     );
     scene.add(
         Text::new("B")
@@ -173,11 +165,11 @@ fn main() -> Result<(), winit::error::EventLoopError> {
             .position((12.0, -14.0))
             .font_size(14.0)
             .fill(GOLD)
-            .opacity(guides),
+            .opacity(&guides),
     );
     scene.add(
         Circle::new(16.0)
-            .position(q_position)
+            .position(&q_position)
             .fill(PINK)
             .opacity(halo_opacity),
     );
@@ -185,7 +177,7 @@ fn main() -> Result<(), winit::error::EventLoopError> {
         Circle::new(7.0)
             .position(q_position)
             .fill(PINK)
-            .opacity(guides),
+            .opacity(&guides),
     );
 
     for (content, y, color) in [
@@ -201,9 +193,7 @@ fn main() -> Result<(), winit::error::EventLoopError> {
         );
     }
     let time = scene.time();
-    let readout = scene.computed((t, time), |(t, time)| {
-        format!("T = {t:.2}  TIME {:.2}S", time.as_secs_f64()).into()
-    });
+    let readout = computed!((t, time) => format!("T = {t:.2}  TIME {:.2}S", time.as_secs_f64()).into());
     scene.add(
         Text::new(readout)
             .position((100.0, -244.0))

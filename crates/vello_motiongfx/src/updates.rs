@@ -248,11 +248,11 @@ impl Scene {
     ///
     /// ```
     /// use motiongfx::prelude::{ease, ms};
-    /// use vello_motiongfx::{Circle, Point, Scene};
+    /// use vello_motiongfx::{Circle, Point, Scene, signal};
     /// let mut scene = Scene::new();
-    /// let x = scene.signal(0.0);
+    /// let x = signal(0.0);
     /// let dot = scene.add(Circle::new(10.0));
-    /// scene.update(dot, x, |circle, x| {
+    /// scene.update(dot, &x, |circle, x| {
     ///     circle.position = Point::new(x, 30.0);
     /// });
     /// let mut animation = scene.animate(|sequence| {
@@ -264,11 +264,11 @@ impl Scene {
     ///
     /// Targets retain their concrete Rust type:
     /// ```compile_fail
-    /// use vello_motiongfx::{Circle, Point, Scene};
+    /// use vello_motiongfx::{Circle, Point, Scene, signal};
     /// let mut scene = Scene::new();
-    /// let x = scene.signal(0.0);
+    /// let x = signal(0.0);
     /// let dot = scene.add(Circle::new(10.0));
-    /// scene.update(dot, x, |circle, _| {
+    /// scene.update(dot, &x, |circle, _| {
     ///     circle.end = Point::ZERO; // A circle has no line endpoint.
     /// });
     /// ```
@@ -279,9 +279,11 @@ impl Scene {
         update: F,
     ) where
         T: UpdateTargets,
-        S: BindingSource<Graphics>,
+        S: motiongfx_authoring::Source<Graphics>,
         F: for<'a> FnMut(T::Objects<'a>, S::Value) + ThreadSafe,
     {
+        let source =
+            source.register(&mut self.graphics, &mut self.bindings);
         self.bindings
             .validate_source(&self.graphics, &source)
             .expect("invalid update source");

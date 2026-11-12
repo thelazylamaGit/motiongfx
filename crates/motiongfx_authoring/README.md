@@ -41,7 +41,7 @@ subject types can expose their own typed `Property` fields.
 
 `BindingPlan<W>` optionally calculates properties after timeline sampling.
 `bind(destination, source, function)` stores an ordinary native Rust closure;
-`computed(source, function)` returns a typed, copyable `Computed<T>` handle for
+`BindingPlan::computed(source, function)` returns a typed, copyable `ComputedSlot<T>` handle for
 sharing one cached calculation. Sources can be properties, derived handles,
 or tuples of two to five sources. Multiple source values arrive as a tuple.
 Input/output types are checked by Rust; input values implement `PartialEq`
@@ -68,6 +68,29 @@ a scripting interpreter. Ordinary property handles still do not identify their
 owning scene; mixing handles between scenes is unsupported. A Vello `Scene`
 owns the plan and finalizes it through `try_animate` (returns `BindingError`)
 or `animate` (panics on a binding error during construction).
+
+## Standalone sources
+
+`signal(initial)` / `Signal::new(initial)` and
+`computed(inputs, function)` / `Computed::new(inputs, function)` construct
+scene-independent descriptions. `signal.map(function)` and
+`computed.map(function)` describe single-source calculations. `Property::map`
+also supports sampled native properties. These retain owned dependencies; a
+helper can return a description without retaining references to its arguments.
+
+`Source<W>::register(world, plan)` prepares a description for one world and
+deduplicates its computed nodes. Integrations implement `SignalWorld` with
+`SignalValues` storage and `SubjectSource<SignalId, T>` access, and construct
+`Sequence::with_signals` so even roots used only in actions are registered.
+The Vello integration does this automatically and supplies `computed!` to
+avoid repeating dependency names. Regular core-property sequences still use
+`Sequence::new` without signal storage.
+
+Descriptions are cloneable shared ownership, not `Copy` runtime IDs. Each
+world has independent sampled values and caches. Registration maps and source
+descriptions are not traversed during sampling; evaluation retains the native
+source reads, comparisons and closure dispatch described above. This is explicit
+dependency wiring, not automatic tracking, effects, or an interpreter.
 
 ## Optional authoring macro
 

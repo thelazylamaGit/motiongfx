@@ -70,17 +70,16 @@ fn shared_derived_values_compute_once_and_support_offsets_and_multiple_inputs()
     let line = scene.add(Line::new(Point::ZERO, Point::ZERO));
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
-    let shared = scene.computed(
+    let shared = computed(
         (source.position, source.radius),
         move |(position, radius)| {
             counter.fetch_add(1, Ordering::Relaxed);
             position + (radius, 0.0)
         },
     );
-    let offset =
-        scene.computed(shared, |position| position + (0.0, 30.0));
-    scene.bind(dot.position, shared, |position| position);
-    scene.bind(line.start, shared, |position| position);
+    let offset = computed(&shared, |position| position + (0.0, 30.0));
+    scene.bind(dot.position, &shared, |position| position);
+    scene.bind(line.start, &shared, |position| position);
     scene.bind(line.end, offset, |position| position);
     let mut animation = scene
         .try_animate(|sequence| {
@@ -134,7 +133,7 @@ fn binding_validation_rejects_feedback_and_cycles_through_derived_values()
     let a = scene.add(Circle::new(2.0));
     let b = scene.add(Circle::new(2.0));
     let derived =
-        scene.computed(b.position, |position| position + (1.0, 0.0));
+        computed(b.position, |position| position + (1.0, 0.0));
     scene.bind(a.position, derived, |position| position);
     scene.bind(b.position, a.position, |position| position);
     assert!(matches!(
@@ -184,17 +183,17 @@ fn binding_validation_rejects_overlapping_writers_and_timeline_actions()
 }
 
 #[test]
-fn binding_validation_rejects_foreign_derived_values_and_missing_properties()
+fn binding_validation_rejects_missing_properties_in_standalone_computations()
  {
     let mut first = Scene::new();
     let a = first.add(Circle::new(2.0));
-    let shared = first.computed(a.radius, |r| r * 2.0);
+    let shared = computed(a.radius, |r| r * 2.0);
     let mut second = Scene::new();
-    let b = second.add(Circle::new(2.0));
-    second.bind(b.radius, shared, |r| r);
+    let b = second.add(Rectangle::new(2.0, 2.0));
+    second.bind(b.position.x, &shared, |r| r);
     assert!(matches!(
         second.try_animate(|_| {}),
-        Err(BindingError::ForeignDerived)
+        Err(BindingError::MissingProperty(_))
     ));
 
     let mut second = Scene::new();

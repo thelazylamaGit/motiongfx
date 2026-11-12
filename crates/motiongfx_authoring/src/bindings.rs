@@ -3,11 +3,12 @@
 //! Dependencies are explicit and frozen at preparation. Closure input/output
 //! types are checked by Rust; writer conflicts and cycles are checked once.
 
-use crate::Property;
+use crate::{Property, source::SourceId};
 use motiongfx::action::{ActionKey, ActionTable};
 use motiongfx::prelude::{SubjectSource, ThreadSafe, Timeline};
 use motiongfx::subject::SubjectId;
 use std::any::{Any, TypeId};
+use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -130,7 +131,7 @@ enum Dependency {
     Computed { plan: u64, index: usize },
 }
 
-/// Type-erased cached outputs. Only typed `Computed<T>` handles can read them.
+/// Type-erased cached outputs. Only typed `ComputedSlot<T>` handles can read them.
 #[doc(hidden)]
 #[derive(Default)]
 pub struct DerivedValues(Vec<Option<Box<dyn Any + Send + Sync>>>);
@@ -179,19 +180,19 @@ where
 }
 
 /// Read-only handle to one shared, cached native calculation.
-pub struct Computed<T> {
+pub struct ComputedSlot<T> {
     plan: u64,
     index: usize,
     marker: PhantomData<fn() -> T>,
 }
-impl<T> Copy for Computed<T> {}
-impl<T> Clone for Computed<T> {
+impl<T> Copy for ComputedSlot<T> {}
+impl<T> Clone for ComputedSlot<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 impl<W, T: Clone + PartialEq + ThreadSafe> BindingSource<W>
-    for Computed<T>
+    for ComputedSlot<T>
 {
     type Value = T;
     fn read(&self, _: &W, values: &DerivedValues) -> Option<T> {
@@ -232,6 +233,7 @@ macro_rules! tuple_source {
         }
     }
 }
+tuple_source!(A:0);
 tuple_source!(A:0, B:1);
 tuple_source!(A:0, B:1, C:2);
 tuple_source!(A:0, B:1, C:2, D:3);
@@ -252,6 +254,7 @@ struct Node<W> {
 /// Scene ownership for ordinary property handles is not enforced here.
 pub struct BindingPlan<W> {
     id: u64,
+    registered: HashMap<SourceId, usize>,
     nodes: Vec<Node<W>>,
     order: Vec<usize>,
     values: DerivedValues,
@@ -263,6 +266,7 @@ impl<W> Default for BindingPlan<W> {
         static NEXT_ID: AtomicU64 = AtomicU64::new(1);
         Self {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+            registered: HashMap::new(),
             nodes: Vec::new(),
             order: Vec::new(),
             values: DerivedValues::default(),
@@ -273,6 +277,23 @@ impl<W> Default for BindingPlan<W> {
 }
 
 impl<W: 'static> BindingPlan<W> {
+    pub(crate) fn registered_computed<T>(
+        &self,
+        id: SourceId,
+    ) -> Option<ComputedSlot<T>> {
+        self.registered.get(&id).map(|&index| ComputedSlot {
+            plan: self.id,
+            index,
+            marker: PhantomData,
+        })
+    }
+    pub(crate) fn remember_computed<T>(
+        &mut self,
+        id: SourceId,
+        slot: ComputedSlot<T>,
+    ) {
+        self.registered.insert(id, slot.index);
+    }
     /// Read a typed source after evaluation, including a cached derived value.
     pub fn read_source<S: BindingSource<W>>(
         &self,
@@ -353,7 +374,7 @@ impl<W: 'static> BindingPlan<W> {
         &mut self,
         source: Source,
         calculate: F,
-    ) -> Computed<T>
+    ) -> ComputedSlot<T>
     where
         Source: BindingSource<W>,
         T: Clone + PartialEq + ThreadSafe,
@@ -388,7 +409,7 @@ impl<W: 'static> BindingPlan<W> {
             }),
         });
         self.values.0.push(None);
-        Computed {
+        ComputedSlot {
             plan: self.id,
             index,
             marker: PhantomData,

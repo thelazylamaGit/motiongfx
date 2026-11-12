@@ -9,9 +9,14 @@ use std::time::Duration;
 
 pub mod bindings;
 mod macros;
-pub use bindings::{
-    BindingError, BindingPlan, BindingSource, Computed,
+mod signals;
+mod source;
+pub use bindings::{BindingError, BindingPlan, BindingSource};
+pub use signals::{
+    RegisterSignals, Signal, SignalChange, SignalId, SignalValues,
+    SignalWorld, signal,
 };
+pub use source::{Computed, Source, computed};
 
 /// Library-wide authoring defaults. Individual sequences and changes may
 /// override these without changing other animations or process-global state.
@@ -159,7 +164,8 @@ impl<I, S, T, F> Change<I, S, T, F> {
 }
 
 /// A thin collector for existing MotionGfx track fragments.
-pub struct Sequence<'a, W> {
+pub struct Sequence<'a, W, C = ()> {
+    context: C,
     builder: TimelineBuilder<'a, W>,
     fragments: Vec<TrackFragment>,
     duration: Duration,
@@ -168,8 +174,24 @@ pub struct Sequence<'a, W> {
 
 impl<'a, W: 'static> Sequence<'a, W> {
     pub fn new(registry: &'a mut Registry) -> Self {
+        Self::with_context(registry, ())
+    }
+}
+
+impl<'a, W: 'static> Sequence<'a, W, &'a mut SignalValues> {
+    pub fn with_signals(
+        registry: &'a mut Registry,
+        values: &'a mut SignalValues,
+    ) -> Self {
+        Self::with_context(registry, values)
+    }
+}
+
+impl<'a, W: 'static, C> Sequence<'a, W, C> {
+    fn with_context(registry: &'a mut Registry, context: C) -> Self {
         let defaults = AnimationDefaults::default();
         Self {
+            context,
             builder: registry.create_builder::<W>(),
             fragments: Vec::new(),
             duration: defaults.duration,
@@ -184,36 +206,14 @@ impl<'a, W: 'static> Sequence<'a, W> {
     }
 
     /// Lower a property change without scheduling it, for custom track ordering.
-    pub fn action<I, S, T, F>(
+    pub fn action<A: AnimationChange<W, C>>(
         &mut self,
-        change: Change<I, S, T, F>,
-    ) -> TrackFragment
-    where
-        I: SubjectId,
-        S: Clone + ThreadSafe,
-        T: Clone + ThreadSafe,
-        F: Fn(&T) -> T + ThreadSafe,
-        W: SubjectSource<I, S>,
-    {
-        self.builder
-            .act_builder(
-                change.property.id,
-                change.property.path,
-                change.target,
-            )
-            .with_interp(change.property.interp)
-            .with_ease(change.ease.unwrap_or(self.ease))
-            .play(change.duration.unwrap_or(self.duration))
+        change: A,
+    ) -> TrackFragment {
+        change.lower(self)
     }
 
-    pub fn play<I, S, T, F>(&mut self, change: Change<I, S, T, F>)
-    where
-        I: SubjectId,
-        S: Clone + ThreadSafe,
-        T: Clone + ThreadSafe,
-        F: Fn(&T) -> T + ThreadSafe,
-        W: SubjectSource<I, S>,
-    {
+    pub fn play<A: AnimationChange<W, C>>(&mut self, change: A) {
         let fragment = self.action(change);
         self.append(fragment);
     }
@@ -221,16 +221,10 @@ impl<'a, W: 'static> Sequence<'a, W> {
     /// Start a collection of changes together, waiting for the longest one.
     /// Elements must have the same change type (for example, many x positions).
     /// For mixed property types, use `action` and existing track combinators.
-    pub fn play_all<I, S, T, F>(
+    pub fn play_all<A: AnimationChange<W, C>>(
         &mut self,
-        changes: impl IntoIterator<Item = Change<I, S, T, F>>,
-    ) where
-        I: SubjectId,
-        S: Clone + ThreadSafe,
-        T: Clone + ThreadSafe,
-        F: Fn(&T) -> T + ThreadSafe,
-        W: SubjectSource<I, S>,
-    {
+        changes: impl IntoIterator<Item = A>,
+    ) {
         let fragments: Vec<_> = changes
             .into_iter()
             .map(|change| self.action(change))
@@ -240,17 +234,11 @@ impl<'a, W: 'static> Sequence<'a, W> {
 
     /// Start successive changes at fixed intervals, waiting for the last end.
     /// The interval is measured between starts, not after each change finishes.
-    pub fn stagger<I, S, T, F>(
+    pub fn stagger<A: AnimationChange<W, C>>(
         &mut self,
         interval: Duration,
-        changes: impl IntoIterator<Item = Change<I, S, T, F>>,
-    ) where
-        I: SubjectId,
-        S: Clone + ThreadSafe,
-        T: Clone + ThreadSafe,
-        F: Fn(&T) -> T + ThreadSafe,
-        W: SubjectSource<I, S>,
-    {
+        changes: impl IntoIterator<Item = A>,
+    ) {
         let fragments: Vec<_> = changes
             .into_iter()
             .map(|change| self.action(change))
@@ -302,5 +290,52 @@ impl<'a, W: 'static> Sequence<'a, W> {
 
     pub fn compile(self) -> Timeline<W> {
         self.builder.compile(self.fragments.ord_chain().compile())
+    }
+}
+
+/// Construction-time action description lowered to a core track fragment.
+pub trait AnimationChange<W, C> {
+    fn lower(
+        self,
+        sequence: &mut Sequence<'_, W, C>,
+    ) -> TrackFragment;
+}
+impl<W: 'static, C, I, S, T, F> AnimationChange<W, C>
+    for Change<I, S, T, F>
+where
+    I: SubjectId,
+    S: Clone + ThreadSafe,
+    T: Clone + ThreadSafe,
+    F: Fn(&T) -> T + ThreadSafe,
+    W: SubjectSource<I, S>,
+{
+    fn lower(
+        self,
+        sequence: &mut Sequence<'_, W, C>,
+    ) -> TrackFragment {
+        sequence
+            .builder
+            .act_builder(
+                self.property.id,
+                self.property.path,
+                self.target,
+            )
+            .with_interp(self.property.interp)
+            .with_ease(self.ease.unwrap_or(sequence.ease))
+            .play(self.duration.unwrap_or(sequence.duration))
+    }
+}
+impl<I, S, T> Property<I, S, T> {
+    /// Describe a calculation from this sampled property.
+    pub fn map<W: 'static, U, F>(
+        &self,
+        calculate: F,
+    ) -> Computed<W, U>
+    where
+        Self: Source<W>,
+        U: Clone + PartialEq + ThreadSafe,
+        F: Fn(<Self as Source<W>>::Value) -> U + ThreadSafe,
+    {
+        Computed::new(self, calculate)
     }
 }

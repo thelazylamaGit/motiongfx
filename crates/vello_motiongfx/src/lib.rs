@@ -4,9 +4,9 @@
 use motiongfx::prelude::*;
 use motiongfx_authoring::BindingPlan;
 pub use motiongfx_authoring::{
-    BindingError, BindingSource, Computed,
+    BindingError, BindingSource, Signal, SignalId, Source, signal,
 };
-use motiongfx_authoring::{Property, Sequence};
+use motiongfx_authoring::{Property, SignalValues};
 pub use motiongfx_authoring::{animate, smooth};
 use peniko_motiongfx as _;
 use std::time::Duration;
@@ -14,6 +14,53 @@ use vello::kurbo::{Affine, Rect, Stroke};
 pub use vello::kurbo::{Point, Size, Vec2};
 pub use vello::peniko::Color;
 use vello::peniko::Fill;
+
+pub type Sequence<'a> =
+    motiongfx_authoring::Sequence<'a, Graphics, &'a mut SignalValues>;
+pub type Computed<T> = motiongfx_authoring::Computed<Graphics, T>;
+
+/// A standalone shared calculation. Registered once per scene that uses it.
+/// Like `Computed::new`, this does no evaluation during construction.
+///
+/// Output types are checked by Rust:
+/// ```compile_fail
+/// use vello_motiongfx::{signal, Circle, Point, Scene};
+/// let position = signal(Point::ZERO);
+/// let mut scene = Scene::new();
+/// scene.add(Circle::new(position.map(|p| { return p; })));
+/// ```
+/// Computed outputs are read-only; animate their source instead:
+/// ```compile_fail
+/// use vello_motiongfx::{computed, signal};
+/// let input = signal(0.0);
+/// let output = computed(&input, |x| { return x * 2.0; });
+/// output.to(10.0);
+/// ```
+pub fn computed<S, T, F>(inputs: S, calculate: F) -> Computed<T>
+where
+    S: Source<Graphics>,
+    T: Clone + PartialEq + ThreadSafe,
+    F: Fn(S::Value) -> T + ThreadSafe,
+{
+    Computed::new(inputs, calculate)
+}
+
+/// Explicit dependencies with closure parameters supplied automatically.
+/// Borrows and retains owned descriptions; dependencies remain reusable.
+///
+/// ```
+/// use vello_motiongfx::{computed, signal, Circle, Scene};
+/// let radius = signal(3.0);
+/// let area = computed!((radius) => std::f64::consts::PI * radius * radius);
+/// let mut scene = Scene::new();
+/// scene.add(Circle::new(area));
+/// ```
+#[macro_export]
+macro_rules! computed {
+    (($($name:ident),+ $(,)?) => $body:expr $(,)?) => {
+        $crate::computed(($(&$name,)+), move |($($name,)+)| $body)
+    };
+}
 
 mod background;
 mod camera;
@@ -41,7 +88,7 @@ pub use parent::Parent;
 pub use path::{BezPath, Path, PathHandle, PathId};
 use path_renderer::PathGeometry;
 pub use updates::UpdateTargets;
-pub use values::{SampleTime, Signal, SignalId};
+pub use values::SampleTime;
 
 #[cfg(test)]
 mod binding_tests;
@@ -133,7 +180,7 @@ pub struct RectangleHandle {
 #[derive(Default)]
 pub struct Graphics {
     background: background::Background,
-    values: Vec<Box<dyn std::any::Any + Send + Sync>>,
+    values: SignalValues,
     sample_time: Duration,
     camera: Camera,
     rectangles: Vec<Rectangle>,
@@ -225,52 +272,12 @@ impl Scene {
         S: 'static,
         T: Clone + ThreadSafe,
         Graphics: SubjectSource<I, S>,
-        Source: BindingSource<Graphics>,
+        Source: motiongfx_authoring::Source<Graphics>,
         F: Fn(Source::Value) -> T + ThreadSafe,
     {
+        let source =
+            source.register(&mut self.graphics, &mut self.bindings);
         self.bindings.bind(destination, source, calculate);
-    }
-
-    /// A read-only native calculation from explicit typed inputs. Cached once
-    /// per changed input, including when shared by several objects. This is not
-    /// an effect and cannot itself be animated; animate its source signals.
-    ///
-    /// A computed can be inline in a descriptor before `scene.add`:
-    /// ```
-    /// use motiongfx::prelude::{ease, ms};
-    /// use vello_motiongfx::{Circle, Point, Scene};
-    /// let mut scene = Scene::new();
-    /// let progress = scene.signal(0.0);
-    /// let circle = Circle::new(6.4).position(
-    ///     scene.computed(progress, |p| (p * 100.0, 30.0)),
-    /// );
-    /// let dot = scene.add(circle);
-    /// let mut animation = scene.animate(|sequence| {
-    ///     sequence.play(progress.to(1.0).ease(ease::linear));
-    /// });
-    /// animation.sample(ms(500));
-    /// assert_eq!(animation.circle(dot).position, Point::new(50.0, 30.0));
-    /// ```
-    ///
-    /// Computed outputs are read-only:
-    /// ```compile_fail
-    /// use vello_motiongfx::Scene;
-    /// let mut scene = Scene::new();
-    /// let input = scene.signal(0.0);
-    /// let output = scene.computed(input, |x| x * 2.0);
-    /// output.to(10.0);
-    /// ```
-    pub fn computed<Source, T, F>(
-        &mut self,
-        source: Source,
-        calculate: F,
-    ) -> Computed<T>
-    where
-        Source: BindingSource<Graphics>,
-        T: Clone + PartialEq + ThreadSafe,
-        F: Fn(Source::Value) -> T + ThreadSafe,
-    {
-        self.bindings.computed(source, calculate)
     }
 
     /// Store and register an object in one operation. Dispatch is resolved
@@ -335,7 +342,7 @@ impl Scene {
     #[track_caller]
     pub fn animate(
         self,
-        author: impl FnOnce(&mut Sequence<'_, Graphics>),
+        author: impl FnOnce(&mut Sequence<'_>),
     ) -> Animation {
         self.try_animate(author).expect("invalid scene bindings")
     }
@@ -344,11 +351,14 @@ impl Scene {
     /// errors and retain their last valid animation. No validation per frame.
     pub fn try_animate(
         mut self,
-        author: impl FnOnce(&mut Sequence<'_, Graphics>),
+        author: impl FnOnce(&mut Sequence<'_>),
     ) -> Result<Animation, BindingError> {
         self.prepare_background();
         let mut registry = Registry::new();
-        let mut sequence = Sequence::new(&mut registry);
+        let mut sequence = Sequence::with_signals(
+            &mut registry,
+            &mut self.graphics.values,
+        );
         author(&mut sequence);
         let mut timeline = sequence.compile();
         self.bindings.prepare(&self.graphics, &timeline)?;

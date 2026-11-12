@@ -43,7 +43,7 @@ impl Path {
         object.on_insert(
             path!(Path.geometry).field.untyped(),
             Arc::new(move |scene, handle| {
-                let geometry = scene.computed(
+                let geometry = crate::computed(
                     inputs.clone(),
                     |(start, control, end)| {
                         Arc::new(quadratic_geometry(

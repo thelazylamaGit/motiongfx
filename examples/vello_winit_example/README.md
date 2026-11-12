@@ -174,7 +174,8 @@ to reconstruct earlier states; the clock cannot make them seekable alone.
 
 Read `examples/bezier_explainer.rs` in order: reusable grid construction,
 signals/computed geometry, object creation, then the timeline. It uses
-`scene.signal` for guide opacity, probe position and bend. Shared computed
+standalone `signal(...)` for guide opacity, probe position and bend. `.map(...)`
+and `computed!` describe shared calculations without borrowing the scene. Computed
 positions feed circles, connecting lines and the exact quadratic directly in
 their constructors; no `scene.update` or explicit `scene.bind` calls are used.
 The reusable grid helper creates styled lines whose `reveal` properties are
