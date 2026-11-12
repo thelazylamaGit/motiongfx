@@ -1,5 +1,8 @@
-//! No MotionGfx timeline: the same host playback controls drive a pure
-//! function of time. Drag the control strip, pause, or seek with arrows.
+//! Low-level custom VelloDemo integration, without a MotionGfx timeline.
+//! Demonstrates shared playback controls driving a direct drawing function;
+//! this is a host-extension reference, not the recommended authoring API.
+//! Run: cargo run -p vello_winit_example --example procedural_wave_low_level
+//! For an orchestrated MotionGfx wave, see timeline_wave.rs.
 
 use std::time::Duration;
 use vello::Scene;
@@ -17,7 +20,7 @@ struct Wave {
 
 impl VelloDemo for Wave {
     fn window_title(&self) -> &'static str {
-        "Procedural wave | No timeline"
+        "Procedural wave | Custom low-level host demo"
     }
     fn initial_logical_size(&self) -> (f64, f64) {
         (900.0, 420.0)

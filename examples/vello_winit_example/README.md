@@ -5,11 +5,14 @@ and `bezier_explainer` / `radius_area` use the plain native
 authoring API.
 The optional `animate!` macro remains available, but these examples do not
 use it. The other comparison scenes retain the low-level MotionGfx API.
+`procedural_wave_low_level` is a custom `VelloDemo` host-extension reference
+using direct Vello drawing with no MotionGfx timeline or authoring API.
 All share the same play/pause and
 scrubbing controls from `vello_winit_motiongfx`:
 
 | Example | Source | What it exercises |
 | --- | --- | --- |
+| `procedural_wave_low_level` | Custom host integration | Direct Vello drawing from preview time; no MotionGfx timeline, with shared pause/seek controls |
 | `insertion_sort` | Canvas Commons sorting | Procedural creation, nested position targets, moving text labels, discrete pass captions |
 | `insertion_sort_low_level` | Previous annotated version | Same sorting choreography using raw MotionGfx and Vello calls |
 | `commit_graph` | Canvas Commons commit graph | A reusable circle/ring component, path reveal, staggered back easing, ordinary ring scale/opacity tracks |
@@ -162,13 +165,17 @@ it doesn't have to be a timeline's duration. The host reserves a separate
 control strip, so each demo's `size_changed` still describes its drawable
 area and doesn't need to know how the controls are laid out.
 
-For a concrete example using **no MotionGfx timeline**, run:
+For a low-level **custom host integration** using **no MotionGfx timeline**, run:
 
 ```sh
-cargo run -p vello_winit_example --example procedural_wave
+cargo run -p vello_winit_example --example procedural_wave_low_level
 ```
 
-Its wave is a pure function of time, so scrubbing reconstructs the picture
+This implements `VelloDemo` manually to demonstrate how custom drawing can use
+the shared preview controls. It is not the recommended scene-authoring pattern;
+use the authored examples for that, or `timeline_wave` for the orchestrated
+MotionGfx wave comparison. Its wave is a pure function of time, so scrubbing
+reconstructs the picture
 directly. Stateful simulations need their own reset/replay or checkpoints
 to reconstruct earlier states; the clock cannot make them seekable alone.
 

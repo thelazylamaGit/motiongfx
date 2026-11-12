@@ -216,6 +216,10 @@ and simulation determinism are not guaranteed by the type system.
 See the [example guide](../examples/vello_winit_example/README.md) for commands.
 Useful comparison cases:
 
+- `procedural_wave_low_level`: custom `VelloDemo` integration and direct Vello
+  drawing without a MotionGfx timeline. A host-extension reference, not the
+  recommended animation-authoring pattern. `timeline_wave` is the orchestrated
+  MotionGfx wave comparison.
 - `moving_square`: direct native property changes.
 - `insertion_sort`: ordinary Rust procedural construction/sorting builds a
   timeline, anchored labels follow bars, and `play_all` moves them together.
