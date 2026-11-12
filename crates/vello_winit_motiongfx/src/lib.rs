@@ -89,6 +89,9 @@ impl VelloDemo for AnimationDemo {
         PlaybackConfig::new(self.animation.duration())
             .with_mode(self.playback_mode)
     }
+    fn background(&self) -> Color {
+        self.animation.background()
+    }
     fn rebuild_scene(
         &mut self,
         scene: &mut Scene,
@@ -105,6 +108,11 @@ pub trait VelloDemo {
     fn window_title(&self) -> &'static str;
     /// Initial drawable size; the host adds space for playback controls.
     fn initial_logical_size(&self) -> (f64, f64);
+    /// Clear color, read after rebuild_scene so animated backgrounds use the
+    /// current sample. Preview controls paint their own background over it.
+    fn background(&self) -> Color {
+        Color::from_rgb8(28, 28, 46)
+    }
     /// Drawable area above the host's playback controls, in logical pixels.
     fn size_changed(&mut self, size: Size);
     /// The preview range is independent of MotionGfx: a procedural demo
@@ -249,7 +257,7 @@ impl<'s, D: VelloDemo> VelloWinitApp<'s, D> {
                 &self.scene,
                 &surface.target_view,
                 &RenderParams {
-                    base_color: Color::from_rgb8(28, 28, 46),
+                    base_color: self.demo.background(),
                     width: surface.config.width,
                     height: surface.config.height,
                     antialiasing_method: AaConfig::Area,

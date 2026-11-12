@@ -109,6 +109,16 @@ impl From<String> for Input<Arc<str>> {
         Self::Fixed(value.into())
     }
 }
+impl<const N: usize> From<[f64; N]> for Input<Arc<[f64]>> {
+    fn from(value: [f64; N]) -> Self {
+        Self::Fixed(Arc::from(value))
+    }
+}
+impl From<Vec<f64>> for Input<Arc<[f64]>> {
+    fn from(value: Vec<f64>) -> Self {
+        Self::Fixed(value.into())
+    }
+}
 impl From<Computed<(f64, f64)>> for Input<Point> {
     fn from(value: Computed<(f64, f64)>) -> Self {
         Self::mapped(value, Point::from)

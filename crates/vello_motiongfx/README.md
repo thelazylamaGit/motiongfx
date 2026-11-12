@@ -7,6 +7,15 @@ state and returns typed authoring properties. Shape constructors produce
 registers any driven fields. Handles belong to the scene
 that created them; do not mix handles between scenes.
 
+`scene.set_background(color)` sets Vello's clear/base color, without creating
+geometry. It accepts a fixed `Color`, signal, or computed color; the last call
+wins. The default remains RGB(28, 28, 46). For a fixed initial color, retain the
+returned property to animate it with ordinary sequences. When using a signal,
+animate that signal. The shared Winit host reads `Animation::background()` after
+sampling and passes it to `RenderParams::base_color`. Other rendering hosts
+should do the same. The background fills the render target regardless of
+camera transforms; playback controls retain their own painted background.
+
 `Rectangle::new(width, height)` applies the other defaults internally. Optional
 `.fill(color)` and `.stroke(color, width)` calls customize the initial state;
 struct literals with `..Rectangle::default()` remain supported. Shared
@@ -154,6 +163,16 @@ normalized sigmoid easing for comparisons.
 Its handle exposes `start`/`end` (including `.x`/`.y`), stroke, stroke width,
 opacity and `reveal`. Endpoints use positive-y-up coordinates and receive the camera
 transform like all other objects.
+
+Lines support `.line_dash([20.0, 20.0])`, `.dash_offset(value)`,
+`.start_arrow(true)`, `.end_arrow(true)`, `.arrow_size(value)`, and fixed-distance
+`.start_offset(value)` / `.end_offset(value)` trimming. Arrow size defaults to
+24 logical units and is limited for short visible segments. Both arrows use
+the stroke color and object opacity. The shaft uses native Vello/Kurbo dashing;
+arrowheads use fixed-size stack geometry. All these setters accept typed
+sources. Numeric fields are tweenable; flags and entire dash patterns use
+discrete replacements (`sequence.play(line.start_arrow.set(true))`).
+Offsets trim the full line first, then `reveal` selects its visible prefix.
 
 ## Signals and computed properties
 

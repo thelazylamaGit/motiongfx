@@ -15,6 +15,7 @@ pub use vello::kurbo::{Point, Size, Vec2};
 pub use vello::peniko::Color;
 use vello::peniko::Fill;
 
+mod background;
 mod camera;
 mod circle;
 pub mod colors;
@@ -30,6 +31,7 @@ mod text;
 mod text_renderer;
 mod updates;
 mod values;
+pub use background::BackgroundId;
 pub use camera::{Camera, CameraHandle, CameraId};
 pub use circle::{Circle, CircleHandle, CircleId};
 pub use input::Input;
@@ -45,6 +47,8 @@ pub use values::{SampleTime, Signal, SignalId};
 mod binding_tests;
 #[cfg(test)]
 mod graphics_tests;
+#[cfg(test)]
+mod line_tests;
 #[cfg(test)]
 mod signal_tests;
 #[cfg(test)]
@@ -128,6 +132,7 @@ pub struct RectangleHandle {
 
 #[derive(Default)]
 pub struct Graphics {
+    background: background::Background,
     values: Vec<Box<dyn std::any::Any + Send + Sync>>,
     sample_time: Duration,
     camera: Camera,
@@ -184,6 +189,7 @@ impl SubjectSource<TextId, Text> for Graphics {
 /// consumes this builder to produce the scene state plus a compiled timeline.
 #[derive(Default)]
 pub struct Scene {
+    background_input: Option<Input<Color>>,
     graphics: Graphics,
     bindings: BindingPlan<Graphics>,
     updates: Vec<updates::NativeUpdate>,
@@ -340,6 +346,7 @@ impl Scene {
         mut self,
         author: impl FnOnce(&mut Sequence<'_, Graphics>),
     ) -> Result<Animation, BindingError> {
+        self.prepare_background();
         let mut registry = Registry::new();
         let mut sequence = Sequence::new(&mut registry);
         author(&mut sequence);

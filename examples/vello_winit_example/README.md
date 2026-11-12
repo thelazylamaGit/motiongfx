@@ -1,7 +1,7 @@
 # Vello / Winit examples
 
 `moving_square`, `insertion_sort`, `commit_graph`, `camera_zoom`, `sine_unit_circle`
-and `bezier_explainer` use the plain native
+and `bezier_explainer` / `radius_area` use the plain native
 authoring API.
 The optional `animate!` macro remains available, but these examples do not
 use it. The other comparison scenes retain the low-level MotionGfx API.
@@ -17,6 +17,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `camera_zoom` | Manim-style `Zoom` | Parallel camera pan/zoom, a hold, and returning to the original view |
 | `sine_unit_circle` | Manim `SineCurveUnitCircle` | Native typed bindings, dependent line endpoints, and cached path reveal |
 | `bezier_explainer` | Quadratic Bézier lesson | Typed signals/computed values, source-aware object creation, exact quadratic geometry, and ping-pong playback |
+| `radius_area` | Motion Canvas radius/area signals | One animated radius drives circle size, a dashed double-arrow line, label positions and computed area text |
 
 ```sh
 cargo run -p vello_winit_example --example commit_graph
@@ -24,7 +25,22 @@ cargo run -p vello_winit_example --example moving_square
 cargo run -p vello_winit_example --example camera_zoom
 cargo run -p vello_winit_example --example sine_unit_circle
 cargo run -p vello_winit_example --example bezier_explainer
+cargo run -p vello_winit_example --example radius_area
 ```
+
+The radius/area example mirrors the supplied signal relationships: radius
+starts at 3, grows to 4 over 2s, returns to 3 over 2s, then holds for 1s.
+It uses cubic in/out easing, matching Motion Canvas's signal tween default
+([implementation](https://github.com/motion-canvas/motion-canvas/blob/main/packages/core/src/signals/SignalContext.ts)).
+The displayed area is `PI * r * r`, in mathematical units; only geometry uses
+the 100px/unit scale. Source y-down label positions are converted to y-up,
+with a 20px top inset replacing the source's text padding. The radius line
+uses reusable native dash/arrow/endpoint-trim support, with its tip 8px inside
+the circle. Text uses the existing cached 5x7 lettering, not a font renderer:
+font weight 700 and the source font metrics are not reproduced.
+`scene.set_background(...)` selects a light clear color without a background
+rectangle, making the supplied red/dark annotation colors easy to inspect.
+No explicit bindings or update callbacks are needed in the example.
 
 The commit graph preserves the source's blue/mauve fallbacks and timing
 (3.88s total). `Path` creates the trunk and fork explicitly, with their visible

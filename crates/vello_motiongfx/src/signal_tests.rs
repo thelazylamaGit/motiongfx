@@ -8,6 +8,48 @@ use std::sync::{
 use vello::kurbo::{ParamCurve, QuadBez};
 
 #[test]
+fn background_sources_sample_without_geometry_and_last_configuration_wins()
+ {
+    let mut scene = Scene::new();
+    let color = scene.signal(colors::BLUE);
+    scene.set_background(color);
+    let mut animation = scene.animate(|sequence| {
+        sequence.play(color.to(colors::ORANGE));
+    });
+    animation.sample(s(1));
+    for (actual, expected) in animation
+        .background()
+        .components
+        .into_iter()
+        .zip(colors::ORANGE.components)
+    {
+        assert!((actual - expected).abs() < 1e-6);
+    }
+    animation.sample(ms(0));
+    assert_eq!(animation.background(), colors::BLUE);
+    let mut rendered = vello::Scene::new();
+    let size = Size::new(100.0, 100.0);
+    animation.render(&mut rendered, size, size, 1.0);
+    assert_eq!(rendered.encoding().n_paths, 0);
+
+    let mut scene = Scene::new();
+    let obsolete = scene.signal(colors::RED);
+    scene.set_background(obsolete);
+    // A later fixed setting must remove obsolete source wiring, otherwise
+    // directly animating this property would be rejected as a writer conflict.
+    let background = scene.set_background(colors::WHITE);
+    let mut animation = scene
+        .try_animate(|sequence| {
+            sequence.play(background.to(colors::BLACK));
+        })
+        .unwrap();
+    animation.sample(s(1));
+    assert_eq!(animation.background(), colors::BLACK);
+    animation.sample(ms(0));
+    assert_eq!(animation.background(), colors::WHITE);
+}
+
+#[test]
 fn shared_computed_sources_drive_builders_and_skip_unchanged_inputs()
 {
     let mut scene = Scene::new();
