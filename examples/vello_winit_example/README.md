@@ -17,7 +17,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `camera_zoom` | Manim-style `Zoom` | Parallel camera pan/zoom, a hold, and returning to the original view |
 | `sine_unit_circle` | Manim `SineCurveUnitCircle` | Native typed bindings, dependent line endpoints, and cached path reveal |
 | `bezier_explainer` | Quadratic Bézier lesson | Typed signals/computed values, source-aware object creation, exact quadratic geometry, and ping-pong playback |
-| `radius_area` | Motion Canvas radius/area signals | One animated radius drives circle size, a dashed double-arrow line, label positions and computed area text |
+| `radius_area` | Motion Canvas radius/area signals | One animated radius drives circle size, a dashed line with inline triangle tips, label positions and computed area text |
 
 ```sh
 cargo run -p vello_winit_example --example commit_graph

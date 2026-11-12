@@ -55,6 +55,8 @@ Implementation entry points:
 
 1. Constructors such as `Rectangle::new` return `Object<T>` descriptions.
    Fixed styles/defaults are initial state. Reactive setters retain typed inputs.
+   Adding endpoint shapes produces a typed `LineWithTips` construction wrapper.
+   Its handle exposes ordinary line properties and the concrete shape handles.
 2. `scene.add(description)` stores the object once, registers driven fields,
    and returns typed handles. For example, `square.position.x` is a property
    target, not the current numeric x value. `Scene` is an object collection and
@@ -134,6 +136,16 @@ circle and emits drawing commands whenever the host renders a frame. Skipping
 a calculation does not omit that circle from the picture.
 
 ## Which API to use
+
+Line tips reuse ordinary circle/triangle/chevron descriptions. `scene.add(line)`
+registers the tips automatically in shared shape pools, without independent
+draw entries. The line renders them at its endpoints, handles orientation and
+shaft trimming, and multiplies their opacity by its own. Typed `LineTipHandle`
+exposes shape-specific properties (`radius` versus `angle`/`size`) without
+runtime variant checks in authoring code. Standalone and attached shapes use
+the same definitions/renderers. No ECS or general hierarchy is introduced.
+See the [tip API](../crates/vello_motiongfx/README.md#inline-endpoint-shapes)
+for geometry, short-line fitting and current attachment limitations.
 
 - Use ordinary timeline properties for authored changes: `.to`, `.offset`,
   `.multiply`, `.set`, `.over`, `.ease`, waits, parallel groups, and stagger.

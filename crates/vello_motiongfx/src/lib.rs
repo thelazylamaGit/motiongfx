@@ -76,8 +76,10 @@ mod path_renderer;
 mod properties;
 mod text;
 mod text_renderer;
+mod tips;
 mod updates;
 mod values;
+mod wedge;
 pub use background::BackgroundId;
 pub use camera::{Camera, CameraHandle, CameraId};
 pub use circle::{Circle, CircleHandle, CircleId};
@@ -87,8 +89,13 @@ pub use object::Object;
 pub use parent::Parent;
 pub use path::{BezPath, Path, PathHandle, PathId};
 use path_renderer::PathGeometry;
+pub use tips::{LineTip, LineTipHandle, LineWithTips, NoTip};
 pub use updates::UpdateTargets;
 pub use values::SampleTime;
+pub use wedge::{
+    Chevron, ChevronHandle, ChevronId, Triangle, TriangleHandle,
+    TriangleId,
+};
 
 #[cfg(test)]
 mod binding_tests;
@@ -185,6 +192,8 @@ pub struct Graphics {
     camera: Camera,
     rectangles: Vec<Rectangle>,
     circles: Vec<Circle>,
+    triangles: Vec<Triangle>,
+    chevrons: Vec<Chevron>,
     lines: Vec<Line>,
     paths: Vec<Path>,
     texts: Vec<Text>,
@@ -192,6 +201,8 @@ pub struct Graphics {
 }
 
 enum DrawObject {
+    Triangle(TriangleId),
+    Chevron(ChevronId),
     Rectangle(RectangleId),
     Circle(CircleId),
     Line(LineId),
@@ -479,8 +490,18 @@ impl Animation {
         for object in &self.graphics.order {
             match object {
                 DrawObject::Line(id) => {
-                    self.graphics.lines[id.0].render(scene, screen);
+                    self.graphics.lines[id.0].render(
+                        scene,
+                        screen,
+                        &self.graphics,
+                    );
                 }
+                DrawObject::Triangle(id) => self.graphics.triangles
+                    [id.0]
+                    .render(scene, screen, 1.0),
+                DrawObject::Chevron(id) => self.graphics.chevrons
+                    [id.0]
+                    .render(scene, screen, 1.0),
                 DrawObject::Circle(id) => {
                     let circle = &self.graphics.circles[id.0];
                     let parent =

@@ -1,35 +1,77 @@
-//! Geometry/compositing regressions for decorated native lines.
-
+//! Geometry, attachment and seeking regressions for typed endpoint shapes.
 use super::*;
 use vello::kurbo::{Line as LineShape, PathEl};
 
 #[test]
-fn dashed_arrows_trim_offsets_and_reveal_in_both_coordinate_directions()
+fn replacement_tips_drop_obsolete_wiring_and_grouped_updates_borrow_shapes_safely()
  {
-    // Expected shaft/triangle coordinates are in Vello's y-down space.
-    for (end, shaft, start_arrow, end_arrow) in [
+    let mut scene = Scene::new();
+    let amount = signal(0.0);
+    let line = scene.add(
+        Line::new((0.0, 0.0), (100.0, 0.0))
+            .start_tip(Circle::new(amount.map(|v| v + 5.0)))
+            .start_tip(Triangle::new())
+            .end_tip(Chevron::new()),
+    );
+    assert!(scene.graphics.circles.is_empty());
+    assert_eq!(scene.graphics.order.len(), 1);
+    // The line and its registered tips use disjoint storage. Their ordinary
+    // typed handles also remain usable as a heterogeneous update target tuple.
+    scene.update(
+        (line, line.start_tip, line.end_tip),
+        &amount,
+        |(line, triangle, chevron), value| {
+            line.end.y = value * 100.0;
+            triangle.angle = 0.6 + value * 0.2;
+            chevron.stroke_width = 2.0 + value * 4.0;
+        },
+    );
+    let mut animation = scene.animate(|sequence| {
+        sequence.play(amount.to(1.0).ease(ease::linear));
+    });
+    for (time, value) in [(500, 0.5), (1000, 1.0), (0, 0.0)] {
+        animation.sample(ms(time));
+        assert_eq!(animation.line(line).end.y, value * 100.0);
+        assert_eq!(
+            animation.triangle(line.start_tip).angle,
+            0.6 + value * 0.2
+        );
+        assert_eq!(
+            animation.chevron(line.end_tip).stroke_width,
+            2.0 + value * 4.0
+        );
+    }
+}
+
+#[test]
+fn dashed_tips_follow_trimmed_revealed_endpoints_in_both_directions()
+{
+    for (end, shaft, tips, angle) in [
         (
             (110.0, 20.0),
-            [(21.0, -20.0), (52.5, -20.0)],
-            [(15.0, -20.0), (27.0, -32.0), (27.0, -8.0)],
-            [(58.5, -20.0), (46.5, -8.0), (46.5, -32.0)],
+            [(27.0, -20.0), (46.5, -20.0)],
+            [(15.0, -20.0), (58.5, -20.0)],
+            0.0,
         ),
         (
             (10.0, 120.0),
-            [(10.0, -31.0), (10.0, -62.5)],
-            [(10.0, -25.0), (-2.0, -37.0), (22.0, -37.0)],
-            [(10.0, -68.5), (22.0, -56.5), (-2.0, -56.5)],
+            [(10.0, -37.0), (10.0, -56.5)],
+            [(10.0, -25.0), (10.0, -68.5)],
+            std::f64::consts::FRAC_PI_2,
         ),
     ] {
         let mut scene = Scene::new();
+        let tip = Triangle::new()
+            .size(12.0)
+            .angle(std::f64::consts::FRAC_PI_2)
+            .fill(colors::BLUE);
         scene.add(
             Line::new((10.0, 20.0), end)
                 .stroke(colors::BLUE, 4.0)
                 .line_dash([20.0, 20.0])
                 .dash_offset(3.0)
-                .start_arrow(true)
-                .end_arrow(true)
-                .arrow_size(12.0)
+                .start_tip(tip.clone())
+                .end_tip(tip)
                 .start_offset(5.0)
                 .end_offset(8.0)
                 .reveal(0.5)
@@ -50,14 +92,26 @@ fn dashed_arrows_trim_offsets_and_reveal_in_both_coordinate_directions()
             None,
             &LineShape::new(shaft[0], shaft[1]),
         );
-        for triangle in [start_arrow, end_arrow] {
-            let geometry = [
-                PathEl::MoveTo(triangle[0].into()),
-                PathEl::LineTo(triangle[1].into()),
-                PathEl::LineTo(triangle[2].into()),
-                PathEl::ClosePath,
-            ];
-            expected.fill(Fill::NonZero, xf, color, None, &geometry);
+        let half_width =
+            12.0 * (std::f64::consts::FRAC_PI_2 / 2.0).tan();
+        let geometry = [
+            PathEl::MoveTo((-12.0, -half_width).into()),
+            PathEl::LineTo((0.0, -0.0).into()),
+            PathEl::LineTo((-12.0, half_width).into()),
+            PathEl::ClosePath,
+        ];
+        for (position, rotation) in [
+            (tips[0], angle + std::f64::consts::PI),
+            (tips[1], angle),
+        ] {
+            expected.fill(
+                Fill::NonZero,
+                xf * Affine::translate(position)
+                    * Affine::rotate(-rotation),
+                color,
+                None,
+                &geometry,
+            );
         }
         assert_eq!(
             actual.encoding().draw_data,
@@ -75,7 +129,7 @@ fn dashed_arrows_trim_offsets_and_reveal_in_both_coordinate_directions()
 }
 
 #[test]
-fn degenerate_or_fully_trimmed_arrows_emit_no_geometry() {
+fn degenerate_or_fully_trimmed_tips_emit_no_geometry() {
     for (start, end, trim) in [
         ((0.0, 0.0), (0.0, 0.0), 0.0),
         ((0.0, 0.0), (10.0, 0.0), 20.0),
@@ -83,8 +137,8 @@ fn degenerate_or_fully_trimmed_arrows_emit_no_geometry() {
         let mut scene = Scene::new();
         scene.add(
             Line::new(start, end)
-                .start_arrow(true)
-                .end_arrow(true)
+                .start_tip(Triangle::new())
+                .end_tip(Circle::new(5.0))
                 .end_offset(trim),
         );
         let mut animation =
@@ -94,4 +148,144 @@ fn degenerate_or_fully_trimmed_arrows_emit_no_geometry() {
         animation.render(&mut rendered, size, size, 1.0);
         assert_eq!(rendered.encoding().n_paths, 0);
     }
+}
+
+#[test]
+fn attached_shapes_retain_typed_reactive_properties_and_seek_independently()
+ {
+    let radius = signal(4.0);
+    let mut scene = Scene::new();
+    let line = scene.add(
+        Line::new((0.0, 0.0), (100.0, 0.0))
+            .start_tip(Circle::new(&radius).fill(colors::RED))
+            .end_tip(
+                Triangle::new()
+                    .size(20.0)
+                    .angle(0.6)
+                    .fill(colors::BLUE),
+            ),
+    );
+    // Attachments share shape storage, but never add independent draw entries.
+    assert_eq!(scene.graphics.order.len(), 1);
+    assert_eq!(scene.graphics.circles.len(), 1);
+    assert_eq!(scene.graphics.triangles.len(), 1);
+    let mut animation = scene.animate(|sequence| {
+        sequence.parallel(|sequence| {
+            sequence.play(radius.to(8.0).ease(ease::linear));
+            sequence
+                .play(line.end_tip.angle.to(1.0).ease(ease::linear));
+            sequence
+                .play(line.end_tip.size.to(30.0).ease(ease::linear));
+            sequence.play(
+                line.end_tip
+                    .fill
+                    .to(colors::ORANGE)
+                    .ease(ease::linear),
+            );
+            sequence
+                .play(line.end.to((0.0, 200.0)).ease(ease::linear));
+        });
+    });
+    for (time, r, size, angle, end) in [
+        (500, 6.0, 25.0, 0.8, Point::new(50.0, 100.0)),
+        (1000, 8.0, 30.0, 1.0, Point::new(0.0, 200.0)),
+        (0, 4.0, 20.0, 0.6, Point::new(100.0, 0.0)),
+    ] {
+        animation.sample(ms(time));
+        assert_eq!(animation.circle(line.start_tip).radius, r);
+        let tip = animation.triangle(line.end_tip);
+        assert!((tip.size - size).abs() < 1e-6);
+        assert!((tip.angle - angle).abs() < 1e-6);
+        assert_eq!(animation.line(line).end, end);
+    }
+    assert_eq!(animation.triangle(line.end_tip).fill, colors::BLUE);
+}
+
+#[test]
+fn tip_renderer_matches_standalone_shape_and_inherits_line_opacity_once()
+ {
+    // With no shaft, the endpoint triangle must produce exactly the same
+    // commands as a standalone triangle positioned/oriented at that endpoint.
+    let triangle = Triangle::new()
+        .size(12.0)
+        .angle(0.6)
+        .fill(colors::RED)
+        .stroke(colors::BLUE, 2.0)
+        .opacity(0.5);
+    let mut attached = Scene::new();
+    attached.add(
+        Line::new((0.0, 0.0), (100.0, 50.0))
+            .stroke(colors::WHITE, 0.0)
+            .end_tip(triangle.clone())
+            .opacity(0.5),
+    );
+    let mut standalone = Scene::new();
+    standalone.add(
+        triangle
+            .position((100.0, 50.0))
+            .rotation(50.0_f64.atan2(100.0))
+            .opacity(0.25),
+    );
+    let mut a = attached.animate(|sequence| sequence.wait(s(1)));
+    let mut b = standalone.animate(|sequence| sequence.wait(s(1)));
+    let size = Size::new(300.0, 200.0);
+    let mut actual = vello::Scene::new();
+    let mut expected = vello::Scene::new();
+    a.render(&mut actual, size, size, 1.0);
+    b.render(&mut expected, size, size, 1.0);
+    assert_eq!(
+        actual.encoding().path_data,
+        expected.encoding().path_data
+    );
+    assert_eq!(
+        actual.encoding().draw_data,
+        expected.encoding().draw_data
+    );
+    assert_eq!(
+        actual.encoding().transforms,
+        expected.encoding().transforms
+    );
+}
+
+#[test]
+fn short_lines_fit_tips_and_open_chevrons_keep_the_shaft_to_the_apex()
+{
+    let mut scene = Scene::new();
+    let line = scene.add(
+        Line::new((0.0, 0.0), (10.0, 0.0))
+            .start_tip(Circle::new(20.0))
+            .end_tip(Triangle::new().size(20.0)),
+    );
+    let mut animation = scene.animate(|sequence| sequence.wait(s(1)));
+    let mut rendered = vello::Scene::new();
+    let size = Size::new(100.0, 100.0);
+    animation.render(&mut rendered, size, size, 1.0);
+    // Both tips fit at 1/4 scale; the shaft vanishes instead of reversing.
+    assert_eq!(rendered.encoding().n_paths, 2);
+    assert_eq!(animation.circle(line.start_tip).radius, 20.0); // State isn't mutated to fit.
+
+    let mut scene = Scene::new();
+    let line =
+        scene.add(Line::new((0.0, 0.0), (100.0, 0.0)).end_tip(
+            Chevron::new().size(20.0).stroke(colors::ORANGE, 3.0),
+        ));
+    let mut animation = scene.animate(|sequence| {
+        sequence.play(line.end_tip.angle.to(0.9));
+    });
+    rendered.reset();
+    animation.render(&mut rendered, size, size, 1.0);
+    let mut expected = vello::Scene::new();
+    expected.stroke(
+        &Stroke::new(1.0),
+        Affine::translate((50.0, 50.0)),
+        Color::WHITE,
+        None,
+        &LineShape::new((0.0, -0.0), (100.0, -0.0)),
+    );
+    assert_eq!(
+        &rendered.encoding().path_data
+            [..expected.encoding().path_data.len()],
+        expected.encoding().path_data
+    );
+    assert_eq!(rendered.encoding().n_paths, 2); // One shaft, one open outline; no fill.
 }

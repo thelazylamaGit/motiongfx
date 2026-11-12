@@ -1,13 +1,13 @@
 //! A styled line with independently animatable endpoints; no path allocation.
 
+use crate::tips::EndpointTip;
 use crate::{
     Color, DrawObject, Graphics, Point, Position, Scene, SceneObject,
 };
 use motiongfx::prelude::{SubjectSource, path};
 use motiongfx_authoring::Property;
 use std::sync::Arc;
-use vello::kurbo::{Affine, Line as LineShape, PathEl, Stroke, Vec2};
-use vello::peniko::Fill;
+use vello::kurbo::{Affine, Line as LineShape, Stroke};
 
 #[derive(Clone)]
 pub struct Line {
@@ -22,9 +22,8 @@ pub struct Line {
     pub dash_offset: f64,
     pub start_offset: f64,
     pub end_offset: f64,
-    pub start_arrow: bool,
-    pub end_arrow: bool,
-    pub arrow_size: f64,
+    pub(crate) start_tip: Option<EndpointTip>,
+    pub(crate) end_tip: Option<EndpointTip>,
 }
 impl Line {
     pub fn new(
@@ -42,9 +41,8 @@ impl Line {
             dash_offset: 0.0,
             start_offset: 0.0,
             end_offset: 0.0,
-            start_arrow: false,
-            end_arrow: false,
-            arrow_size: 24.0,
+            start_tip: None,
+            end_tip: None,
         })
         .start(start)
         .end(end)
@@ -53,112 +51,122 @@ impl Line {
         &self,
         scene: &mut vello::Scene,
         screen: Affine,
+        graphics: &Graphics,
     ) {
         let opacity = self.opacity.clamp(0.0, 1.0) as f32;
-        if opacity == 0.0
-            || self.stroke_width <= 0.0
-            || self.reveal <= 0.0
-        {
+        if opacity <= 0.0 || self.reveal <= 0.0 {
             return;
         }
-        let mut start = self.start;
-        let mut end = self.start
-            + (self.end - self.start) * self.reveal.clamp(0.0, 1.0);
-        let mut arrows = None;
-        // Undecorated lines keep the simple endpoint interpolation path.
-        if self.start_offset > 0.0
-            || self.end_offset > 0.0
-            || self.start_arrow
-            || self.end_arrow
+        if self.start_tip.is_none()
+            && self.end_tip.is_none()
+            && self.start_offset <= 0.0
+            && self.end_offset <= 0.0
         {
-            let delta = self.end - self.start;
-            let length = delta.hypot();
-            if !length.is_finite() || length <= 0.0 {
-                return;
-            }
-            let direction = delta / length;
-            let distance = (length
-                - self.start_offset.max(0.0)
-                - self.end_offset.max(0.0))
-            .max(0.0)
-                * self.reveal.clamp(0.0, 1.0);
-            if distance <= 0.0 {
-                return;
-            }
-            let tip_start = self.start
-                + direction * self.start_offset.max(0.0).min(length);
-            let tip_end = tip_start + direction * distance;
-            let size = self.arrow_size.max(0.0).min(distance / 2.0);
-            start = tip_start
-                + direction
-                    * if self.start_arrow { size / 2.0 } else { 0.0 };
-            end = tip_end
-                - direction
-                    * if self.end_arrow { size / 2.0 } else { 0.0 };
-            arrows = Some((tip_start, tip_end, direction, size));
+            // Ordinary lines need no length, orientation or tip calculation.
+            let end = self.start
+                + (self.end - self.start)
+                    * self.reveal.clamp(0.0, 1.0);
+            self.draw_shaft(scene, screen, self.start, end, opacity);
+            return;
         }
-        let color = self
-            .stroke
-            .with_alpha(self.stroke.components[3] * opacity);
-        let mut stroke = Stroke::new(self.stroke_width);
-        if !self.line_dash.is_empty() {
-            assert!(
-                self.dash_offset.is_finite()
-                    && self
-                        .line_dash
-                        .iter()
-                        .all(|d| d.is_finite() && *d >= 0.0)
-                    && self.line_dash.iter().sum::<f64>() > 0.0,
-                "line dash lengths must be finite, nonnegative and have a positive period"
-            );
-            stroke = stroke
-                .with_dashes(self.dash_offset, self.line_dash.iter());
+        let delta = self.end - self.start;
+        let length = delta.hypot();
+        if !length.is_finite() || length <= 0.0 {
+            return;
         }
-        let shape =
-            LineShape::new((start.x, -start.y), (end.x, -end.y));
-        scene.stroke(&stroke, screen, color, None, &shape);
-        if let Some((start, end, direction, size)) = arrows
-            && size > 0.0
-        {
-            if self.start_arrow {
-                draw_arrow(
-                    scene, screen, color, start, direction, size,
-                );
-            }
-            if self.end_arrow {
-                draw_arrow(
-                    scene, screen, color, end, -direction, size,
-                );
+        let direction = delta / length;
+        let distance = (length
+            - self.start_offset.max(0.0)
+            - self.end_offset.max(0.0))
+        .max(0.0)
+            * self.reveal.clamp(0.0, 1.0);
+        if distance <= 0.0 {
+            return;
+        }
+        let tip_start = self.start
+            + direction * self.start_offset.max(0.0).min(length);
+        let tip_end = tip_start + direction * distance;
+        let start_extent =
+            self.start_tip.map_or(0.0, |t| t.extent(graphics));
+        let end_extent =
+            self.end_tip.map_or(0.0, |t| t.extent(graphics));
+        let extent = start_extent + end_extent;
+        // Fit both tips together as the line is revealed; never reverse the shaft.
+        let fit = if extent > distance {
+            distance / extent
+        } else {
+            1.0
+        };
+        let start = tip_start
+            + direction
+                * self
+                    .start_tip
+                    .map_or(0.0, |t| t.trim(start_extent))
+                * fit;
+        let end = tip_end
+            - direction
+                * self.end_tip.map_or(0.0, |t| t.trim(end_extent))
+                * fit;
+        if start.distance_squared(end) > 1e-18 {
+            self.draw_shaft(scene, screen, start, end, opacity);
+        }
+        let angle = direction.y.atan2(direction.x);
+        for (tip, position, angle) in [
+            (self.start_tip, tip_start, angle + std::f64::consts::PI),
+            (self.end_tip, tip_end, angle),
+        ] {
+            if let Some(tip) = tip {
+                let frame = screen
+                    * Affine::translate((position.x, -position.y))
+                    * Affine::rotate(-angle)
+                    * Affine::scale(fit);
+                tip.render(graphics, scene, frame, opacity);
             }
         }
     }
+    fn draw_shaft(
+        &self,
+        scene: &mut vello::Scene,
+        screen: Affine,
+        start: Point,
+        end: Point,
+        opacity: f32,
+    ) {
+        if self.stroke_width > 0.0 && self.stroke.components[3] > 0.0
+        {
+            let color = self
+                .stroke
+                .with_alpha(self.stroke.components[3] * opacity);
+            let mut stroke = Stroke::new(self.stroke_width);
+            if !self.line_dash.is_empty() {
+                assert!(
+                    self.dash_offset.is_finite()
+                        && self
+                            .line_dash
+                            .iter()
+                            .all(|d| d.is_finite() && *d >= 0.0)
+                        && self.line_dash.iter().sum::<f64>() > 0.0,
+                    "line dash lengths must be finite, nonnegative and have a positive period"
+                );
+                stroke = stroke.with_dashes(
+                    self.dash_offset,
+                    self.line_dash.iter(),
+                );
+            }
+            scene.stroke(
+                &stroke,
+                screen,
+                color,
+                None,
+                &LineShape::new((start.x, -start.y), (end.x, -end.y)),
+            );
+        }
+    }
 }
-
-fn draw_arrow(
-    scene: &mut vello::Scene,
-    screen: Affine,
-    color: Color,
-    tip: Point,
-    inward: Vec2,
-    size: f64,
-) {
-    let base = tip + inward * size;
-    let normal = Vec2::new(-inward.y, inward.x) * size;
-    let canvas = |p: Point| Point::new(p.x, -p.y);
-    // Fixed-size stack geometry; arrowheads do not allocate a path buffer.
-    let triangle = [
-        PathEl::MoveTo(canvas(tip)),
-        PathEl::LineTo(canvas(base + normal)),
-        PathEl::LineTo(canvas(base - normal)),
-        PathEl::ClosePath,
-    ];
-    scene.fill(Fill::NonZero, screen, color, None, &triangle);
-}
-
 crate::object::properties!(Line;
     start: Point, end: Point, opacity: f64, stroke_width: f64, reveal: f64,
     line_dash: Arc<[f64]>, dash_offset: f64, start_offset: f64, end_offset: f64,
-    start_arrow: bool, end_arrow: bool, arrow_size: f64,
+
 );
 crate::object::stroke!(Line);
 
@@ -179,9 +187,6 @@ pub struct LineHandle {
     pub dash_offset: Property<LineId, Line, f64>,
     pub start_offset: Property<LineId, Line, f64>,
     pub end_offset: Property<LineId, Line, f64>,
-    pub start_arrow: Property<LineId, Line, bool>,
-    pub end_arrow: Property<LineId, Line, bool>,
-    pub arrow_size: Property<LineId, Line, f64>,
 }
 impl SceneObject for Line {
     type Handle = LineHandle;
@@ -211,12 +216,6 @@ impl SceneObject for Line {
             dash_offset: Property::new(id, path!(Line.dash_offset)),
             start_offset: Property::new(id, path!(Line.start_offset)),
             end_offset: Property::new(id, path!(Line.end_offset)),
-            start_arrow: Property::discrete(
-                id,
-                path!(Line.start_arrow),
-            ),
-            end_arrow: Property::discrete(id, path!(Line.end_arrow)),
-            arrow_size: Property::new(id, path!(Line.arrow_size)),
         }
     }
 }
@@ -234,7 +233,7 @@ impl SubjectSource<LineId, Line> for Graphics {
 }
 
 impl crate::Animation {
-    pub fn line(&self, handle: LineHandle) -> &Line {
-        &self.graphics.lines[handle.id.0]
+    pub fn line(&self, handle: impl Into<LineHandle>) -> &Line {
+        &self.graphics.lines[handle.into().id.0]
     }
 }

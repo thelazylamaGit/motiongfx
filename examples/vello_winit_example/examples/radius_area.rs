@@ -6,7 +6,7 @@ use std::f64::consts::PI;
 
 use motiongfx::prelude::{ease, s};
 use vello_motiongfx::{
-    Circle, Color, Line, Scene, Text, TextAlign, signal,
+    Circle, Color, Line, Scene, Text, TextAlign, Triangle, signal,
 };
 use vello_winit_motiongfx::Window;
 
@@ -28,8 +28,8 @@ fn main() -> Result<(), winit::error::EventLoopError> {
     scene.add(
         Line::new((0.0, 0.0), radius.map(|r| (r * SCALE, 0.0)))
             .line_dash([20.0, 20.0])
-            .start_arrow(true)
-            .end_arrow(true)
+            .start_tip(Triangle::new().size(24.0).fill(INK))
+            .end_tip(Triangle::new().size(24.0).fill(INK))
             .end_offset(8.0)
             .stroke(INK, 8.0),
     );

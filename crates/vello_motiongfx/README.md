@@ -167,15 +167,68 @@ Its handle exposes `start`/`end` (including `.x`/`.y`), stroke, stroke width,
 opacity and `reveal`. Endpoints use positive-y-up coordinates and receive the camera
 transform like all other objects.
 
-Lines support `.line_dash([20.0, 20.0])`, `.dash_offset(value)`,
-`.start_arrow(true)`, `.end_arrow(true)`, `.arrow_size(value)`, and fixed-distance
-`.start_offset(value)` / `.end_offset(value)` trimming. Arrow size defaults to
-24 logical units and is limited for short visible segments. Both arrows use
-the stroke color and object opacity. The shaft uses native Vello/Kurbo dashing;
-arrowheads use fixed-size stack geometry. All these setters accept typed
-sources. Numeric fields are tweenable; flags and entire dash patterns use
-discrete replacements (`sequence.play(line.start_arrow.set(true))`).
-Offsets trim the full line first, then `reveal` selects its visible prefix.
+Lines support `.line_dash([20.0, 20.0])`, `.dash_offset(value)`, and fixed-distance
+`.start_offset(value)` / `.end_offset(value)` trimming. Offsets trim the full line
+first, then `reveal` selects its visible prefix. The shaft uses native
+Vello/Kurbo dashing. Numeric fields are tweenable; entire dash patterns use
+discrete replacements.
+
+### Inline endpoint shapes
+
+```rust
+let line = scene.add(
+    Line::new((0.0, 0.0), (200.0, 0.0))
+        .start_tip(Circle::new(6.0).fill(RED))
+        .end_tip(
+            Triangle::new()
+                .size(24.0)
+                .angle(0.6)
+                .fill(RED)
+                .stroke(INK, 2.0),
+        )
+        .stroke(INK, 4.0),
+);
+sequence.play(line.start_tip.radius.to(10.0));
+sequence.play(line.end_tip.angle.to(0.9));
+sequence.play(line.end_tip.fill.to(ORANGE));
+```
+
+`start_tip` / `end_tip` accept ordinary `Object<Circle>`, `Object<Triangle>` or
+`Object<Chevron>` descriptions. No separate `scene.add` is needed. The old
+boolean arrow flags and shared `arrow_size` have been replaced by this API.
+The returned handle retains the concrete tip types: a circle exposes `radius`,
+while triangles and chevrons expose `size` and `angle`. Ordinary line fields
+remain accessible through the same handle. `Animation::line` accepts either
+plain or tipped line handles; `circle`, `triangle`, and `chevron` access sampled
+tip state. Tipped lines and their shapes also work with direct updates.
+
+`Triangle::new()` and `Chevron::new()` default to a 24-unit axial length and a
+pi/3 full opening angle. Their local apex is at the origin, pointing along +x;
+the base corners are `(-size, ±size * tan(angle / 2))`. Triangle closes/fills the
+outline; chevron is an open stroked outline (its fill setting is unused).
+Sizes must be finite/nonnegative and angles strictly between zero and pi.
+Setters accept fixed values or reactive inputs, just like other shape builders.
+Both shapes are independently usable with `scene.add`, with the same geometry,
+styling and render implementation as their attached versions.
+
+The line places each tip in an outward-facing endpoint frame after offsets and
+reveal. Shape position/rotation are local offsets within that frame; scale also
+scales its stroke. Circle position anchors its centre; pointed shapes anchor
+their apex. The line reserves the inward geometric extent for circles/triangles;
+an open chevron lets the shaft meet its apex. Stroke thickness does not expand
+that trim calculation. Both tips shrink uniformly when necessary to fit a short
+visible segment, without changing sampled shape state or reversing the shaft.
+Degenerate/fully trimmed lines and zero reveal hide the tips too.
+
+Tip styles are independent of shaft style. Line opacity multiplies tip opacity;
+transparent or zero-width shafts can still show tips. Attachments use shared
+shape pools internally, have no independent draw-order entry, and render with
+their line (shaft, start tip, end tip). A tip cannot also use `relative_to`:
+the line supplies its parent frame. Copying a descriptor creates independent
+instances; use signals for shared animated values. Built-in tip geometry uses
+stack data with no extra path-buffer allocation. No per-tip update callback is
+needed to follow the line. Arbitrary custom-object attachments are not yet
+supported.
 
 ## Signals and computed properties
 

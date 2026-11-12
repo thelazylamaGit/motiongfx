@@ -58,6 +58,8 @@ impl<const N: usize> Layout<N> {
                 world.paths.len(),
                 world.texts.len(),
                 1,
+                world.triangles.len(),
+                world.chevrons.len(),
             ];
             assert!(
                 spec.index < lengths[spec.kind as usize],
@@ -87,6 +89,8 @@ impl<const N: usize> Layout<N> {
                 5,
                 std::slice::from_mut(&mut world.camera),
             ),
+            triangles: select(&self.0, 6, &mut world.triangles),
+            chevrons: select(&self.0, 7, &mut world.chevrons),
         }
     }
 }
@@ -115,6 +119,8 @@ pub struct ObjectBatch<'a, const N: usize> {
     paths: [Option<&'a mut Path>; N],
     texts: [Option<&'a mut Text>; N],
     cameras: [Option<&'a mut Camera>; N],
+    triangles: [Option<&'a mut Triangle>; N],
+    chevrons: [Option<&'a mut Chevron>; N],
 }
 #[doc(hidden)]
 pub trait UpdateHandle: Copy + ThreadSafe {
@@ -186,6 +192,52 @@ update_handle!(
     |h: CircleHandle| h.id.0
 );
 update_handle!(LineHandle, Line, lines, 2, |h: LineHandle| h.id.0);
+update_handle!(
+    TriangleHandle,
+    Triangle,
+    triangles,
+    6,
+    |h: TriangleHandle| h.id.0
+);
+update_handle!(
+    ChevronHandle,
+    Chevron,
+    chevrons,
+    7,
+    |h: ChevronHandle| h.id.0
+);
+
+impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe> UpdateHandle
+    for LineTipHandle<S, E>
+{
+    type Object = Line;
+    fn spec(self, slot: usize) -> ObjectSpec {
+        self.line.spec(slot)
+    }
+    fn take<'a, const N: usize>(
+        batch: &mut ObjectBatch<'a, N>,
+        slot: usize,
+    ) -> &'a mut Line {
+        LineHandle::take(batch, slot)
+    }
+}
+impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe> UpdateTargets
+    for LineTipHandle<S, E>
+{
+    type Objects<'a> = &'a mut Line;
+    fn callback<I, F>(
+        self,
+        source: I,
+        update: F,
+        world: &Graphics,
+    ) -> NativeUpdate
+    where
+        I: BindingSource<Graphics>,
+        F: for<'a> FnMut(&'a mut Line, I::Value) + ThreadSafe,
+    {
+        self.line.callback(source, update, world)
+    }
+}
 update_handle!(PathHandle, Path, paths, 3, |h: PathHandle| h.id.0);
 update_handle!(TextHandle, Text, texts, 4, |h: TextHandle| h.id.0);
 update_handle!(CameraHandle, Camera, cameras, 5, |_: CameraHandle| 0);

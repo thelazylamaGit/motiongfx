@@ -27,6 +27,20 @@ impl<T: SceneObject + Clone> Clone for Object<T> {
     }
 }
 impl<T: SceneObject> Object<T> {
+    pub(crate) fn insert_with(
+        self,
+        scene: &mut Scene,
+        insert: impl FnOnce(T, &mut Scene) -> T::Handle,
+    ) -> T::Handle
+    where
+        T::Handle: Copy,
+    {
+        let handle = insert(self.state, scene);
+        for (_, register) in self.bindings {
+            register(scene, handle);
+        }
+        handle
+    }
     pub(crate) fn new(state: T) -> Self {
         Self {
             state,
@@ -95,11 +109,7 @@ where
 {
     type Handle = T::Handle;
     fn insert_into(self, scene: &mut Scene) -> Self::Handle {
-        let handle = self.state.insert_into(scene);
-        for (_, register) in self.bindings {
-            register(scene, handle);
-        }
-        handle
+        self.insert_with(scene, T::insert_into)
     }
 }
 

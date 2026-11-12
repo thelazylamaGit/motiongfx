@@ -53,7 +53,15 @@ impl Circle {
         scene: &mut vello::Scene,
         parent: Affine,
     ) {
-        let opacity = self.opacity.clamp(0.0, 1.0) as f32;
+        self.render_with_opacity(scene, parent, 1.0);
+    }
+    pub(crate) fn render_with_opacity(
+        &self,
+        scene: &mut vello::Scene,
+        parent: Affine,
+        inherited: f32,
+    ) {
+        let opacity = self.opacity.clamp(0.0, 1.0) as f32 * inherited;
         let transform = parent * self.transform();
         if opacity == 0.0
             || self.radius <= 0.0
@@ -120,9 +128,20 @@ pub struct CircleHandle {
 impl SceneObject for Circle {
     type Handle = CircleHandle;
     fn insert_into(self, scene: &mut Scene) -> Self::Handle {
+        self.insert(scene, true)
+    }
+}
+impl Circle {
+    pub(crate) fn insert(
+        self,
+        scene: &mut Scene,
+        draw: bool,
+    ) -> CircleHandle {
         let id = CircleId(scene.graphics.circles.len());
         scene.graphics.circles.push(self);
-        scene.graphics.order.push(DrawObject::Circle(id));
+        if draw {
+            scene.graphics.order.push(DrawObject::Circle(id));
+        }
         CircleHandle {
             id,
             position: Position::new(
