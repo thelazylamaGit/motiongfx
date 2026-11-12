@@ -224,8 +224,9 @@ Useful comparison cases:
 - `insertion_sort`: ordinary Rust procedural construction/sorting builds a
   timeline, anchored labels follow bars, and `play_all` moves them together.
 - `commit_graph`: reusable circles/rings/paths, parallel pulse animations, stagger.
-- `sine_unit_circle`: fixed trace geometry revealed on the timeline, with native
-  relationships reconstructing the orbit/connector on seeks.
+- `sine_unit_circle`: fixed trace geometry revealed by a shared progress signal.
+  `.map`/`computed!` positions feed object builders directly, reconstructing the
+  orbit/connector on seeks without explicit `scene.bind` calls.
 - `bezier_explainer`: standalone signals, shared computed points, exact dynamic
   quadratic geometry, reusable grid construction, and timed chapter changes.
 - `radius_area`: inline `.map` inputs and computed text/geometry from one signal.

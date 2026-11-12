@@ -18,7 +18,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `commit_graph` | Canvas Commons commit graph | A reusable circle/ring component, path reveal, staggered back easing, ordinary ring scale/opacity tracks |
 | `moving_square` | Manim `MovingAround` | Typed property handles, sequential translation, fill interpolation, relative scale, and rotation |
 | `camera_zoom` | Manim-style `Zoom` | Parallel camera pan/zoom, a hold, and returning to the original view |
-| `sine_unit_circle` | Manim `SineCurveUnitCircle` | Native typed bindings, dependent line endpoints, and cached path reveal |
+| `sine_unit_circle` | Manim `SineCurveUnitCircle` | Shared progress signal, `.map`/`computed!` positions, reactive object inputs, and cached path reveal |
 | `bezier_explainer` | Quadratic Bézier lesson | Typed signals/computed values, source-aware object creation, exact quadratic geometry, and ping-pong playback |
 | `radius_area` | Motion Canvas radius/area signals | One animated radius drives circle size, a dashed line with inline triangle tips, label positions and computed area text; labels share a typed `TextStyle` |
 
