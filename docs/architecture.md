@@ -88,7 +88,21 @@ remain shared.
    Fixed styles/defaults are initial state. Reactive setters retain typed inputs.
    Adding endpoint shapes produces a typed `LineWithTips` construction wrapper.
    Its handle exposes ordinary line properties and the concrete shape handles.
-2. `scene.add(description)` stores the object once, registers driven fields,
+2. Built-in field targets use `Target<I,S,T,F>` and zero-sized field markers.
+   A target stores its object ID; field accessors/interpolation are supplied by
+   the marker type when expanded into the general `Property` representation.
+   Whole-position/axis handles follow the same rule. Actions, bindings and springs
+   reuse existing preparation/playback code. Generic runtime paths keep Property.
+   The measured 64-bit handle sizes are TextHandle 136 bytes (previously 776),
+   CircleHandle 88 bytes (previously 488). This is a storage reduction, not a
+   measured frame-time/build-time improvement. Index/scene safety rules remain.
+   Field declarations live beside their owning objects (`circle.rs`, `line.rs`,
+   `text.rs`, etc.); the shared declaration macro is in `properties.rs`.
+   `fields.rs` only re-exports those definitions for existing public paths.
+   Triangle/Chevron have separate object files and share the `wedge.rs` helper.
+   Marker types describe field identity, not typestate transitions. `PhantomData`
+   stores no marker value or object reference; actual object IDs still take space.
+   `scene.add(description)` stores the object once, registers driven fields,
    and returns typed handles. For example, `square.position.x` is a property
    target, not the current numeric x value. `Scene` is an object collection and
    construction context, not the renderer, window, or timeline itself.
@@ -310,20 +324,40 @@ Useful comparison cases:
 Native `Text` now uses Parley shaping and Vello glyph runs. The independent
 `motiongfx_text` crate retains source/cluster mappings and advance/line bounds;
 `motiongfx_2d` owns portable text/selection state; Vello owns shared font contexts
-and per-object layout caches. Default output uses embedded Fira Sans, not OS
+and per-object layout and paint-span caches. Default output uses embedded Fira Sans, not OS
 font discovery or the old hardcoded lettering. Additional fonts can be registered
 on the renderer and supplied to the host with `Window::renderer`.
 
 Layout keys contain content and font/layout inputs plus font registration revision.
-Paint, opacity and transforms do not reshape. Invalid numeric styles produce no
-glyphs. Static font faces do not offer continuous weight morphing; variable-font
+Paint, opacity and transforms do not reshape. Paint spans map contiguous glyph
+ranges to selection IDs once per layout/selection-structure change; per-frame
+paint reads do not redo glyph/source overlap matching. These associations are
+independent of transforms and can survive future glyph geometry changes when
+source identity is preserved. Glyph-correspondence changes must invalidate them.
+Invalid numeric styles produce no glyphs. Static font faces do not offer continuous weight morphing; variable-font
 coordinates are preserved when supplied by Parley. No benchmark is claimed.
 
+The current cache keys are compared during rendering, not explicitly invalidated
+by setters. Selection ranges are fixed in the public authoring API; their
+per-render comparison is conservative, including for renderer reuse across
+animations. This implementation remains unchanged for now. See
+[text-caching.md](text-caching.md) for exactly what is checked, why shaping and
+paint associations are cached, and what to revisit with future dynamic effects.
+
 Typed literal/byte-range selections animate fill/opacity without independent draw
-nodes. Selections use the initial fixed source snapshot, validate UTF-8 boundaries,
+nodes. `text.select("word")`, `select_nth` and `select_range` now return deferred
+descriptions; only used selections register while lowering actions. The shared
+SceneSequence carries a SceneContext with model access, signal registration and
+construction-only typed memoization. These registration maps drop before playback.
+Missing/invalid queries report SceneError::Target with query/source/call location
+before baking or sampling. Equivalent resolved ranges reuse the same target;
+distinct overlaps use registration order (first scheduled use), later wins.
+Selection descriptions share one query allocation across their paint fields;
+prepared actions retain only ordinary property IDs/accessors, not descriptors.
+Selections use the initial fixed source snapshot, validate UTF-8 boundaries,
 and expand to whole clusters. Changed source disables them; backward seeking to
-the same source restores them. Later overlapping selections win; selection fill
-is independently owned, initialized from the text fill. No automatic edit remapping,
+the same source restores them. Selection fill is independently owned, initialized
+from the text fill. No automatic edit remapping,
 per-part transforms, text matching, write-in, code highlighting or Typst adapter
 is implemented. These are future extensions, not reasons to add another timeline.
 Legacy immediate 5x7 lettering remains for preview chrome and two low-level demos;

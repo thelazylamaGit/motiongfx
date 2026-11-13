@@ -205,20 +205,70 @@ multiplier, letter spacing is in canvas units, and wrap width zero is unconstrai
 Position anchors the block's top; `TextAlign` anchors its total width horizontally.
 It does not set per-paragraph alignment or provide a general layout system.
 
-`text.select(&mut scene, "word")?`, `select_nth` and `select_range` register typed
-fill/opacity targets. Literal selection uses the initial fixed source; animated
-content has no automatic selection remapping. Invalid/missing selections return
-`SelectionError`. Later overlapping selections win. A selection initially copies
-the text's fill, then owns its fill independently; opacity multiplies text opacity.
+`text.select("word")`, `select_nth("word", occurrence)` and `select_range(bytes)`
+describe deferred fill/opacity animation targets. They work inside or outside
+`scene.animate` without borrowing the scene. Schedule their changes normally:
+
+```rust
+use motiongfx_2d::{Scene, Text, colors::ORANGE};
+let mut scene = Scene::new();
+let title = scene.add(Text::new("Shoes & Cats & Dogs"));
+let animation = scene.animate(|sequence| {
+    let second = title.select_nth("&", 1); // zero-based occurrence
+    sequence.play(second.fill.to(ORANGE));
+});
+```
+
+Only used selections register; missing literals/invalid UTF-8 byte ranges produce
+`SceneError::Target` during `try_animate`, with source/query/call-site details.
+`animate` panics before playback for the same error. `TextRange` itself remains
+a separately checked range utility returning `SelectionError`.
+Registration searches initial fixed content, never during sampling. It memoizes
+queries during preparation; identical resolved ranges in the same text reuse one
+paint state, including independently constructed queries. Reuse the description
+for repeated animation; it is Clone, while ordinary object handles remain Copy.
+Descriptions share their query through Arc; strings/glyphs are not duplicated per
+field. Construction caches/descriptions are not retained by compiled actions.
+Different overlapping ranges use registration order (first scheduled use): the
+later registered range wins. A selection initially copies the text fill, then
+owns fill independently; selection opacity multiplies text opacity.
 Changed content disables the selection until the same source returns on a seek.
 Partial ligatures paint as whole clusters. Selections are metadata, not additional
 scene objects. Whole-object position/scale/rotation continue to work normally.
 
+Built-in object handles use zero-sized field markers and store IDs per property,
+not copies of accessor metadata. On 64-bit targets TextHandle is 136 bytes
+(previously 776) and CircleHandle is 88 bytes (previously 488). A reference to
+any handle is separately pointer-sized. Whole position and its axes retain
+`.position.to(...)` / `.position.x.to(...)` syntax; generic runtime-selected
+properties remain available in authoring.
+
+Each object's state, handle and fixed field declarations live together in its
+own source file (`circle.rs`, `line.rs`, `text.rs`, `triangle.rs`, `chevron.rs`,
+etc.). The `properties.rs` macro generates empty field markers and typed target
+aliases there. `fields.rs` is only a re-export index for existing advanced paths.
+The marker identifies which accessor to supply during preparation; it stores no
+value. Each target still stores its object ID, and the sampled object retains its
+ordinary position/style values. This is static field identity, not a typestate
+state machine, and does not remove bounds checks or introduce object pointers.
+
 Renderer-owned layout is cached by content, font and layout inputs; paint and
 transform animation do not reshape. Font size or weight changes can reshape,
-while scale reuses glyph layout. Source strings are `Arc<str>`, avoiding copies
+while scale reuses glyph layout. Vello separately caches contiguous glyph paint
+spans by layout generation and selection IDs/source ranges. Transform, fill and
+opacity changes reuse these associations; rendering still reads animated paint
+and emits normal glyph commands. Per-part geometry effects can preserve this
+mapping when source identity is unchanged; changed glyph correspondence must
+invalidate/rebuild it. Source strings are `Arc<str>`, avoiding copies
 of their allocations when sampling. Advanced write-in, per-part transforms and
 text replacement/matching transitions are future work, not implemented features.
+
+The current renderer compares layout keys and selection IDs/ranges during each
+visible text render. Selection ranges themselves are fixed after preparation;
+the range comparison is conservative, including for renderer reuse. It does not
+repeat substring searches or reshape text for color/transform animation. We are
+leaving this mechanism in place until dynamic text effects justify revisiting
+it. See [text caching](../../docs/text-caching.md) for costs and rationale.
 
 `Scene::animate` consumes the scene, builds a MotionGfx timeline and
 bakes its targets. `Animation::sample` uses the existing MotionGfx sampler;

@@ -1,13 +1,6 @@
 //! Standalone triangles/chevrons and endpoint tips use the same geometry.
 
-use crate::World;
-use crate::rounded_triangle::{self, Geometry};
-use crate::{
-    Color, DrawObject, Object, Point, Position, SceneObject,
-};
-use kurbo::Affine;
-use motiongfx::prelude::{SubjectSource, path};
-use motiongfx_authoring::Property;
+use crate::Point;
 
 // One definition for both pointed shapes. A chevron is an open outline;
 // a triangle closes and fills the same three vertices.
@@ -46,7 +39,7 @@ macro_rules! wedge {
         }
         impl $shape {
             pub fn new<M:crate::Model2d>() -> Object<Self,M> { Object::new(Self::default()) }
-            pub(crate) fn vertices(&self) -> [Point; 3] { vertices(self.size, self.angle) }
+            pub(crate) fn vertices(&self) -> [Point; 3] { crate::wedge::vertices(self.size, self.angle) }
             pub fn transform(&self) -> Affine {
                 Affine::translate((self.position.x, -self.position.y))
                     * Affine::rotate(-self.rotation) * Affine::scale(self.scale)
@@ -58,15 +51,15 @@ macro_rules! wedge {
                 if draw { scene.model_mut().graphics_mut().order.push(DrawObject::$shape(id)); }
                 $handle {
                     id,
-                    position: Position::new(id, path!($shape.position), path!($shape.position.x), path!($shape.position.y)),
-                    size: Property::new(id, path!($shape.size)), angle: Property::new(id, path!($shape.angle)),
-                    $($radius: Property::new(id, path!($shape.$radius)),)?
-                    fill: Property::new(id, path!($shape.fill)), stroke: Property::new(id, path!($shape.stroke)),
-                    stroke_width: Property::new(id, path!($shape.stroke_width)),
-                    line_cap: Property::discrete(id, path!($shape.line_cap)),
-                    line_join: Property::discrete(id, path!($shape.line_join)),
-                    opacity: Property::new(id, path!($shape.opacity)), scale: Property::new(id, path!($shape.scale)),
-                    rotation: Property::new(id, path!($shape.rotation)),
+                    position: Position::from_targets(motiongfx_authoring::Target::new(id),motiongfx_authoring::Target::new(id),motiongfx_authoring::Target::new(id)),
+                    size: motiongfx_authoring::Target::new(id), angle: motiongfx_authoring::Target::new(id),
+                    $($radius: motiongfx_authoring::Target::new(id),)?
+                    fill: motiongfx_authoring::Target::new(id), stroke: motiongfx_authoring::Target::new(id),
+                    stroke_width: motiongfx_authoring::Target::new(id),
+                    line_cap: motiongfx_authoring::Target::new(id),
+                    line_join: motiongfx_authoring::Target::new(id),
+                    opacity: motiongfx_authoring::Target::new(id), scale: motiongfx_authoring::Target::new(id),
+                    rotation: motiongfx_authoring::Target::new(id),
                 }
             }
         }
@@ -80,14 +73,14 @@ macro_rules! wedge {
         #[derive(Clone, Copy)]
         pub struct $handle {
             pub(crate) id: $id,
-            pub position: Position<$id, $shape>,
-            pub size: Property<$id, $shape, f64>, pub angle: Property<$id, $shape, f64>,
-            $(pub $radius: Property<$id, $shape, f64>,)?
-            pub fill: Property<$id, $shape, Color>, pub stroke: Property<$id, $shape, Color>,
-            pub line_cap: Property<$id, $shape, crate::Cap>,
-            pub line_join: Property<$id, $shape, crate::Join>,
-            pub stroke_width: Property<$id, $shape, f64>, pub opacity: Property<$id, $shape, f64>,
-            pub scale: Property<$id, $shape, f64>, pub rotation: Property<$id, $shape, f64>,
+            pub position: Position<$id, $shape, fields::position::Target, fields::position_x::Target, fields::position_y::Target>,
+            pub size: fields::size::Target, pub angle: fields::angle::Target,
+            $(pub $radius: fields::$radius::Target,)?
+            pub fill: fields::fill::Target, pub stroke: fields::stroke::Target,
+            pub line_cap: fields::line_cap::Target,
+            pub line_join: fields::line_join::Target,
+            pub stroke_width: fields::stroke_width::Target, pub opacity: fields::opacity::Target,
+            pub scale: fields::scale::Target, pub rotation: fields::rotation::Target,
         }
         impl $handle {pub fn id(self)->$id {self.id}}
         impl<M:crate::Model2d> SceneObject<M> for $shape {
@@ -103,36 +96,9 @@ macro_rules! wedge {
 
     };
 }
-wedge!(
-    Triangle,
-    TriangleHandle,
-    TriangleId,
-    triangles,
-    triangle,
-    true,
-    radius => triangle_geometry
-);
-wedge!(Chevron, ChevronHandle, ChevronId, chevrons, chevron, false);
+pub(crate) use wedge;
 
-impl Triangle {
-    pub fn geometry(&self) -> Geometry {
-        rounded_triangle::rounded(self.vertices(), self.radius)
-    }
-}
-impl Chevron {
-    pub fn geometry(&self) -> Geometry {
-        Geometry::sharp(self.vertices(), false)
-    }
-    pub fn extent(&self) -> f64 {
-        self.geometry().extent(
-            self.position,
-            self.rotation,
-            self.scale,
-        )
-    }
-}
-
-fn vertices(size: f64, angle: f64) -> [Point; 3] {
+pub(crate) fn vertices(size: f64, angle: f64) -> [Point; 3] {
     assert!(
         size.is_finite() && size >= 0.0,
         "shape size must be finite and nonnegative"

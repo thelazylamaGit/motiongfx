@@ -9,6 +9,21 @@ a subject ID, typed field path and interpolation function. `to`, `offset`,
 to normal actions. Relative targets use the action-start value during baking.
 These timeline descriptions add no separate evaluator during playback.
 
+Built-in model fields can instead expose `Target<I, S, T, F>`. A zero-sized
+`Field` marker identifies fixed accessors/interpolation, so each target stores
+only its subject ID. `.to`, `.offset`, `.set`, `.multiply`, `.map_target` and
+`.spring_to` expand to the same existing Property/action implementation without
+allocation. Sources expand during registration. Runtime-selected paths still use
+`Property`; compact targets convert with `.into()` or `.property()`. This reduces
+stored metadata, not sampling validation or renderer work. No compile-time or
+frame-time improvement has been benchmarked.
+
+`PhantomData<fn() -> (S, T, F)>` records the subject/value/field types without
+owning values of those types or storing runtime accessor pointers. This is field
+identity rather than typestate. The ID still occupies storage; the compiled core
+action still has the accessors it needs. Model crates keep marker declarations
+beside the owning objects; their shared macros only remove repetitive definitions.
+
 `AnimationDefaults::default()` defines the library-wide authoring defaults:
 one second and normalized sigmoid `smooth` easing. Scenes need no defaults
 declaration. `over(duration)` and `ease(function)` override individual changes;
@@ -61,6 +76,12 @@ There is no rendering dependency, closed list of shape kinds, or per-sample
 type registry in this shared layer.
 
 `SceneObject<M>::insert_into` registers state and returns typed handles.
+`SceneSequence` now carries a construction-only `SceneContext<M>`, which provides
+model access and memoized deferred-target registration, alongside signal
+registration. Its temporary caches are dropped before playback; they are not a
+runtime type registry. Adapter target errors propagate as `SceneError::Target`
+through `try_animate`, or panic during `animate` preparation. Standalone
+`Sequence::with_signals` remains available for integrations with their own worlds.
 `ObjectDefinition<T, M>` supplies reusable descriptor/property wiring; model
 crates may wrap it to expose their own inherent builders and input conversions.
 `Input<M, T>` prepares fixed/signal/computed/property inputs. `SampleTime`

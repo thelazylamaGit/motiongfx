@@ -1,9 +1,8 @@
 //! One scene-wide camera, sampled by the ordinary MotionGfx timeline.
 
-use crate::{Graphics, Parent, Point, Position};
+use crate::{Graphics, Parent, Point};
 use kurbo::Affine;
-use motiongfx::prelude::{SubjectSource, path};
-use motiongfx_authoring::Property;
+use motiongfx::prelude::SubjectSource;
 
 /// A view in centered, y-up canvas coordinates. Frame scale 0.25 shows a
 /// quarter of the normal width/height, making objects four times as large.
@@ -79,21 +78,16 @@ pub struct CameraId;
 
 #[derive(Clone, Copy)]
 pub struct CameraHandle {
-    pub position: Position<CameraId, Camera>,
-    pub scale: Property<CameraId, Camera, f64>,
-    pub rotation: Property<CameraId, Camera, f64>,
+    pub position: camera_position,
+    pub scale: fields::scale::Target,
+    pub rotation: fields::rotation::Target,
 }
 
 pub(crate) fn camera_handle() -> CameraHandle {
     CameraHandle {
-        position: Position::new(
-            CameraId,
-            path!(Camera.position),
-            path!(Camera.position.x),
-            path!(Camera.position.y),
-        ),
-        scale: Property::new(CameraId, path!(Camera.scale)),
-        rotation: Property::new(CameraId, path!(Camera.rotation)),
+        position: camera_position_axes(CameraId),
+        scale: motiongfx_authoring::Target::new(CameraId),
+        rotation: motiongfx_authoring::Target::new(CameraId),
     }
 }
 impl<M: crate::Model2d> crate::SceneObject<M> for Camera {
@@ -126,4 +120,29 @@ impl<M: crate::Model2d> SubjectSource<CameraId, Camera>
     ) -> Option<R> {
         Some(f(&mut self.model_mut().graphics_mut().camera))
     }
+}
+
+// Fixed field identity is generated locally; no accessor metadata is stored in
+// each handle. See properties.rs and motiongfx_authoring::Target.
+crate::properties::fields!(fields, Camera, CameraId;
+scale: f64 => new(Camera.scale);
+rotation: f64 => new(Camera.rotation);
+position: Point => new(Camera.position);
+position_x: f64 => new(Camera.position.x);
+position_y: f64 => new(Camera.position.y);
+);
+#[allow(non_camel_case_types)]
+pub type camera_position = crate::Position<
+    CameraId,
+    Camera,
+    fields::position::Target,
+    fields::position_x::Target,
+    fields::position_y::Target,
+>;
+pub fn camera_position_axes(id: CameraId) -> camera_position {
+    crate::Position::from_targets(
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+    )
 }

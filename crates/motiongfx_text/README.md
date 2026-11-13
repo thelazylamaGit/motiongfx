@@ -22,6 +22,11 @@ than providing a continuous variable-font morph.
 layout style and font registration revision. Paint, opacity and transforms are
 deliberately absent. Animated font size/spacing/weight can require reshaping;
 animated scale can reuse the layout. No frame-time benchmark is claimed.
+Cache validity is currently determined by comparing input keys on rendering;
+there is no setter-driven invalidation protocol. This keeps direct writes,
+bindings and backward sampling correct with the existing scene model. See
+[text-caching.md](../../docs/text-caching.md) for the separate renderer paint-span
+cache and the reasons for keeping the current checks until richer text effects.
 
 `TextRange` validates UTF-8 byte boundaries and holds its exact source snapshot.
 Selections expand to whole shaped clusters (including ligatures); bounds are

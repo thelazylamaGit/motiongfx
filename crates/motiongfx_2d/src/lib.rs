@@ -49,8 +49,11 @@ impl Model2d for Graphics {
 mod access;
 mod background;
 mod camera;
+mod chevron;
 mod circle;
 pub mod colors;
+#[doc(hidden)]
+pub mod fields;
 mod input;
 mod line;
 mod line_layout;
@@ -63,9 +66,11 @@ mod style;
 mod text;
 mod text_selection;
 mod tips;
+mod triangle;
 mod updates;
 pub use background::BackgroundId;
 pub use camera::{Camera, CameraHandle, CameraId};
+pub use chevron::{Chevron, ChevronHandle, ChevronId};
 pub use circle::{Circle, CircleHandle, CircleId};
 pub use input::Input;
 pub use line::{Line, LineHandle, LineId};
@@ -77,15 +82,13 @@ pub use properties::Position;
 pub use style::ApplyStyle;
 pub use text::{Text, TextAlign, TextHandle, TextId, TextStyle};
 pub use text_selection::{
+    SelectionChange, SelectionProperty, SelectionSpringChange,
     TextSelection, TextSelectionHandle, TextSelectionId,
 };
 pub use tips::{
     EndpointTip, LineTip, LineTipHandle, LineWithTips, NoTip,
 };
-pub use wedge::{
-    Chevron, ChevronHandle, ChevronId, Triangle, TriangleHandle,
-    TriangleId,
-};
+pub use triangle::{Triangle, TriangleHandle, TriangleId};
 mod wedge;
 pub use access::{Animation2dExt, Scene2dExt};
 pub use rounded_triangle::Geometry;

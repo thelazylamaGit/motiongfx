@@ -106,12 +106,12 @@ macro_rules! stroke {
                 self.property(
                     color,
                     motiongfx::path!($state.stroke),
-                    |handle| handle.stroke,
+                    |handle| handle.stroke.into(),
                 )
                 .property(
                     width,
                     motiongfx::path!($state.stroke_width),
-                    |handle| handle.stroke_width,
+                    |handle| handle.stroke_width.into(),
                 )
             }
         }
@@ -132,7 +132,7 @@ macro_rules! stroke_options {
                 self.property(
                     value,
                     motiongfx::path!($state.line_cap),
-                    |handle| handle.line_cap,
+                    |handle| handle.line_cap.into(),
                 )
             }
             /// Stroke corners: miter, bevel or round. This changes the outline,
@@ -144,7 +144,7 @@ macro_rules! stroke_options {
                 self.property(
                     value,
                     motiongfx::path!($state.line_join),
-                    |handle| handle.line_join,
+                    |handle| handle.line_join.into(),
                 )
             }
         }

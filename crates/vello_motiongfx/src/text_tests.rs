@@ -29,6 +29,7 @@ fn paint_and_transforms_reuse_layout_but_font_size_reshapes() {
         &[],
     );
     assert_eq!(cache.fonts.builds(), 1);
+    assert_eq!(cache.mappings, 1);
     text.font_size = 48.0;
     frame.reset();
     cache.render(
@@ -39,15 +40,14 @@ fn paint_and_transforms_reuse_layout_but_font_size_reshapes() {
         &[],
     );
     assert_eq!(cache.fonts.builds(), 2);
+    assert_eq!(cache.mappings, 2);
 }
 
 #[test]
 fn word_paint_seeks_and_source_changes_do_not_use_stale_ranges() {
     let mut scene = Scene::new();
     let text = scene.add(Text::new("hello world"));
-    let word = text.select(&mut scene, "world").unwrap();
-    assert!(text.select(&mut scene, "absent").is_err());
-    assert_eq!(scene.model().text_selections().len(), 1);
+    let word = text.select("world");
     let mut animation = scene.animate(|sequence| {
         sequence.parallel(|sequence| {
             sequence.play(word.fill.to(colors::RED).over(s(1)));
@@ -71,6 +71,7 @@ fn word_paint_seeks_and_source_changes_do_not_use_stale_ranges() {
             batches
         );
         assert_eq!(renderer.text_layouts[0].fonts.builds(), builds);
+        assert_eq!(renderer.text_layouts[0].mappings, builds);
         if initial_draw.is_empty() {
             initial_draw = frame.encoding().draw_data.clone();
         } else if time == 0 {
@@ -87,4 +88,28 @@ fn word_paint_seeks_and_source_changes_do_not_use_stale_ranges() {
     });
     animation.sample(ms(500));
     assert_eq!(animation.text(text).font_weight.value(), 550.0);
+}
+
+#[test]
+fn a_reused_renderer_remaps_selection_ranges_without_reshaping() {
+    let mut renderer = Renderer::default();
+    let size = Size::new(400.0, 200.0);
+    for (needle, first_batch_len, mappings) in
+        [("hello", 5, 1), ("world", 6, 2)]
+    {
+        let mut scene = Scene::new();
+        let title = scene.add(Text::new("hello world"));
+        let animation = scene.animate(|sequence| {
+            sequence.play(title.select(needle).fill.set(colors::RED));
+            sequence.wait(s(1));
+        });
+        let mut frame = vello::Scene::new();
+        renderer.render(&animation, &mut frame, size, size, 1.0);
+        assert_eq!(renderer.text_layouts[0].fonts.builds(), 1);
+        assert_eq!(renderer.text_layouts[0].mappings, mappings);
+        assert_eq!(
+            frame.encoding().resources.glyph_runs[0].glyphs.len(),
+            first_batch_len
+        );
+    }
 }

@@ -1,11 +1,8 @@
 //! Filled circles and stroked rings with typed animation targets.
 
-use crate::{
-    Color, DrawObject, Parent, Point, Position, SceneObject,
-};
+use crate::{Color, DrawObject, Parent, Point, SceneObject};
 use kurbo::Affine;
-use motiongfx::prelude::{SubjectSource, path};
-use motiongfx_authoring::Property;
+use motiongfx::prelude::SubjectSource;
 
 /// A circle with a local radius in canvas units. Scale transforms both the
 /// circle and its stroke, including children anchored with `relative_to`.
@@ -76,14 +73,14 @@ impl CircleId {
 #[derive(Clone, Copy)]
 pub struct CircleHandle {
     pub(crate) id: CircleId,
-    pub position: Position<CircleId, Circle>,
-    pub radius: Property<CircleId, Circle, f64>,
-    pub fill: Property<CircleId, Circle, Color>,
-    pub stroke: Property<CircleId, Circle, Color>,
-    pub stroke_width: Property<CircleId, Circle, f64>,
-    pub opacity: Property<CircleId, Circle, f64>,
-    pub scale: Property<CircleId, Circle, f64>,
-    pub rotation: Property<CircleId, Circle, f64>,
+    pub position: circle_position,
+    pub radius: fields::radius::Target,
+    pub fill: fields::fill::Target,
+    pub stroke: fields::stroke::Target,
+    pub stroke_width: fields::stroke_width::Target,
+    pub opacity: fields::opacity::Target,
+    pub scale: fields::scale::Target,
+    pub rotation: fields::rotation::Target,
 }
 impl CircleHandle {
     pub fn id(self) -> CircleId {
@@ -118,23 +115,15 @@ impl Circle {
         }
         CircleHandle {
             id,
-            position: Position::new(
-                id,
-                path!(Circle.position),
-                path!(Circle.position.x),
-                path!(Circle.position.y),
-            ),
-            radius: Property::new(id, path!(Circle.radius)),
-            fill: Property::new(id, path!(Circle.fill)),
-            stroke: Property::new(id, path!(Circle.stroke)),
+            position: circle_position_axes(id),
+            radius: motiongfx_authoring::Target::new(id),
+            fill: motiongfx_authoring::Target::new(id),
+            stroke: motiongfx_authoring::Target::new(id),
 
-            stroke_width: Property::new(
-                id,
-                path!(Circle.stroke_width),
-            ),
-            opacity: Property::new(id, path!(Circle.opacity)),
-            scale: Property::new(id, path!(Circle.scale)),
-            rotation: Property::new(id, path!(Circle.rotation)),
+            stroke_width: motiongfx_authoring::Target::new(id),
+            opacity: motiongfx_authoring::Target::new(id),
+            scale: motiongfx_authoring::Target::new(id),
+            rotation: motiongfx_authoring::Target::new(id),
         }
     }
 }
@@ -152,4 +141,34 @@ impl<M: crate::Model2d> SubjectSource<CircleId, Circle>
     ) -> Option<R> {
         self.model_mut().graphics_mut().circles.get_mut(id.0).map(f)
     }
+}
+
+// Fixed field identity is generated locally; no accessor metadata is stored in
+// each handle. See properties.rs and motiongfx_authoring::Target.
+crate::properties::fields!(fields, Circle, CircleId;
+radius: f64 => new(Circle.radius);
+fill: Color => new(Circle.fill);
+stroke: Color => new(Circle.stroke);
+stroke_width: f64 => new(Circle.stroke_width);
+opacity: f64 => new(Circle.opacity);
+scale: f64 => new(Circle.scale);
+rotation: f64 => new(Circle.rotation);
+position: Point => new(Circle.position);
+position_x: f64 => new(Circle.position.x);
+position_y: f64 => new(Circle.position.y);
+);
+#[allow(non_camel_case_types)]
+pub type circle_position = crate::Position<
+    CircleId,
+    Circle,
+    fields::position::Target,
+    fields::position_x::Target,
+    fields::position_y::Target,
+>;
+pub fn circle_position_axes(id: CircleId) -> circle_position {
+    crate::Position::from_targets(
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+    )
 }

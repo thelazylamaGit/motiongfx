@@ -67,7 +67,11 @@ then runs callbacks in registration order. Standalone signals, `.map`,
 `vello_motiongfx::Renderer` consumes read-only sampled model state. It owns
 path traces, text layouts and rounded-triangle caches, initialized on first
 draw and updated by their existing input keys. These no longer live in model
-subjects or shared finalization. Rendering still records normal Vello commands.
+subjects or shared finalization. Built-in authoring field targets store IDs and
+zero-sized field markers; they expand to ordinary properties during preparation.
+Deferred selection registration uses SceneContext memoization that is dropped
+before playback. The renderer caches glyph paint-span associations separately
+from layout and animated paint. Rendering still records normal Vello commands.
 The native host samples the shared animation and then invokes that renderer.
 The background remains a renderer clear/base color, independent of the camera.
 

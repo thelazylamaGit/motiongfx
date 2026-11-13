@@ -1,9 +1,8 @@
 //! Stroked paths. Geometry is shared, while small reveal/style state is sampled.
 
-use crate::{Color, DrawObject, Point, Position, SceneObject};
+use crate::{Color, DrawObject, Point, SceneObject};
 pub use kurbo::BezPath;
 use motiongfx::prelude::{SubjectSource, path};
-use motiongfx_authoring::Property;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -147,17 +146,17 @@ impl PathId {
 #[derive(Clone, Copy)]
 pub struct PathHandle {
     pub(crate) id: PathId,
-    pub position: Position<PathId, Path>,
-    pub stroke: Property<PathId, Path, Color>,
-    pub stroke_width: Property<PathId, Path, f64>,
-    pub line_cap: Property<PathId, Path, crate::Cap>,
-    pub line_join: Property<PathId, Path, crate::Join>,
-    pub opacity: Property<PathId, Path, f64>,
-    pub scale: Property<PathId, Path, f64>,
-    pub rotation: Property<PathId, Path, f64>,
-    pub start: Property<PathId, Path, f64>,
-    pub end: Property<PathId, Path, f64>,
-    pub geometry: Property<PathId, Path, Arc<BezPath>>,
+    pub position: path_position,
+    pub stroke: fields::stroke::Target,
+    pub stroke_width: fields::stroke_width::Target,
+    pub line_cap: fields::line_cap::Target,
+    pub line_join: fields::line_join::Target,
+    pub opacity: fields::opacity::Target,
+    pub scale: fields::scale::Target,
+    pub rotation: fields::rotation::Target,
+    pub start: fields::start::Target,
+    pub end: fields::end::Target,
+    pub geometry: fields::geometry::Target,
 }
 impl PathHandle {
     pub fn id(self) -> PathId {
@@ -180,22 +179,17 @@ impl<M: crate::Model2d> SceneObject<M> for Path {
             .push(DrawObject::Path(id));
         PathHandle {
             id,
-            position: Position::new(
-                id,
-                path!(Path.position),
-                path!(Path.position.x),
-                path!(Path.position.y),
-            ),
-            stroke: Property::new(id, path!(Path.stroke)),
-            line_cap: Property::discrete(id, path!(Path.line_cap)),
-            line_join: Property::discrete(id, path!(Path.line_join)),
-            stroke_width: Property::new(id, path!(Path.stroke_width)),
-            opacity: Property::new(id, path!(Path.opacity)),
-            scale: Property::new(id, path!(Path.scale)),
-            rotation: Property::new(id, path!(Path.rotation)),
-            start: Property::new(id, path!(Path.start)),
-            end: Property::new(id, path!(Path.end)),
-            geometry: Property::discrete(id, path!(Path.geometry)),
+            position: path_position_axes(id),
+            stroke: motiongfx_authoring::Target::new(id),
+            line_cap: motiongfx_authoring::Target::new(id),
+            line_join: motiongfx_authoring::Target::new(id),
+            stroke_width: motiongfx_authoring::Target::new(id),
+            opacity: motiongfx_authoring::Target::new(id),
+            scale: motiongfx_authoring::Target::new(id),
+            rotation: motiongfx_authoring::Target::new(id),
+            start: motiongfx_authoring::Target::new(id),
+            end: motiongfx_authoring::Target::new(id),
+            geometry: motiongfx_authoring::Target::new(id),
         }
     }
 }
@@ -213,4 +207,37 @@ impl<M: crate::Model2d> SubjectSource<PathId, Path>
     ) -> Option<R> {
         self.model_mut().graphics_mut().paths.get_mut(id.0).map(f)
     }
+}
+
+// Fixed field identity is generated locally; no accessor metadata is stored in
+// each handle. See properties.rs and motiongfx_authoring::Target.
+crate::properties::fields!(fields, Path, PathId;
+stroke: Color => new(Path.stroke);
+stroke_width: f64 => new(Path.stroke_width);
+line_cap: crate::Cap => discrete(Path.line_cap);
+line_join: crate::Join => discrete(Path.line_join);
+opacity: f64 => new(Path.opacity);
+scale: f64 => new(Path.scale);
+rotation: f64 => new(Path.rotation);
+start: f64 => new(Path.start);
+end: f64 => new(Path.end);
+geometry: Arc<BezPath> => discrete(Path.geometry);
+position: Point => new(Path.position);
+position_x: f64 => new(Path.position.x);
+position_y: f64 => new(Path.position.y);
+);
+#[allow(non_camel_case_types)]
+pub type path_position = crate::Position<
+    PathId,
+    Path,
+    fields::position::Target,
+    fields::position_x::Target,
+    fields::position_y::Target,
+>;
+pub fn path_position_axes(id: PathId) -> path_position {
+    crate::Position::from_targets(
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+    )
 }

@@ -16,13 +16,14 @@ pub use input::{Input, PreparedInput};
 pub use object::{ObjectDefinition, Register};
 mod values;
 pub use scene::{
-    Animation, NativeUpdate, Scene, SceneError, SceneObject,
-    SceneSequence, UpdateTargets, World,
+    Animation, NativeUpdate, Scene, SceneContext, SceneError,
+    SceneObject, SceneSequence, UpdateTargets, World,
 };
 pub use values::SampleTime;
 mod signals;
 mod source;
 mod spring;
+mod target;
 pub use bindings::{BindingError, BindingPlan, BindingSource};
 pub use signals::{
     RegisterSignals, Signal, SignalChange, SignalId, SignalValues,
@@ -33,6 +34,7 @@ pub use spring::{
     SignalSpringChange, Spring, SpringChange, SpringCurve,
     SpringError, SpringSample, SpringValue,
 };
+pub use target::{Field, Target};
 
 /// Library-wide authoring defaults. Individual sequences and changes may
 /// override these without changing other animations or process-global state.
@@ -205,7 +207,10 @@ impl<'a, W: 'static> Sequence<'a, W, &'a mut SignalValues> {
 }
 
 impl<'a, W: 'static, C> Sequence<'a, W, C> {
-    fn with_context(registry: &'a mut Registry, context: C) -> Self {
+    pub(crate) fn with_context(
+        registry: &'a mut Registry,
+        context: C,
+    ) -> Self {
         let defaults = AnimationDefaults::default();
         Self {
             context,
@@ -215,6 +220,11 @@ impl<'a, W: 'static, C> Sequence<'a, W, C> {
             duration: defaults.duration,
             ease: defaults.ease,
         }
+    }
+
+    /// Construction context for model adapters lowering deferred targets.
+    pub fn context_mut(&mut self) -> &mut C {
+        &mut self.context
     }
 
     /// Defaults only affect subsequently scheduled changes.
@@ -316,7 +326,7 @@ impl<'a, W: 'static, C> Sequence<'a, W, C> {
     /// Set a property at the current sequence time without consuming time.
     pub fn set<I, S, T>(
         &mut self,
-        property: Property<I, S, T>,
+        property: impl Into<Property<I, S, T>>,
         value: impl Into<T>,
     ) where
         I: SubjectId,
@@ -324,7 +334,7 @@ impl<'a, W: 'static, C> Sequence<'a, W, C> {
         T: Clone + ThreadSafe,
         W: SubjectSource<I, S>,
     {
-        self.play(property.set(value));
+        self.play(property.into().set(value));
     }
 
     pub fn compile(self) -> Timeline<W> {

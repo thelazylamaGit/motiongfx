@@ -45,9 +45,21 @@ Text is shaped by [motiongfx_text](../motiongfx_text/README.md), then emitted as
 Vello glyph runs. One renderer-owned `FontSystem` shares font resources and one
 layout cache per text object retains only the current source/style. Font size,
 family, weight, style, spacing and wrap width are layout inputs; fill, opacity,
-selection paint and scene transforms are resolved afterwards. Reshaping happens
+selection paint and scene transforms are resolved afterwards. A separate paint-span
+cache maps glyphs to selection IDs when layout or selection structure changes.
+Paint animation reads current colors/opacity per span without repeating glyph
+range matching; equal adjacent paints still batch into one Vello glyph run.
+Selection range changes and reuse across different scenes invalidate the mapping;
+position, scale and rotation do not. Reshaping happens
 on relevant changes, not for every transform sample. The four embedded Fira Sans
 faces provide deterministic default text without system font discovery.
+
+Validity is currently checked by comparing cached inputs during rendering, not
+by a new change-notification system. Public selection ranges are fixed during
+preparation; comparing them remains a conservative safeguard for cache/renderer
+reuse. All visible objects still record commands each render. Text caches avoid
+shaping and range matching, not drawing. See [text caching](../../docs/text-caching.md)
+for the exact checks and future considerations; this behaviour is unchanged.
 
 Register custom font bytes with `renderer.fonts_mut().register_font(bytes)`
 (check its boolean result), then select their actual family name in `Text`.

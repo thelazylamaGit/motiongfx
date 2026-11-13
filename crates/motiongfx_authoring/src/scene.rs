@@ -12,6 +12,7 @@ use std::{any::TypeId, time::Duration};
 pub enum SceneError {
     Binding(BindingError),
     Preparation(motiongfx::spring::SpringError),
+    Target(String),
 }
 impl From<BindingError> for SceneError {
     fn from(e: BindingError) -> Self {
@@ -31,6 +32,7 @@ impl std::fmt::Display for SceneError {
         match self {
             Self::Binding(e) => e.fmt(f),
             Self::Preparation(e) => e.fmt(f),
+            Self::Target(message) => f.write_str(message),
         }
     }
 }
@@ -39,6 +41,7 @@ impl std::error::Error for SceneError {
         match self {
             Self::Binding(e) => Some(e),
             Self::Preparation(e) => Some(e),
+            Self::Target(_) => None,
         }
     }
 }
@@ -88,7 +91,39 @@ impl<M, T: ThreadSafe> SubjectSource<SignalId, T> for World<M> {
 }
 
 pub type SceneSequence<'a, M> =
-    crate::Sequence<'a, World<M>, &'a mut SignalValues>;
+    crate::Sequence<'a, World<M>, SceneContext<'a, M>>;
+
+/// Construction-only access for model-specific deferred animation targets.
+/// The context and its memoized registration data are dropped before playback.
+pub struct SceneContext<'a, M> {
+    world: &'a mut World<M>,
+    error: &'a mut Option<String>,
+    caches: std::collections::HashMap<TypeId, Box<dyn std::any::Any>>,
+}
+impl<M> SceneContext<'_, M> {
+    pub fn model(&self) -> &M {
+        self.world.model()
+    }
+    pub fn model_mut(&mut self) -> &mut M {
+        self.world.model_mut()
+    }
+    /// Memoize target resolution during construction only, never sampling.
+    pub fn cache<T: Default + 'static>(&mut self) -> &mut T {
+        self.caches
+            .entry(TypeId::of::<T>())
+            .or_insert_with(|| Box::new(T::default()))
+            .downcast_mut()
+            .expect("cache key and value type agree")
+    }
+    pub fn reject(&mut self, error: impl Into<String>) {
+        self.error.get_or_insert_with(|| error.into());
+    }
+}
+impl<M> crate::RegisterSignals for SceneContext<'_, M> {
+    fn signals(&mut self) -> &mut SignalValues {
+        &mut self.world.signals
+    }
+}
 type Prepare<M> = Box<dyn FnOnce(&mut Scene<M>) + Send + Sync>;
 type Update<M> =
     dyn FnMut(&mut World<M>, &BindingPlan<World<M>>) + Send + Sync;
@@ -239,12 +274,20 @@ impl<M: 'static> Scene<M> {
             prepare(&mut self);
         }
         let mut registry = Registry::new();
-        let mut sequence = crate::Sequence::with_signals(
+        let mut target_error = None;
+        let mut sequence = crate::Sequence::with_context(
             &mut registry,
-            &mut self.world.signals,
+            SceneContext {
+                world: &mut self.world,
+                error: &mut target_error,
+                caches: Default::default(),
+            },
         );
         author(&mut sequence);
         let mut timeline = sequence.try_compile()?;
+        if let Some(error) = target_error {
+            return Err(SceneError::Target(error));
+        }
         self.bindings.prepare(&self.world, &timeline)?;
         timeline.bake_actions(&registry, &self.world);
         let mut animation = Animation {

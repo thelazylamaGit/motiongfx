@@ -384,4 +384,8 @@ impl LayoutCache {
     pub fn builds(&self) -> usize {
         self.builds
     }
+    /// The current layout, without performing another key comparison.
+    pub fn prepared(&self) -> Option<&PreparedText> {
+        self.prepared.as_ref()
+    }
 }

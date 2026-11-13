@@ -5,16 +5,32 @@ use motiongfx::prelude::Path;
 use motiongfx_authoring::Property;
 use std::ops::Deref;
 
-pub struct Position<I, S> {
-    whole: Property<I, S, Point>,
-    pub x: Property<I, S, f64>,
-    pub y: Property<I, S, f64>,
+pub struct Position<
+    I,
+    S,
+    P = Property<I, S, Point>,
+    X = Property<I, S, f64>,
+    Y = Property<I, S, f64>,
+> {
+    whole: P,
+    pub x: X,
+    pub y: Y,
+    marker: std::marker::PhantomData<fn() -> (I, S)>,
 }
 
-impl<I: Copy, S> Copy for Position<I, S> {}
-impl<I: Copy, S> Clone for Position<I, S> {
+impl<I, S, P: Copy, X: Copy, Y: Copy> Copy
+    for Position<I, S, P, X, Y>
+{
+}
+impl<I, S, P: Clone, X: Clone, Y: Clone> Clone
+    for Position<I, S, P, X, Y>
+{
     fn clone(&self) -> Self {
-        *self
+        Self::from_targets(
+            self.whole.clone(),
+            self.x.clone(),
+            self.y.clone(),
+        )
     }
 }
 
@@ -29,30 +45,59 @@ impl<I: Copy, S> Position<I, S> {
             whole: Property::new(id, whole),
             x: Property::new(id, x),
             y: Property::new(id, y),
+            marker: std::marker::PhantomData,
         }
     }
 }
 
-// Allows position.to(...) / position.offset(...) to use the same Property
-// implementation as every other target, without duplicating those methods.
-impl<I, S> Deref for Position<I, S> {
-    type Target = Property<I, S, Point>;
-    fn deref(&self) -> &Self::Target {
+impl<I, S, P, X, Y> Position<I, S, P, X, Y> {
+    pub fn from_targets(whole: P, x: X, y: Y) -> Self {
+        Self {
+            whole,
+            x,
+            y,
+            marker: std::marker::PhantomData,
+        }
+    }
+}
+impl<I, S, P, X, Y> Deref for Position<I, S, P, X, Y> {
+    type Target = P;
+    fn deref(&self) -> &P {
         &self.whole
     }
 }
-
-impl<I, S> From<Position<I, S>> for Property<I, S, Point> {
-    fn from(position: Position<I, S>) -> Self {
-        position.whole
+impl<I, S, P: Into<Property<I, S, Point>>, X, Y>
+    From<Position<I, S, P, X, Y>> for Property<I, S, Point>
+{
+    fn from(position: Position<I, S, P, X, Y>) -> Self {
+        position.whole.into()
     }
 }
-
-impl<W, I, S> motiongfx_authoring::BindingSource<W> for Position<I, S>
+impl<W, I, S, P, X, Y> motiongfx_authoring::Source<W>
+    for Position<I, S, P, X, Y>
 where
-    I: motiongfx::subject::SubjectId,
-    S: 'static,
-    W: motiongfx::world::SubjectSource<I, S>,
+    P: motiongfx_authoring::Source<W, Value = Point>,
+{
+    type Value = Point;
+    type Prepared = P::Prepared;
+    type Owned = P::Owned;
+    fn owned(&self) -> Self::Owned {
+        self.whole.owned()
+    }
+    fn register(
+        &self,
+        world: &mut W,
+        plan: &mut motiongfx_authoring::BindingPlan<W>,
+    ) -> Self::Prepared {
+        self.whole.register(world, plan)
+    }
+}
+impl<W, I: 'static, S: 'static, P, X, Y>
+    motiongfx_authoring::BindingSource<W> for Position<I, S, P, X, Y>
+where
+    P: motiongfx_authoring::BindingSource<W, Value = Point>,
+    X: Clone + Send + Sync + 'static,
+    Y: Clone + Send + Sync + 'static,
 {
     type Value = Point;
     fn read(
@@ -65,7 +110,7 @@ where
     fn dependencies(
         &self,
     ) -> Vec<motiongfx_authoring::bindings::BindingDependency> {
-        <Property<I, S, Point> as motiongfx_authoring::BindingSource<W>>::dependencies(&self.whole)
+        self.whole.dependencies()
     }
     fn validate(
         &self,
@@ -75,23 +120,24 @@ where
     }
 }
 
-impl<W, I, S> motiongfx_authoring::Source<W> for Position<I, S>
-where
-    I: motiongfx::subject::SubjectId,
-    S: 'static,
-    W: motiongfx::world::SubjectSource<I, S>,
-{
-    type Value = Point;
-    type Prepared = Self;
-    type Owned = Self;
-    fn owned(&self) -> Self {
-        *self
-    }
-    fn register(
-        &self,
-        _: &mut W,
-        _: &mut motiongfx_authoring::BindingPlan<W>,
-    ) -> Self {
-        *self
+// Declare field identity beside the owning object. Markers contain no data;
+// only a Target's subject ID occupies storage. General Property expansion is
+// shared with the ordinary animation/binding implementation.
+macro_rules! fields {
+    ($module:ident, $state:ty, $id:ty; $( $name:ident: $value:ty => $method:ident($($path:tt)+); )*) => {
+        pub mod $module {
+            use super::*;
+            $(pub mod $name {
+                use super::*;
+                pub struct Marker;
+                pub type Target = motiongfx_authoring::Target<$id,$state,$value,Marker>;
+                impl motiongfx_authoring::Field<$state,$value> for Marker {
+                    fn property<I:Copy>(id:I)->motiongfx_authoring::Property<I,$state,$value> {
+                        motiongfx_authoring::Property::$method(id,motiongfx::path!($($path)+))
+                    }
+                }
+            })*
+        }
     }
 }
+pub(crate) use fields;

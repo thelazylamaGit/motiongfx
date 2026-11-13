@@ -1,8 +1,14 @@
-//! Lightweight paint targets for source selections, not independently drawn nodes.
+//! Deferred, source-aware paint targets. Registration is construction work only.
 use crate::*;
-use motiongfx::prelude::{SubjectSource, path};
-use motiongfx_authoring::Property;
-use std::ops::Range;
+use motiongfx::prelude::{SubjectSource, ThreadSafe, TrackFragment};
+use motiongfx_authoring::{
+    AnimationChange, Field, Property, SceneContext, Sequence,
+    SpringValue,
+};
+use std::{
+    collections::HashMap, marker::PhantomData, ops::Range,
+    panic::Location, sync::Arc, time::Duration,
+};
 
 #[derive(Clone)]
 pub struct TextSelection {
@@ -19,62 +25,293 @@ impl TextSelectionId {
         self.0
     }
 }
-#[derive(Clone, Copy)]
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum Selector {
+    Literal { needle: String, occurrence: usize },
+    Range(Range<usize>),
+}
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct Query {
+    text: TextId,
+    selector: Selector,
+}
+#[derive(Default)]
+struct Selections(HashMap<Arc<Query>, TextSelectionId>);
+
+/// Reusable deferred selection. No source lookup or scene mutation occurs here.
+/// Only scheduled selections are validated/registered, before timeline baking.
+#[derive(Clone)]
 pub struct TextSelectionHandle {
-    pub fill: Property<TextSelectionId, TextSelection, Color>,
-    pub opacity: Property<TextSelectionId, TextSelection, f64>,
+    pub fill: SelectionProperty<Color, fields::fill::Marker>,
+    pub opacity: SelectionProperty<f64, fields::opacity::Marker>,
+}
+/// A deferred selection field, resolved to an ordinary Property during authoring.
+pub struct SelectionProperty<T, F> {
+    query: Arc<Query>,
+    location: &'static Location<'static>,
+    marker: PhantomData<fn() -> (T, F)>,
+}
+impl<T, F> Clone for SelectionProperty<T, F> {
+    fn clone(&self) -> Self {
+        Self {
+            query: self.query.clone(),
+            location: self.location,
+            marker: PhantomData,
+        }
+    }
 }
 impl TextHandle {
-    /// Select the first literal occurrence in the initial content snapshot.
-    /// The selection overrides that range's paint; later overlapping selections
-    /// win. Font rendering expands partial ligatures to whole clusters.
-    pub fn select<M: Model2d>(
-        self,
-        scene: &mut motiongfx_authoring::Scene<M>,
-        needle: &str,
-    ) -> Result<TextSelectionHandle, SelectionError> {
-        self.select_nth(scene, needle, 0)
+    /// Describe the first non-overlapping literal occurrence in initial content.
+    #[track_caller]
+    pub fn select(self, needle: &str) -> TextSelectionHandle {
+        self.select_nth(needle, 0)
     }
-    pub fn select_nth<M: Model2d>(
+    /// Occurrences are zero-based. Repeated equivalent selections share paint state.
+    #[track_caller]
+    pub fn select_nth(
         self,
-        scene: &mut motiongfx_authoring::Scene<M>,
         needle: &str,
         occurrence: usize,
-    ) -> Result<TextSelectionHandle, SelectionError> {
-        let text = &scene.model().graphics().texts[self.id.index()];
-        let range = TextRange::find(
-            text.content.clone(),
-            needle,
-            occurrence,
-        )?;
-        Ok(self.insert_selection(scene, range))
-    }
-    /// Explicit UTF-8 byte range; construction validates the boundaries.
-    pub fn select_range<M: Model2d>(
-        self,
-        scene: &mut motiongfx_authoring::Scene<M>,
-        range: Range<usize>,
-    ) -> Result<TextSelectionHandle, SelectionError> {
-        let text = &scene.model().graphics().texts[self.id.index()];
-        let range = TextRange::new(text.content.clone(), range)?;
-        Ok(self.insert_selection(scene, range))
-    }
-    fn insert_selection<M: Model2d>(
-        self,
-        scene: &mut motiongfx_authoring::Scene<M>,
-        range: TextRange,
     ) -> TextSelectionHandle {
-        let graphics = scene.model_mut().graphics_mut();
-        let id = TextSelectionId(graphics.text_selections.len());
-        graphics.text_selections.push(TextSelection {
-            range,
-            fill: graphics.texts[self.id.index()].fill,
-            opacity: 1.0,
+        self.selection(Selector::Literal {
+            needle: needle.into(),
+            occurrence,
+        })
+    }
+    /// Describe a UTF-8 byte range; preparation validates its boundaries.
+    #[track_caller]
+    pub fn select_range(
+        self,
+        range: Range<usize>,
+    ) -> TextSelectionHandle {
+        self.selection(Selector::Range(range))
+    }
+    #[track_caller]
+    fn selection(self, selector: Selector) -> TextSelectionHandle {
+        let query = Arc::new(Query {
+            text: self.id,
+            selector,
         });
-        graphics.texts[self.id.index()].selections.push(id);
+        let location = Location::caller();
         TextSelectionHandle {
-            fill: Property::new(id, path!(TextSelection.fill)),
-            opacity: Property::new(id, path!(TextSelection.opacity)),
+            fill: SelectionProperty {
+                query: query.clone(),
+                location,
+                marker: PhantomData,
+            },
+            opacity: SelectionProperty {
+                query,
+                location,
+                marker: PhantomData,
+            },
+        }
+    }
+}
+impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
+    fn resolve<M: Model2d>(
+        &self,
+        context: &mut SceneContext<'_, M>,
+    ) -> Result<Property<TextSelectionId, TextSelection, T>, String>
+    {
+        if let Some(id) =
+            context.cache::<Selections>().0.get(&self.query).copied()
+        {
+            return Ok(F::property(id));
+        }
+        let graphics = context.model().graphics();
+        let text = graphics.texts.get(self.query.text.index()).ok_or_else(|| {
+            format!("text selection {:?}: text object does not exist ({})", self.query, self.location)
+        })?;
+        let result = match &self.query.selector {
+            Selector::Literal { needle, occurrence } => {
+                TextRange::find(
+                    text.content.clone(),
+                    needle,
+                    *occurrence,
+                )
+            }
+            Selector::Range(range) => {
+                TextRange::new(text.content.clone(), range.clone())
+            }
+        };
+        let range = result.map_err(|error| {
+            format!(
+                "text selection {:?} in {:?}: {} ({})",
+                self.query.selector,
+                text.content,
+                error,
+                self.location
+            )
+        })?;
+        // Different queries that resolve to the same source range share one target.
+        let existing = text.selections.iter().copied().find(|id| {
+            graphics.text_selections[id.index()].range == range
+        });
+        let id = if let Some(id) = existing {
+            id
+        } else {
+            let graphics = context.model_mut().graphics_mut();
+            let id = TextSelectionId(graphics.text_selections.len());
+            graphics.text_selections.push(TextSelection {
+                range,
+                fill: graphics.texts[self.query.text.index()].fill,
+                opacity: 1.0,
+            });
+            graphics.texts[self.query.text.index()]
+                .selections
+                .push(id);
+            id
+        };
+        context
+            .cache::<Selections>()
+            .0
+            .insert(self.query.clone(), id);
+        Ok(F::property(id))
+    }
+    pub fn map_target<A: Fn(&T) -> T + ThreadSafe>(
+        &self,
+        target: A,
+    ) -> SelectionChange<T, F, A> {
+        SelectionChange {
+            property: self.clone(),
+            target,
+            duration: None,
+            ease: None,
+        }
+    }
+    pub fn to(
+        &self,
+        value: impl Into<T>,
+    ) -> SelectionChange<T, F, impl Fn(&T) -> T + ThreadSafe>
+    where
+        T: Clone + ThreadSafe,
+    {
+        let value = value.into();
+        self.map_target(move |_| value.clone())
+    }
+    pub fn set(
+        &self,
+        value: impl Into<T>,
+    ) -> SelectionChange<T, F, impl Fn(&T) -> T + ThreadSafe>
+    where
+        T: Clone + ThreadSafe,
+    {
+        self.to(value).over(Duration::ZERO)
+    }
+    pub fn offset<D: Copy + ThreadSafe>(
+        &self,
+        delta: D,
+    ) -> SelectionChange<T, F, impl Fn(&T) -> T + ThreadSafe>
+    where
+        T: Clone + std::ops::Add<D, Output = T>,
+    {
+        self.map_target(move |previous| previous.clone() + delta)
+    }
+    pub fn multiply<D: Copy + ThreadSafe>(
+        &self,
+        factor: D,
+    ) -> SelectionChange<T, F, impl Fn(&T) -> T + ThreadSafe>
+    where
+        T: Clone + std::ops::Mul<D, Output = T>,
+    {
+        self.map_target(move |previous| previous.clone() * factor)
+    }
+    pub fn spring_to<M>(
+        &self,
+        value: impl Into<T>,
+        spring: impl Into<Spring>,
+    ) -> SelectionSpringChange<T, F, M>
+    where
+        T: SpringValue<M> + Clone + ThreadSafe,
+    {
+        SelectionSpringChange {
+            property: self.clone(),
+            value: value.into(),
+            spring: spring.into(),
+            marker: PhantomData,
+        }
+    }
+}
+/// Deferred spring action, lowered to the same core spring as ordinary fields.
+#[must_use = "schedule the selection spring with sequence.play"]
+pub struct SelectionSpringChange<T, F, M> {
+    property: SelectionProperty<T, F>,
+    value: T,
+    spring: Spring,
+    marker: PhantomData<fn() -> M>,
+}
+impl<Model, T, F, M>
+    AnimationChange<World<Model>, SceneContext<'_, Model>>
+    for SelectionSpringChange<T, F, M>
+where
+    Model: Model2d,
+    T: SpringValue<M> + Clone + ThreadSafe,
+    F: Field<TextSelection, T>,
+{
+    fn lower(
+        self,
+        sequence: &mut Sequence<
+            '_,
+            World<Model>,
+            SceneContext<'_, Model>,
+        >,
+    ) -> TrackFragment {
+        match self.property.resolve(sequence.context_mut()) {
+            Ok(property) => property
+                .spring_to::<M>(self.value, self.spring)
+                .lower(sequence),
+            Err(error) => {
+                sequence.context_mut().reject(error);
+                TrackFragment::silent(Duration::ZERO)
+            }
+        }
+    }
+}
+#[must_use = "schedule the selection change with sequence.play"]
+pub struct SelectionChange<T, F, A> {
+    property: SelectionProperty<T, F>,
+    target: A,
+    duration: Option<Duration>,
+    ease: Option<motiongfx::prelude::EaseFn>,
+}
+impl<T, F, A> SelectionChange<T, F, A> {
+    pub fn over(mut self, duration: Duration) -> Self {
+        self.duration = Some(duration);
+        self
+    }
+    pub fn ease(mut self, ease: motiongfx::prelude::EaseFn) -> Self {
+        self.ease = Some(ease);
+        self
+    }
+}
+impl<M, T, F, A> AnimationChange<World<M>, SceneContext<'_, M>>
+    for SelectionChange<T, F, A>
+where
+    M: Model2d,
+    T: Clone + ThreadSafe,
+    F: Field<TextSelection, T>,
+    A: Fn(&T) -> T + ThreadSafe,
+{
+    fn lower(
+        self,
+        sequence: &mut Sequence<'_, World<M>, SceneContext<'_, M>>,
+    ) -> TrackFragment {
+        match self.property.resolve(sequence.context_mut()) {
+            Ok(property) => {
+                let mut change = property.map_target(self.target);
+                if let Some(duration) = self.duration {
+                    change = change.over(duration);
+                }
+                if let Some(ease) = self.ease {
+                    change = change.ease(ease);
+                }
+                change.lower(sequence)
+            }
+            Err(error) => {
+                sequence.context_mut().reject(error);
+                TrackFragment::silent(Duration::ZERO)
+            }
         }
     }
 }
@@ -99,3 +336,10 @@ impl<M: Model2d> SubjectSource<TextSelectionId, TextSelection>
             .map(f)
     }
 }
+
+// Fixed field identity is generated locally; no accessor metadata is stored in
+// each handle. See properties.rs and motiongfx_authoring::Target.
+crate::properties::fields!(fields, TextSelection, TextSelectionId;
+fill: Color => new(TextSelection.fill);
+opacity: f64 => new(TextSelection.opacity);
+);

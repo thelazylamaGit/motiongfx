@@ -1,9 +1,8 @@
 //! A styled line with independently animatable endpoints; no path allocation.
 
 use crate::tips::EndpointTip;
-use crate::{Color, DrawObject, Point, Position, SceneObject};
-use motiongfx::prelude::{SubjectSource, path};
-use motiongfx_authoring::Property;
+use crate::{Color, DrawObject, Point, SceneObject};
+use motiongfx::prelude::SubjectSource;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -75,18 +74,18 @@ impl LineId {
 #[derive(Clone, Copy)]
 pub struct LineHandle {
     pub(crate) id: LineId,
-    pub start: Position<LineId, Line>,
-    pub end: Position<LineId, Line>,
-    pub stroke: Property<LineId, Line, Color>,
-    pub stroke_width: Property<LineId, Line, f64>,
-    pub line_cap: Property<LineId, Line, crate::Cap>,
-    pub line_join: Property<LineId, Line, crate::Join>,
-    pub opacity: Property<LineId, Line, f64>,
-    pub reveal: Property<LineId, Line, f64>,
-    pub line_dash: Property<LineId, Line, Arc<[f64]>>,
-    pub dash_offset: Property<LineId, Line, f64>,
-    pub start_offset: Property<LineId, Line, f64>,
-    pub end_offset: Property<LineId, Line, f64>,
+    pub start: line_start,
+    pub end: line_end,
+    pub stroke: fields::stroke::Target,
+    pub stroke_width: fields::stroke_width::Target,
+    pub line_cap: fields::line_cap::Target,
+    pub line_join: fields::line_join::Target,
+    pub opacity: fields::opacity::Target,
+    pub reveal: fields::reveal::Target,
+    pub line_dash: fields::line_dash::Target,
+    pub dash_offset: fields::dash_offset::Target,
+    pub start_offset: fields::start_offset::Target,
+    pub end_offset: fields::end_offset::Target,
 }
 impl LineHandle {
     pub fn id(self) -> LineId {
@@ -108,28 +107,18 @@ impl<M: crate::Model2d> SceneObject<M> for Line {
             .push(DrawObject::Line(id));
         LineHandle {
             id,
-            start: Position::new(
-                id,
-                path!(Line.start),
-                path!(Line.start.x),
-                path!(Line.start.y),
-            ),
-            end: Position::new(
-                id,
-                path!(Line.end),
-                path!(Line.end.x),
-                path!(Line.end.y),
-            ),
-            stroke: Property::new(id, path!(Line.stroke)),
-            line_cap: Property::discrete(id, path!(Line.line_cap)),
-            line_join: Property::discrete(id, path!(Line.line_join)),
-            stroke_width: Property::new(id, path!(Line.stroke_width)),
-            opacity: Property::new(id, path!(Line.opacity)),
-            reveal: Property::new(id, path!(Line.reveal)),
-            line_dash: Property::discrete(id, path!(Line.line_dash)),
-            dash_offset: Property::new(id, path!(Line.dash_offset)),
-            start_offset: Property::new(id, path!(Line.start_offset)),
-            end_offset: Property::new(id, path!(Line.end_offset)),
+            start: line_start_axes(id),
+            end: line_end_axes(id),
+            stroke: motiongfx_authoring::Target::new(id),
+            line_cap: motiongfx_authoring::Target::new(id),
+            line_join: motiongfx_authoring::Target::new(id),
+            stroke_width: motiongfx_authoring::Target::new(id),
+            opacity: motiongfx_authoring::Target::new(id),
+            reveal: motiongfx_authoring::Target::new(id),
+            line_dash: motiongfx_authoring::Target::new(id),
+            dash_offset: motiongfx_authoring::Target::new(id),
+            start_offset: motiongfx_authoring::Target::new(id),
+            end_offset: motiongfx_authoring::Target::new(id),
         }
     }
 }
@@ -146,4 +135,55 @@ impl<M: crate::Model2d> SubjectSource<LineId, Line>
     ) -> Option<R> {
         self.model_mut().graphics_mut().lines.get_mut(id.0).map(f)
     }
+}
+
+// Fixed field identity is generated locally; no accessor metadata is stored in
+// each handle. See properties.rs and motiongfx_authoring::Target.
+crate::properties::fields!(fields, Line, LineId;
+stroke: Color => new(Line.stroke);
+stroke_width: f64 => new(Line.stroke_width);
+line_cap: crate::Cap => discrete(Line.line_cap);
+line_join: crate::Join => discrete(Line.line_join);
+opacity: f64 => new(Line.opacity);
+reveal: f64 => new(Line.reveal);
+line_dash: Arc<[f64]> => discrete(Line.line_dash);
+dash_offset: f64 => new(Line.dash_offset);
+start_offset: f64 => new(Line.start_offset);
+end_offset: f64 => new(Line.end_offset);
+start: Point => new(Line.start);
+start_x: f64 => new(Line.start.x);
+start_y: f64 => new(Line.start.y);
+end: Point => new(Line.end);
+end_x: f64 => new(Line.end.x);
+end_y: f64 => new(Line.end.y);
+);
+#[allow(non_camel_case_types)]
+pub type line_start = crate::Position<
+    LineId,
+    Line,
+    fields::start::Target,
+    fields::start_x::Target,
+    fields::start_y::Target,
+>;
+pub fn line_start_axes(id: LineId) -> line_start {
+    crate::Position::from_targets(
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+    )
+}
+#[allow(non_camel_case_types)]
+pub type line_end = crate::Position<
+    LineId,
+    Line,
+    fields::end::Target,
+    fields::end_x::Target,
+    fields::end_y::Target,
+>;
+pub fn line_end_axes(id: LineId) -> line_end {
+    crate::Position::from_targets(
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+    )
 }

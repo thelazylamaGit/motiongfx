@@ -1,7 +1,6 @@
 //! Rectangle state, authoring and typed subject access.
 use crate::*;
-use motiongfx::prelude::{SubjectSource, path};
-use motiongfx_authoring::Property;
+use motiongfx::prelude::SubjectSource;
 /// Rectangle centered on its position. Coordinates are logical canvas units,
 /// positive y points up, and rotation is counterclockwise in radians.
 /// Scale changes geometry without changing the stroke width.
@@ -75,16 +74,16 @@ pub struct RectangleId(pub(crate) usize);
 #[derive(Clone, Copy)]
 pub struct RectangleHandle {
     pub(crate) id: RectangleId,
-    pub position: Position<RectangleId, Rectangle>,
-    pub fill: Property<RectangleId, Rectangle, Color>,
-    pub scale: Property<RectangleId, Rectangle, f64>,
-    pub rotation: Property<RectangleId, Rectangle, f64>,
-    pub size: Property<RectangleId, Rectangle, Size>,
-    pub radius: Property<RectangleId, Rectangle, f64>,
-    pub stroke: Property<RectangleId, Rectangle, Color>,
-    pub stroke_width: Property<RectangleId, Rectangle, f64>,
-    pub line_cap: Property<RectangleId, Rectangle, crate::Cap>,
-    pub line_join: Property<RectangleId, Rectangle, crate::Join>,
+    pub position: rectangle_position,
+    pub fill: fields::fill::Target,
+    pub scale: fields::scale::Target,
+    pub rotation: fields::rotation::Target,
+    pub size: fields::size::Target,
+    pub radius: fields::radius::Target,
+    pub stroke: fields::stroke::Target,
+    pub stroke_width: fields::stroke_width::Target,
+    pub line_cap: fields::line_cap::Target,
+    pub line_join: fields::line_join::Target,
 }
 
 impl<M: Model2d> SubjectSource<RectangleId, Rectangle> for World<M> {
@@ -119,24 +118,16 @@ fn insert_rectangle<M: Model2d>(
         .push(DrawObject::Rectangle(id));
     RectangleHandle {
         id,
-        position: Position::new(
-            id,
-            path!(Rectangle.position),
-            path!(Rectangle.position.x),
-            path!(Rectangle.position.y),
-        ),
-        fill: Property::new(id, path!(Rectangle.fill)),
-        scale: Property::new(id, path!(Rectangle.scale)),
-        rotation: Property::new(id, path!(Rectangle.rotation)),
-        size: Property::new(id, path!(Rectangle.size)),
-        radius: Property::new(id, path!(Rectangle.radius)),
-        stroke: Property::new(id, path!(Rectangle.stroke)),
-        line_cap: Property::discrete(id, path!(Rectangle.line_cap)),
-        line_join: Property::discrete(id, path!(Rectangle.line_join)),
-        stroke_width: Property::new(
-            id,
-            path!(Rectangle.stroke_width),
-        ),
+        position: rectangle_position_axes(id),
+        fill: motiongfx_authoring::Target::new(id),
+        scale: motiongfx_authoring::Target::new(id),
+        rotation: motiongfx_authoring::Target::new(id),
+        size: motiongfx_authoring::Target::new(id),
+        radius: motiongfx_authoring::Target::new(id),
+        stroke: motiongfx_authoring::Target::new(id),
+        line_cap: motiongfx_authoring::Target::new(id),
+        line_join: motiongfx_authoring::Target::new(id),
+        stroke_width: motiongfx_authoring::Target::new(id),
     }
 }
 
@@ -158,4 +149,38 @@ impl<M: Model2d> SceneObject<M> for Rectangle {
     ) -> RectangleHandle {
         insert_rectangle(scene, self)
     }
+}
+
+// Fixed field identity is generated locally; no accessor metadata is stored in
+// each handle. See properties.rs and motiongfx_authoring::Target.
+crate::properties::fields!(fields, Rectangle, RectangleId;
+fill: Color => new(Rectangle.fill);
+scale: f64 => new(Rectangle.scale);
+rotation: f64 => new(Rectangle.rotation);
+size: Size => new(Rectangle.size);
+radius: f64 => new(Rectangle.radius);
+stroke: Color => new(Rectangle.stroke);
+stroke_width: f64 => new(Rectangle.stroke_width);
+line_cap: crate::Cap => discrete(Rectangle.line_cap);
+line_join: crate::Join => discrete(Rectangle.line_join);
+position: Point => new(Rectangle.position);
+position_x: f64 => new(Rectangle.position.x);
+position_y: f64 => new(Rectangle.position.y);
+);
+#[allow(non_camel_case_types)]
+pub type rectangle_position = crate::Position<
+    RectangleId,
+    Rectangle,
+    fields::position::Target,
+    fields::position_x::Target,
+    fields::position_y::Target,
+>;
+pub fn rectangle_position_axes(
+    id: RectangleId,
+) -> rectangle_position {
+    crate::Position::from_targets(
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+    )
 }

@@ -222,3 +222,18 @@ impl<M: 'static, T: Clone + PartialEq + ThreadSafe> Source<World<M>>
         }
     }
 }
+
+impl<
+    M: 'static,
+    I: SubjectId,
+    S: 'static,
+    T: Clone + PartialEq + ThreadSafe,
+    F: crate::Field<S, T>,
+> From<crate::Target<I, S, T, F>> for Input<M, T>
+where
+    World<M>: SubjectSource<I, S>,
+{
+    fn from(value: crate::Target<I, S, T, F>) -> Self {
+        Self::mapped(value, std::convert::identity)
+    }
+}

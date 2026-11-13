@@ -18,12 +18,9 @@ fn main() -> Result<(), winit::error::EventLoopError> {
             .position((0.0, -30.0))
             .opacity(0.0),
     );
-    let words =
-        title.select(&mut scene, "words").expect("word is in title");
-    let move_word =
-        title.select(&mut scene, "move").expect("word is in title");
-
     let animation = scene.animate(|sequence| {
+        let words = title.select("words");
+        let move_word = title.select("move");
         sequence.parallel(|sequence| {
             sequence.play(title.opacity.to(1.0).over(ms(600)));
             sequence.play(title.position.y.to(30.0).over(ms(600)));

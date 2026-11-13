@@ -1,12 +1,11 @@
 //! Portable text state, independent of renderer-owned glyph/layout caches.
 
 use crate::{
-    Color, FontStyle, FontWeight, Parent, Point, Position,
-    SceneObject, TextSelectionId,
+    Color, FontStyle, FontWeight, Parent, Point, SceneObject,
+    TextSelectionId,
 };
 use crate::{DrawObject, Model2d, World};
-use motiongfx::prelude::{SubjectSource, path};
-use motiongfx_authoring::Property;
+use motiongfx::prelude::SubjectSource;
 use std::sync::Arc;
 
 /// Horizontal alignment relative to the text object's position.
@@ -103,20 +102,20 @@ impl TextId {
 #[derive(Clone, Copy)]
 pub struct TextHandle {
     pub(crate) id: TextId,
-    pub content: Property<TextId, Text, Arc<str>>,
-    pub position: Position<TextId, Text>,
-    pub font_size: Property<TextId, Text, f64>,
-    pub font_family: Property<TextId, Text, Arc<str>>,
-    pub font_weight: Property<TextId, Text, FontWeight>,
-    pub font_style: Property<TextId, Text, FontStyle>,
-    pub line_height: Property<TextId, Text, f64>,
-    pub letter_spacing: Property<TextId, Text, f64>,
-    pub wrap_width: Property<TextId, Text, f64>,
-    pub fill: Property<TextId, Text, Color>,
-    pub opacity: Property<TextId, Text, f64>,
-    pub scale: Property<TextId, Text, f64>,
-    pub rotation: Property<TextId, Text, f64>,
-    pub align: Property<TextId, Text, TextAlign>,
+    pub content: fields::content::Target,
+    pub position: text_position,
+    pub font_size: fields::font_size::Target,
+    pub font_family: fields::font_family::Target,
+    pub font_weight: fields::font_weight::Target,
+    pub font_style: fields::font_style::Target,
+    pub line_height: fields::line_height::Target,
+    pub letter_spacing: fields::letter_spacing::Target,
+    pub wrap_width: fields::wrap_width::Target,
+    pub fill: fields::fill::Target,
+    pub opacity: fields::opacity::Target,
+    pub scale: fields::scale::Target,
+    pub rotation: fields::rotation::Target,
+    pub align: fields::align::Target,
 }
 impl TextHandle {
     pub fn id(self) -> TextId {
@@ -160,24 +159,55 @@ pub(crate) fn insert_text<M: Model2d>(
         .push(DrawObject::Text(id));
     TextHandle {
         id,
-        content: Property::discrete(id, path!(Text.content)),
-        position: Position::new(
-            id,
-            path!(Text.position),
-            path!(Text.position.x),
-            path!(Text.position.y),
-        ),
-        font_size: Property::new(id, path!(Text.font_size)),
-        font_family: Property::discrete(id, path!(Text.font_family)),
-        font_weight: Property::new(id, path!(Text.font_weight)),
-        font_style: Property::discrete(id, path!(Text.font_style)),
-        line_height: Property::new(id, path!(Text.line_height)),
-        letter_spacing: Property::new(id, path!(Text.letter_spacing)),
-        wrap_width: Property::new(id, path!(Text.wrap_width)),
-        fill: Property::new(id, path!(Text.fill)),
-        opacity: Property::new(id, path!(Text.opacity)),
-        scale: Property::new(id, path!(Text.scale)),
-        rotation: Property::new(id, path!(Text.rotation)),
-        align: Property::discrete(id, path!(Text.align)),
+        content: motiongfx_authoring::Target::new(id),
+        position: text_position_axes(id),
+        font_size: motiongfx_authoring::Target::new(id),
+        font_family: motiongfx_authoring::Target::new(id),
+        font_weight: motiongfx_authoring::Target::new(id),
+        font_style: motiongfx_authoring::Target::new(id),
+        line_height: motiongfx_authoring::Target::new(id),
+        letter_spacing: motiongfx_authoring::Target::new(id),
+        wrap_width: motiongfx_authoring::Target::new(id),
+        fill: motiongfx_authoring::Target::new(id),
+        opacity: motiongfx_authoring::Target::new(id),
+        scale: motiongfx_authoring::Target::new(id),
+        rotation: motiongfx_authoring::Target::new(id),
+        align: motiongfx_authoring::Target::new(id),
     }
+}
+
+// Fixed field identity is generated locally; no accessor metadata is stored in
+// each handle. See properties.rs and motiongfx_authoring::Target.
+crate::properties::fields!(fields, Text, TextId;
+content: Arc<str> => discrete(Text.content);
+font_size: f64 => new(Text.font_size);
+font_family: Arc<str> => discrete(Text.font_family);
+font_weight: FontWeight => new(Text.font_weight);
+font_style: FontStyle => discrete(Text.font_style);
+line_height: f64 => new(Text.line_height);
+letter_spacing: f64 => new(Text.letter_spacing);
+wrap_width: f64 => new(Text.wrap_width);
+fill: Color => new(Text.fill);
+opacity: f64 => new(Text.opacity);
+scale: f64 => new(Text.scale);
+rotation: f64 => new(Text.rotation);
+align: TextAlign => discrete(Text.align);
+position: Point => new(Text.position);
+position_x: f64 => new(Text.position.x);
+position_y: f64 => new(Text.position.y);
+);
+#[allow(non_camel_case_types)]
+pub type text_position = crate::Position<
+    TextId,
+    Text,
+    fields::position::Target,
+    fields::position_x::Target,
+    fields::position_y::Target,
+>;
+pub fn text_position_axes(id: TextId) -> text_position {
+    crate::Position::from_targets(
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+        motiongfx_authoring::Target::new(id),
+    )
 }

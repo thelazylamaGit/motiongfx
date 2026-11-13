@@ -91,13 +91,15 @@ impl<T: Clone + PartialEq + ThreadSafe, M: Model2d> Source<World<M>>
         self.0.register(world, plan)
     }
 }
-impl<M: Model2d, I, S> From<crate::Position<I, S>> for Input<Point, M>
+impl<M: Model2d, I, S, P, X, Y> From<crate::Position<I, S, P, X, Y>>
+    for Input<Point, M>
 where
     I: SubjectId,
     S: 'static,
     World<M>: SubjectSource<I, S>,
+    P: Source<World<M>, Value = Point>,
 {
-    fn from(value: crate::Position<I, S>) -> Self {
+    fn from(value: crate::Position<I, S, P, X, Y>) -> Self {
         Self::mapped(value, std::convert::identity)
     }
 }
@@ -156,5 +158,20 @@ impl<M: Model2d> From<&Computed<(f64, f64), M>> for Input<Point, M> {
 impl<M: Model2d> From<&Signal<(f64, f64)>> for Input<Point, M> {
     fn from(value: &Signal<(f64, f64)>) -> Self {
         Self::mapped(value, Point::from)
+    }
+}
+
+impl<
+    M: Model2d,
+    I: SubjectId,
+    S: 'static,
+    T: Clone + PartialEq + ThreadSafe,
+    F: motiongfx_authoring::Field<S, T>,
+> From<motiongfx_authoring::Target<I, S, T, F>> for Input<T, M>
+where
+    World<M>: SubjectSource<I, S>,
+{
+    fn from(value: motiongfx_authoring::Target<I, S, T, F>) -> Self {
+        Self::mapped(value, std::convert::identity)
     }
 }
