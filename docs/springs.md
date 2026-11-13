@@ -9,7 +9,7 @@ primitive, not a frame-stepped simulation or live UI spring controller.
   position/velocity sampling and finite arrival/settling times. Supports `no_std`.
 - `motiongfx`: native spring actions, existing typed target baking/interpolation,
   sampling, continuation and overlap rejection. No graphics/authoring dependency.
-- `motiongfx_authoring`: `.spring_to` changes for properties and standalone signals.
+- `motiongfx_authoring`: `.to(...).spring(...)` changes for properties and standalone signals.
 - `peniko_motiongfx`: opt-in continuous point/vector/size interpolation.
 - 2D/Vello/host: normal sampled properties, geometry and rendering. No spring engine.
 
@@ -101,10 +101,10 @@ Prepared coefficients are private and validated.
 ## Authoring and scheduling
 
 ```rust
-sequence.play(ball.position.x.spring_to(200.0, physical));
-sequence.play(ball.position.x.spring_to(-200.0, visual));
-sequence.play(progress.spring_to(1.0, physical));
-sequence.play(ball.position.x.spring_to(200.0, timed));
+sequence.play(ball.position_x().to(200.0).spring(physical));
+sequence.play(ball.position_x().to(-200.0).spring(visual));
+sequence.play(progress.to(1.0).spring(physical));
+sequence.play(ball.position_x().to(200.0).spring(timed));
 ```
 
 Spring changes expose neither `.over()` nor `.ease()`. They lower to the same
@@ -144,7 +144,7 @@ queueing and sampling calls are otherwise unchanged.
 ## Demo and future scope
 
 Run `cargo run -p vello_winit_example --example spring_curves`.
-It compares physical, visual and timed responses, using actual `.spring_to`
+It compares physical, visual and timed responses, using actual `.to(...).spring(...)`
 actions for three moving balls and synchronized response markers. Edit/add
 presets in `experiments()` using the ordinary Spring builders; every setting is
 available, with no separate demo-specific parameter API. Settings smoothly

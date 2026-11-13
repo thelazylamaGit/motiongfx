@@ -91,10 +91,13 @@ remain shared.
 2. Built-in field targets use `Target<I,S,T,F>` and zero-sized field markers.
    A target stores its object ID; field accessors/interpolation are supplied by
    the marker type when expanded into the general `Property` representation.
-   Whole-position/axis handles follow the same rule. Actions, bindings and springs
-   reuse existing preparation/playback code. Generic runtime paths keep Property.
-   The measured 64-bit handle sizes are TextHandle 136 bytes (previously 776),
-   CircleHandle 88 bytes (previously 488). This is a storage reduction, not a
+   Object handles themselves now store just one ID; getter methods construct
+   individual targets on demand. Rectangle/Circle/Text/Line/Path/Triangle/Chevron
+   handles measure 8 bytes on 64-bit targets, replacing the prior property bundles
+   (104/88/136 bytes for Rectangle/Circle/Text). The single camera's handle is
+   zero-sized. No extra target fields or pointer allocations are retained in
+   handles. Actions, bindings and springs use existing preparation/playback;
+   generic runtime paths keep Property. This is a storage reduction, not a
    measured frame-time/build-time improvement. Index/scene safety rules remain.
    Field declarations live beside their owning objects (`circle.rs`, `line.rs`,
    `text.rs`, etc.); the shared declaration macro is in `properties.rs`.
@@ -103,7 +106,7 @@ remain shared.
    Marker types describe field identity, not typestate transitions. `PhantomData`
    stores no marker value or object reference; actual object IDs still take space.
    `scene.add(description)` stores the object once, registers driven fields,
-   and returns typed handles. For example, `square.position.x` is a property
+   and returns typed handles. For example, `square.position_x()` is a property
    target, not the current numeric x value. `Scene` is an object collection and
    construction context, not the renderer, window, or timeline itself.
 3. `scene.animate(|sequence| ...)` authors and compiles one timeline, validates
@@ -122,6 +125,18 @@ Timeline baking resolves relative targets and action data. It does **not** bake
 every frame of arbitrary Rust procedural code. For seekable effects, calculate
 state from sampled inputs/time. A simulation that accumulates `dt` needs its own
 reset/replay/checkpoint strategy; neither callbacks nor signals supply that.
+
+Object construction retains fixed/signal/computed builder setters. Typed getters
+such as `position()`, `position_x()`, `radius()` and `fill()` return targets, not
+sampled values. `.to(point)` accepts a typed Point (or tuple conversion);
+`.to_xy(x, y)` is coordinate convenience. Relative helpers `shift`, `scale_by`
+and `rotate` describe changes using action-start values. `fill_to` animates;
+`set_fill` and `set_content` are immediate scheduled replacements. There is no
+`.instant()` API. Generic `.set(value)` is still available on targets.
+A shared `.spring(settings)` modifier works for absolute, relative, signal and
+selection changes. Explicit tween timing/easing conflict with spring timing;
+checked construction reports PreparationError, without adding playback checks.
+Per-property spring helpers and explicit field-selector closures are unnecessary.
 
 ## Signals and computed values: current contract
 
@@ -261,7 +276,7 @@ and simulation determinism are not guaranteed by the type system.
 ## Analytical springs
 
 Springs are core actions, with analytical response maths in motiongfx_interp
-and thin property/signal spring_to descriptions in authoring. Physical, visual and timed
+and thin property/signal `.to(value).spring(settings)` descriptions in authoring. Physical, visual and timed
 settings are distinct configuration types. Neither spring change exposes over/ease.
 They start at rest, use finite normalized settling tolerances, and reconstruct
 from absolute elapsed time. The public SpringCurve sampler also drives graphs.
@@ -286,7 +301,7 @@ tail envelopes for timed calibration. There is no initial velocity,
 live settings change, or interruption support.
 Future takeovers must preserve the earlier clip until takeover and seed the next
 motion from its sampled position/velocity without changing the original time scale.
-The spring_curves example compares physical, visual and timed spring_to actions;
+The spring_curves example compares physical, visual and timed spring-modified actions;
 settings interpolate through signals BETWEEN runs. Its presets expose ordinary
 Spring builders, with automatic direction alternation, shared time-axis fitting,
 parameter/settling readouts and synchronized response markers. Raw Spring

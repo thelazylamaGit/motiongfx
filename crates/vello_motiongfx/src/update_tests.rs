@@ -16,17 +16,17 @@ fn updates_run_after_bindings_in_registration_order_on_every_sample()
     let b = scene.add(Circle::new(2.0));
     let line = scene.add(Line::new(Point::ZERO, Point::ZERO));
     let doubled = computed(&progress, |p| p * 2.0);
-    scene.bind(a.position.x, &doubled, |x| x);
+    scene.bind(a.position_x(), &doubled, |x| x);
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
     // Reads the just-sampled binding. This native callback itself is uncached.
-    scene.update(b, a.position, move |b, position| {
+    scene.update(b, a.position(), move |b, position| {
         counter.fetch_add(1, Ordering::Relaxed);
         b.position = position + (0.0, 30.0);
     });
     scene.update(
         line,
-        (b.position, &doubled),
+        (b.position(), &doubled),
         |line, (position, doubled)| {
             line.start = position;
             line.end = Point::new(doubled, 80.0);
@@ -143,7 +143,7 @@ fn array_targets_preserve_order_and_support_empty_arrays() {
 fn duplicate_targets_are_rejected_during_registration() {
     let mut scene = Scene::new();
     let dot = scene.add(Circle::new(2.0));
-    scene.update((dot, dot), dot.radius, |_, _| {});
+    scene.update((dot, dot), dot.radius(), |_, _| {});
 }
 
 #[test]
@@ -172,10 +172,14 @@ fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
             q.position = a.position + (b.position - a.position) * t;
         },
     );
-    scene.update(line, (a.position, b.position), |line, (a, b)| {
-        line.start = a;
-        line.end = b;
-    });
+    scene.update(
+        line,
+        (a.position(), b.position()),
+        |line, (a, b)| {
+            line.start = a;
+            line.end = b;
+        },
+    );
     let mut animation = scene.animate(|sequence| {
         sequence.play(t.to(0.5).ease(ease::linear));
         for offset in [200.0, -240.0, 40.0] {

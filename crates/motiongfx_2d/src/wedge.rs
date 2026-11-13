@@ -49,18 +49,7 @@ macro_rules! wedge {
                 scene.model_mut().graphics_mut().$storage.push(self);
 
                 if draw { scene.model_mut().graphics_mut().order.push(DrawObject::$shape(id)); }
-                $handle {
-                    id,
-                    position: Position::from_targets(motiongfx_authoring::Target::new(id),motiongfx_authoring::Target::new(id),motiongfx_authoring::Target::new(id)),
-                    size: motiongfx_authoring::Target::new(id), angle: motiongfx_authoring::Target::new(id),
-                    $($radius: motiongfx_authoring::Target::new(id),)?
-                    fill: motiongfx_authoring::Target::new(id), stroke: motiongfx_authoring::Target::new(id),
-                    stroke_width: motiongfx_authoring::Target::new(id),
-                    line_cap: motiongfx_authoring::Target::new(id),
-                    line_join: motiongfx_authoring::Target::new(id),
-                    opacity: motiongfx_authoring::Target::new(id), scale: motiongfx_authoring::Target::new(id),
-                    rotation: motiongfx_authoring::Target::new(id),
-                }
+                $handle { id }
             }
         }
         crate::object::properties!($shape; size: f64, angle: f64, position: Point,
@@ -71,17 +60,7 @@ macro_rules! wedge {
         pub struct $id(pub(crate) usize);
         impl $id { pub fn index(self)->usize { self.0 } }
         #[derive(Clone, Copy)]
-        pub struct $handle {
-            pub(crate) id: $id,
-            pub position: Position<$id, $shape, fields::position::Target, fields::position_x::Target, fields::position_y::Target>,
-            pub size: fields::size::Target, pub angle: fields::angle::Target,
-            $(pub $radius: fields::$radius::Target,)?
-            pub fill: fields::fill::Target, pub stroke: fields::stroke::Target,
-            pub line_cap: fields::line_cap::Target,
-            pub line_join: fields::line_join::Target,
-            pub stroke_width: fields::stroke_width::Target, pub opacity: fields::opacity::Target,
-            pub scale: fields::scale::Target, pub rotation: fields::rotation::Target,
-        }
+        pub struct $handle { pub(crate) id: $id }
         impl $handle {pub fn id(self)->$id {self.id}}
         impl<M:crate::Model2d> SceneObject<M> for $shape {
             type Handle = $handle;

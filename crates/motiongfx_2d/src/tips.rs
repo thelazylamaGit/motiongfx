@@ -130,8 +130,8 @@ impl<M: Model2d> Object<Line, M> {
     ///     .start_tip(Circle::new(6.0))
     ///     .end_tip(Triangle::new().size(24.0).angle(0.6)));
     /// let mut animation = scene.animate(|sequence| {
-    ///     sequence.play(line.start_tip.radius.to(10.0));
-    ///     sequence.play(line.end_tip.angle.to(0.9));
+    ///     sequence.play(line.start_tip.radius().to(10.0));
+    ///     sequence.play(line.end_tip.angle().to(0.9));
     /// });
     /// animation.sample(s(2));
     /// assert_eq!(animation.circle(line.start_tip).radius, 10.0);
@@ -142,7 +142,7 @@ impl<M: Model2d> Object<Line, M> {
     /// let mut scene = Scene::new();
     /// let line = scene.add(Line::new((0.0, 0.0), (200.0, 0.0))
     ///     .start_tip(Circle::new(6.0)));
-    /// line.start_tip.angle.to(0.6); // A circle has radius, not an opening angle.
+    /// line.start_tip.angle().to(0.6); // A circle has radius, not an opening angle.
     /// ```
     pub fn start_tip<S: LineTip<M>>(
         self,

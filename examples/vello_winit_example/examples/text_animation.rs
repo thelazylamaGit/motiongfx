@@ -22,15 +22,15 @@ fn main() -> Result<(), winit::error::EventLoopError> {
         let words = title.select("words");
         let move_word = title.select("move");
         sequence.parallel(|sequence| {
-            sequence.play(title.opacity.to(1.0).over(ms(600)));
-            sequence.play(title.position.y.to(30.0).over(ms(600)));
+            sequence.play(title.opacity().to(1.0).over(ms(600)));
+            sequence.play(title.position_y().to(30.0).over(ms(600)));
         });
-        sequence.play(words.fill.to(ORANGE).over(ms(500)));
-        sequence.play(move_word.opacity.to(0.15).over(ms(400)));
-        sequence.play(move_word.opacity.to(1.0).over(ms(400)));
-        sequence.play(title.scale.to(1.15).over(ms(600)));
+        sequence.play(words.fill().to(ORANGE).over(ms(500)));
+        sequence.play(move_word.opacity().to(0.15).over(ms(400)));
+        sequence.play(move_word.opacity().to(1.0).over(ms(400)));
+        sequence.play(title.scale().to(1.15).over(ms(600)));
         sequence.wait(s(1));
-        sequence.play(title.opacity.to(0.0).over(ms(600)));
+        sequence.play(title.opacity().to(0.0).over(ms(600)));
     });
 
     Window::new(

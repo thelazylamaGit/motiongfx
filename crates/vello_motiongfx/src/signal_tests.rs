@@ -237,7 +237,7 @@ fn repeated_setters_replace_wiring_and_source_aware_fields_reject_timeline_write
     let dot = scene.add(Circle::new(&radius).radius(5.0));
     let mut animation = scene
         .try_animate(|sequence| {
-            sequence.play(dot.radius.to(20.0).ease(ease::linear));
+            sequence.play(dot.radius().to(20.0).ease(ease::linear));
         })
         .unwrap();
     animation.sample(ms(500));
@@ -248,7 +248,7 @@ fn repeated_setters_replace_wiring_and_source_aware_fields_reject_timeline_write
     let dot = scene.add(Circle::new(&radius));
     assert!(matches!(
         scene.try_animate(|sequence| {
-            sequence.play(dot.radius.to(20.0));
+            sequence.play(dot.radius().to(20.0));
         }),
         Err(SceneError::Binding(BindingError::AnimatedDestination(
             _
@@ -334,7 +334,7 @@ fn standalone_helpers_macro_and_shared_descriptions_have_independent_playback()
     let b = first.add(Circle::new(3.0).position(&shared));
     first.add(Circle::new(4.0).position(&shared));
     // Native property .map works inline too.
-    let c = first.add(Circle::new(b.radius.map(|r| {
+    let c = first.add(Circle::new(b.radius().map(|r| {
         return r * 2.0;
     })));
     let mut first = first.animate(|sequence| {

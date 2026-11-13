@@ -74,16 +74,6 @@ pub struct RectangleId(pub(crate) usize);
 #[derive(Clone, Copy)]
 pub struct RectangleHandle {
     pub(crate) id: RectangleId,
-    pub position: rectangle_position,
-    pub fill: fields::fill::Target,
-    pub scale: fields::scale::Target,
-    pub rotation: fields::rotation::Target,
-    pub size: fields::size::Target,
-    pub radius: fields::radius::Target,
-    pub stroke: fields::stroke::Target,
-    pub stroke_width: fields::stroke_width::Target,
-    pub line_cap: fields::line_cap::Target,
-    pub line_join: fields::line_join::Target,
 }
 
 impl<M: Model2d> SubjectSource<RectangleId, Rectangle> for World<M> {
@@ -116,19 +106,7 @@ fn insert_rectangle<M: Model2d>(
         .graphics_mut()
         .order
         .push(DrawObject::Rectangle(id));
-    RectangleHandle {
-        id,
-        position: rectangle_position_axes(id),
-        fill: motiongfx_authoring::Target::new(id),
-        scale: motiongfx_authoring::Target::new(id),
-        rotation: motiongfx_authoring::Target::new(id),
-        size: motiongfx_authoring::Target::new(id),
-        radius: motiongfx_authoring::Target::new(id),
-        stroke: motiongfx_authoring::Target::new(id),
-        line_cap: motiongfx_authoring::Target::new(id),
-        line_join: motiongfx_authoring::Target::new(id),
-        stroke_width: motiongfx_authoring::Target::new(id),
-    }
+    RectangleHandle { id }
 }
 
 impl RectangleId {
@@ -184,3 +162,30 @@ pub fn rectangle_position_axes(
         motiongfx_authoring::Target::new(id),
     )
 }
+
+crate::properties::handle_methods!(RectangleHandle,Rectangle,RectangleId;
+fill: Color;
+scale: f64;
+rotation: f64;
+size: Size;
+radius: f64;
+stroke: Color;
+stroke_width: f64;
+line_cap: crate::Cap;
+line_join: crate::Join;
+position: Point;
+position_x: f64;
+position_y: f64;
+);
+
+crate::properties::transform_methods!(
+    RectangleHandle,
+    Rectangle,
+    RectangleId
+);
+
+crate::properties::fill_methods!(
+    RectangleHandle,
+    Rectangle,
+    RectangleId
+);

@@ -15,15 +15,16 @@ fn chained_bindings_sort_dependencies_cache_inputs_and_seek() {
     let connector = scene.add(Line::new(Point::ZERO, Point::ZERO));
     // Register consumers before their producer. Whole-point and axis reads
     // both depend on the writer of dot.position, regardless of author order.
-    scene.bind(connector.start, dot.position, |position| position);
+    scene
+        .bind(connector.start(), dot.position(), |position| position);
     scene.bind(
-        connector.end,
-        (source.radius, dot.position.y),
+        connector.end(),
+        (source.radius(), dot.position_y()),
         |(r, y)| Point::new(r, y),
     );
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
-    scene.bind(dot.position, source.radius, move |radius| {
+    scene.bind(dot.position(), source.radius(), move |radius| {
         counter.fetch_add(1, Ordering::Relaxed);
         Point::new(radius * 2.0, radius * 3.0)
     });
@@ -31,7 +32,11 @@ fn chained_bindings_sort_dependencies_cache_inputs_and_seek() {
         .try_animate(|sequence| {
             sequence.wait(s(1));
             sequence.play(
-                source.radius.to(20.0).over(s(2)).ease(ease::linear),
+                source
+                    .radius()
+                    .to(20.0)
+                    .over(s(2))
+                    .ease(ease::linear),
             );
             sequence.wait(s(1));
         })
@@ -71,24 +76,25 @@ fn shared_derived_values_compute_once_and_support_offsets_and_multiple_inputs()
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
     let shared = computed(
-        (source.position, source.radius),
+        (source.position(), source.radius()),
         move |(position, radius)| {
             counter.fetch_add(1, Ordering::Relaxed);
             position + (radius, 0.0)
         },
     );
     let offset = computed(&shared, |position| position + (0.0, 30.0));
-    scene.bind(dot.position, &shared, |position| position);
-    scene.bind(line.start, &shared, |position| position);
-    scene.bind(line.end, offset, |position| position);
+    scene.bind(dot.position(), &shared, |position| position);
+    scene.bind(line.start(), &shared, |position| position);
+    scene.bind(line.end(), offset, |position| position);
     let mut animation = scene
         .try_animate(|sequence| {
             sequence.parallel(|sequence| {
                 sequence.play(
-                    source.position.x.to(20.0).ease(ease::linear),
+                    source.position_x().to(20.0).ease(ease::linear),
                 );
-                sequence
-                    .play(source.radius.to(30.0).ease(ease::linear));
+                sequence.play(
+                    source.radius().to(30.0).ease(ease::linear),
+                );
             });
         })
         .unwrap();
@@ -121,7 +127,7 @@ fn binding_validation_rejects_feedback_and_cycles_through_derived_values()
  {
     let mut scene = Scene::new();
     let dot = scene.add(Circle::new(2.0));
-    scene.bind(dot.position, dot.position.x, |x| {
+    scene.bind(dot.position(), dot.position_x(), |x| {
         Point::new(x + 1.0, 0.0)
     });
     assert!(matches!(
@@ -133,9 +139,9 @@ fn binding_validation_rejects_feedback_and_cycles_through_derived_values()
     let a = scene.add(Circle::new(2.0));
     let b = scene.add(Circle::new(2.0));
     let derived =
-        computed(b.position, |position| position + (1.0, 0.0));
-    scene.bind(a.position, derived, |position| position);
-    scene.bind(b.position, a.position, |position| position);
+        computed(b.position(), |position| position + (1.0, 0.0));
+    scene.bind(a.position(), derived, |position| position);
+    scene.bind(b.position(), a.position(), |position| position);
     assert!(matches!(
         scene.try_animate(|_| {}),
         Err(SceneError::Binding(BindingError::Cycle))
@@ -147,8 +153,8 @@ fn binding_validation_rejects_overlapping_writers_and_timeline_actions()
  {
     let mut scene = Scene::new();
     let dot = scene.add(Circle::new(2.0));
-    scene.bind(dot.position, dot.radius, |r| Point::new(r, 0.0));
-    scene.bind(dot.position.x, dot.radius, |r| r);
+    scene.bind(dot.position(), dot.radius(), |r| Point::new(r, 0.0));
+    scene.bind(dot.position_x(), dot.radius(), |r| r);
     assert!(matches!(
         scene.try_animate(|_| {}),
         Err(SceneError::Binding(BindingError::ConflictingWriters(_)))
@@ -156,10 +162,10 @@ fn binding_validation_rejects_overlapping_writers_and_timeline_actions()
 
     let mut scene = Scene::new();
     let dot = scene.add(Circle::new(2.0));
-    scene.bind(dot.position, dot.radius, |r| Point::new(r, 0.0));
+    scene.bind(dot.position(), dot.radius(), |r| Point::new(r, 0.0));
     // Even raw action fragments participate in writer validation.
     let result = scene.try_animate(|sequence| {
-        let change = sequence.action(dot.position.y.to(10.0));
+        let change = sequence.action(dot.position_y().to(10.0));
         sequence.append(change);
     });
     assert!(matches!(
@@ -173,12 +179,12 @@ fn binding_validation_rejects_overlapping_writers_and_timeline_actions()
     let mut scene = Scene::new();
     let a = scene.add(Circle::new(2.0));
     let b = scene.add(Circle::new(2.0));
-    scene.bind(a.position.x, a.radius, |r| r);
-    scene.bind(a.position.y, a.radius, |r| r * 2.0);
+    scene.bind(a.position_x(), a.radius(), |r| r);
+    scene.bind(a.position_y(), a.radius(), |r| r * 2.0);
     assert!(
         scene
             .try_animate(|sequence| {
-                sequence.play(b.position.x.to(30.0));
+                sequence.play(b.position_x().to(30.0));
             })
             .is_ok()
     );
@@ -189,10 +195,10 @@ fn binding_validation_rejects_missing_properties_in_standalone_computations()
  {
     let mut first = Scene::new();
     let a = first.add(Circle::new(2.0));
-    let shared = computed(a.radius, |r| r * 2.0);
+    let shared = computed(a.radius(), |r| r * 2.0);
     let mut second = Scene::new();
     let b = second.add(Rectangle::new(2.0, 2.0));
-    second.bind(b.position.x, &shared, |r| r);
+    second.bind(b.position_x(), &shared, |r| r);
     assert!(matches!(
         second.try_animate(|_| {}),
         Err(SceneError::Binding(BindingError::MissingProperty(_)))
@@ -200,7 +206,7 @@ fn binding_validation_rejects_missing_properties_in_standalone_computations()
 
     let mut second = Scene::new();
     let rectangle = second.add(Rectangle::new(20.0, 20.0));
-    second.bind(rectangle.position.x, a.radius, |r| r);
+    second.bind(rectangle.position_x(), a.radius(), |r| r);
     assert!(matches!(
         second.try_animate(|_| {}),
         Err(SceneError::Binding(BindingError::MissingProperty(_)))
@@ -224,20 +230,20 @@ fn sine_geometry_and_bound_endpoints_agree_when_scrubbing() {
     );
     let dot = scene.add(Circle::new(6.4));
     let line = scene.add(Line::new(Point::ZERO, Point::ZERO));
-    scene.bind(dot.position, curve.end, move |progress| {
+    scene.bind(dot.position(), curve.end(), move |progress| {
         let angle = progress * turns * std::f64::consts::TAU;
         Point::new(-320.0 + 80.0 * angle.cos(), 80.0 * angle.sin())
     });
-    scene.bind(line.start, dot.position, |p| p);
+    scene.bind(line.start(), dot.position(), |p| p);
     scene.bind(
-        line.end,
-        (curve.end, dot.position.y),
+        line.end(),
+        (curve.end(), dot.position_y()),
         move |(p, y)| Point::new(-240.0 + p * turns * 320.0, y),
     );
     let mut animation = scene
         .try_animate(|sequence| {
             sequence.play(
-                curve.end.to(1.0).over(ms(8500)).ease(ease::linear),
+                curve.end().to(1.0).over(ms(8500)).ease(ease::linear),
             );
             sequence.wait(s(1));
         })
@@ -288,9 +294,10 @@ fn line_rendering_matches_direct_vello_with_camera_and_animated_endpoints()
     scene.set_camera(Camera::new().scale(0.5).position((20.0, 30.0)));
     let mut animation = scene.animate(|sequence| {
         sequence.parallel(|sequence| {
-            sequence.play(line.start.x.to(10.0).ease(ease::linear));
-            sequence
-                .play(line.end.to((60.0, 80.0)).ease(ease::linear));
+            sequence.play(line.start_x().to(10.0).ease(ease::linear));
+            sequence.play(
+                line.end().to_xy(60.0, 80.0).ease(ease::linear),
+            );
         });
     });
     animation.sample(ms(500));

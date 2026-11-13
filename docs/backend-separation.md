@@ -69,6 +69,11 @@ path traces, text layouts and rounded-triangle caches, initialized on first
 draw and updated by their existing input keys. These no longer live in model
 subjects or shared finalization. Built-in authoring field targets store IDs and
 zero-sized field markers; they expand to ordinary properties during preparation.
+Object handles now hold a single ID and expose getter methods such as
+`position()`/`position_x()` that materialize only the requested typed target.
+Builders still accept fixed/signal/computed inputs. Relative helpers and
+`.to(value)` changes share the authoring `.spring(settings)` timing modifier;
+neither introduces a new playback evaluator.
 Deferred selection registration uses SceneContext memoization that is dropped
 before playback. The renderer caches glyph paint-span associations separately
 from layout and animated paint. Rendering still records normal Vello commands.

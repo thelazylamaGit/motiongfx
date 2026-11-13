@@ -78,17 +78,11 @@ pub struct CameraId;
 
 #[derive(Clone, Copy)]
 pub struct CameraHandle {
-    pub position: camera_position,
-    pub scale: fields::scale::Target,
-    pub rotation: fields::rotation::Target,
+    pub(crate) id: CameraId,
 }
 
 pub(crate) fn camera_handle() -> CameraHandle {
-    CameraHandle {
-        position: camera_position_axes(CameraId),
-        scale: motiongfx_authoring::Target::new(CameraId),
-        rotation: motiongfx_authoring::Target::new(CameraId),
-    }
+    CameraHandle { id: CameraId }
 }
 impl<M: crate::Model2d> crate::SceneObject<M> for Camera {
     type Handle = CameraHandle;
@@ -146,3 +140,13 @@ pub fn camera_position_axes(id: CameraId) -> camera_position {
         motiongfx_authoring::Target::new(id),
     )
 }
+
+crate::properties::handle_methods!(CameraHandle,Camera,CameraId;
+scale: f64;
+rotation: f64;
+position: Point;
+position_x: f64;
+position_y: f64;
+);
+
+crate::properties::transform_methods!(CameraHandle, Camera, CameraId);

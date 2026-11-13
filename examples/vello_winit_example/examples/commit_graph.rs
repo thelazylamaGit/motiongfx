@@ -58,26 +58,26 @@ fn main() -> Result<(), winit::error::EventLoopError> {
 
     let animation = scene.animate(|sequence| {
         sequence.defaults(s(1), ease::linear);
-        sequence.play(trunk.end.to(1.0).over(ms(800)));
+        sequence.play(trunk.end().to(1.0).over(ms(800)));
         // The child ring inherits the dot's appearance animation automatically.
         sequence.stagger(
             ms(120),
             commits.iter().map(|commit| {
                 commit
                     .dot
-                    .scale
+                    .scale()
                     .to(1.0)
                     .over(ms(400))
                     .ease(ease::back::ease_out)
             }),
         );
-        sequence.play(fork.end.to(1.0).over(ms(800)));
+        sequence.play(fork.end().to(1.0).over(ms(800)));
         // Same pulse as scale = 1 + pulse*1.4 and opacity = 1 - pulse,
         // expressed directly as two ordinary ring property animations.
         sequence.parallel(|sequence| {
             for commit in &commits {
-                sequence.play(commit.ring.scale.to(2.4));
-                sequence.play(commit.ring.opacity.to(0.0));
+                sequence.play(commit.ring.scale().to(2.4));
+                sequence.play(commit.ring.opacity().to(0.0));
             }
         });
 

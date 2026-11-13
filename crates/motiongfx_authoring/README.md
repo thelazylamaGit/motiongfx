@@ -12,7 +12,7 @@ These timeline descriptions add no separate evaluator during playback.
 Built-in model fields can instead expose `Target<I, S, T, F>`. A zero-sized
 `Field` marker identifies fixed accessors/interpolation, so each target stores
 only its subject ID. `.to`, `.offset`, `.set`, `.multiply`, `.map_target` and
-`.spring_to` expand to the same existing Property/action implementation without
+`.to_xy` expand to the same existing Property/action implementation without
 allocation. Sources expand during registration. Runtime-selected paths still use
 `Property`; compact targets convert with `.into()` or `.property()`. This reduces
 stored metadata, not sampling validation or renderer work. No compile-time or
@@ -112,16 +112,22 @@ See [headless shared model tests](tests/shared_scene.rs) and the
 
 ## Spring changes
 
-`Property::spring_to(value, settings)` and `Signal::spring_to(value, settings)`
-lower to core analytical spring actions. Their separate change types have no
-`.over()` or `.ease()`. `Spring::physical()` configures stiffness/damping/mass;
-`Spring::visual(duration)` configures visual timing/bounce. Both support optional
-normalized rest tolerances. `Spring::timed(duration).bounce(...)` fits the full
-transition into exactly the requested time, using the same `.spring_to` API:
+`property.to(value).spring(settings)` and `signal.to(value).spring(settings)`
+lower to core analytical spring actions. Relative helpers such as
+`square.shift(100.0, 0.0).spring(settings)` use the same implementation, resolving
+relative targets at action start during baking. The separate spring change types
+have no `.over()` or `.ease()`. Explicit tween options set before `.spring()`
+return `PreparationError::ConflictingSpringTiming`; sequence defaults do not
+conflict and are replaced by the spring's timing. Generic `spring_to` methods
+remain compatibility conveniences, delegating to the same spring lowering.
+
+`Spring::physical()` configures stiffness/damping/mass; `Spring::visual(duration)`
+configures visual timing/bounce. Both support normalized rest tolerances.
+`Spring::timed(duration).bounce(...)` fits settlement into the requested time:
 
 ```rust,ignore
-sequence.play(ball.position.x.spring_to(
-    200.0, Spring::timed(ms(500)).bounce(0.4),
+sequence.play(ball.position_x().to(200.0).spring(
+    Spring::timed(ms(500)).bounce(0.4),
 ));
 ```
 
@@ -132,9 +138,9 @@ Springs reserve their full settling duration (exactly the requested time for
 timed mode). Existing core overlap/conflict
 rules apply unchanged; there is no spring-specific interruption policy.
 
-`Sequence::try_compile` returns `SpringError` for invalid spring settings; `compile` panics on it.
+`Sequence::try_compile` returns `PreparationError` for invalid spring settings or conflicting explicit tween options; `compile` panics on it.
 `Scene::try_animate` now returns `SceneError::Binding(BindingError)` or
-`SceneError::Preparation(SpringError)`. `animate` remains the convenience
+`SceneError::Preparation(PreparationError)`. `animate` remains the convenience
 which panics on invalid preparation. Settings are fixed per action; no live
 parameter changes or velocity-preserving interruption is implied.
 See [spring usage and limitations](../../docs/springs.md).
@@ -202,20 +208,20 @@ execution layer. The first argument is a mutable `Sequence` reference:
 
 ```rust
 animate!(sequence, {
-    status.content.set("Starting");
-    square.position.x.to(100.0).over(ms(300));
+    status.set_content("Starting");
+    square.position_x().to(100.0).over(ms(300));
     wait(ms(200));
 
     parallel {
-        square.rotation.offset(0.4).over(ms(500));
+        square.rotate(0.4).over(ms(500));
         chain {
-            square.fill.to(ORANGE).over(ms(200));
-            square.scale.multiply(0.5).over(ms(300));
+            square.fill().to(ORANGE).over(ms(200));
+            square.scale_by(0.5).over(ms(300));
         }
     }
 
     stagger(ms(100), bars.iter().map(|bar| {
-        bar.position.y.offset(40.0).over(ms(300))
+        bar.shift_y(40.0).over(ms(300))
     }));
 });
 ```

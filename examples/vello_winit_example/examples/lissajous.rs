@@ -159,10 +159,10 @@ fn build_animation() -> (Animation, Duration) {
             for index in 0..verticals.len().max(horizontals.len()) {
                 sequence.staggered(ms(25), |sequence| {
                     if let Some(column) = verticals.get(index) {
-                        sequence.play(column.reveal.to(1.0));
+                        sequence.play(column.reveal().to(1.0));
                     }
                     if let Some(row) = horizontals.get(index) {
-                        sequence.play(row.reveal.to(1.0));
+                        sequence.play(row.reveal().to(1.0));
                     }
                 });
             }

@@ -43,8 +43,8 @@ struct Selections(HashMap<Arc<Query>, TextSelectionId>);
 /// Only scheduled selections are validated/registered, before timeline baking.
 #[derive(Clone)]
 pub struct TextSelectionHandle {
-    pub fill: SelectionProperty<Color, fields::fill::Marker>,
-    pub opacity: SelectionProperty<f64, fields::opacity::Marker>,
+    query: Arc<Query>,
+    location: &'static Location<'static>,
 }
 /// A deferred selection field, resolved to an ordinary Property during authoring.
 pub struct SelectionProperty<T, F> {
@@ -59,6 +59,47 @@ impl<T, F> Clone for SelectionProperty<T, F> {
             location: self.location,
             marker: PhantomData,
         }
+    }
+}
+impl TextSelectionHandle {
+    fn property<T, F: Field<TextSelection, T>>(
+        &self,
+    ) -> SelectionProperty<T, F> {
+        SelectionProperty {
+            query: self.query.clone(),
+            location: self.location,
+            marker: PhantomData,
+        }
+    }
+    pub fn fill(
+        &self,
+    ) -> SelectionProperty<Color, fields::fill::Marker> {
+        self.property()
+    }
+    pub fn opacity(
+        &self,
+    ) -> SelectionProperty<f64, fields::opacity::Marker> {
+        self.property()
+    }
+    pub fn fill_to(
+        &self,
+        color: impl Into<Color>,
+    ) -> SelectionChange<
+        Color,
+        fields::fill::Marker,
+        impl Fn(&Color) -> Color + ThreadSafe,
+    > {
+        self.fill().to(color)
+    }
+    pub fn set_fill(
+        &self,
+        color: impl Into<Color>,
+    ) -> SelectionChange<
+        Color,
+        fields::fill::Marker,
+        impl Fn(&Color) -> Color + ThreadSafe,
+    > {
+        self.fill().set(color)
     }
 }
 impl TextHandle {
@@ -94,18 +135,7 @@ impl TextHandle {
             selector,
         });
         let location = Location::caller();
-        TextSelectionHandle {
-            fill: SelectionProperty {
-                query: query.clone(),
-                location,
-                marker: PhantomData,
-            },
-            opacity: SelectionProperty {
-                query,
-                location,
-                marker: PhantomData,
-            },
-        }
+        TextSelectionHandle { query, location }
     }
 }
 impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
@@ -181,7 +211,7 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
         }
     }
     pub fn to(
-        &self,
+        self,
         value: impl Into<T>,
     ) -> SelectionChange<T, F, impl Fn(&T) -> T + ThreadSafe>
     where
@@ -191,7 +221,7 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
         self.map_target(move |_| value.clone())
     }
     pub fn set(
-        &self,
+        self,
         value: impl Into<T>,
     ) -> SelectionChange<T, F, impl Fn(&T) -> T + ThreadSafe>
     where
@@ -200,7 +230,7 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
         self.to(value).over(Duration::ZERO)
     }
     pub fn offset<D: Copy + ThreadSafe>(
-        &self,
+        self,
         delta: D,
     ) -> SelectionChange<T, F, impl Fn(&T) -> T + ThreadSafe>
     where
@@ -209,63 +239,13 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
         self.map_target(move |previous| previous.clone() + delta)
     }
     pub fn multiply<D: Copy + ThreadSafe>(
-        &self,
+        self,
         factor: D,
     ) -> SelectionChange<T, F, impl Fn(&T) -> T + ThreadSafe>
     where
         T: Clone + std::ops::Mul<D, Output = T>,
     {
         self.map_target(move |previous| previous.clone() * factor)
-    }
-    pub fn spring_to<M>(
-        &self,
-        value: impl Into<T>,
-        spring: impl Into<Spring>,
-    ) -> SelectionSpringChange<T, F, M>
-    where
-        T: SpringValue<M> + Clone + ThreadSafe,
-    {
-        SelectionSpringChange {
-            property: self.clone(),
-            value: value.into(),
-            spring: spring.into(),
-            marker: PhantomData,
-        }
-    }
-}
-/// Deferred spring action, lowered to the same core spring as ordinary fields.
-#[must_use = "schedule the selection spring with sequence.play"]
-pub struct SelectionSpringChange<T, F, M> {
-    property: SelectionProperty<T, F>,
-    value: T,
-    spring: Spring,
-    marker: PhantomData<fn() -> M>,
-}
-impl<Model, T, F, M>
-    AnimationChange<World<Model>, SceneContext<'_, Model>>
-    for SelectionSpringChange<T, F, M>
-where
-    Model: Model2d,
-    T: SpringValue<M> + Clone + ThreadSafe,
-    F: Field<TextSelection, T>,
-{
-    fn lower(
-        self,
-        sequence: &mut Sequence<
-            '_,
-            World<Model>,
-            SceneContext<'_, Model>,
-        >,
-    ) -> TrackFragment {
-        match self.property.resolve(sequence.context_mut()) {
-            Ok(property) => property
-                .spring_to::<M>(self.value, self.spring)
-                .lower(sequence),
-            Err(error) => {
-                sequence.context_mut().reject(error);
-                TrackFragment::silent(Duration::ZERO)
-            }
-        }
     }
 }
 #[must_use = "schedule the selection change with sequence.play"]
@@ -276,6 +256,19 @@ pub struct SelectionChange<T, F, A> {
     ease: Option<motiongfx::prelude::EaseFn>,
 }
 impl<T, F, A> SelectionChange<T, F, A> {
+    pub fn spring<M>(
+        self,
+        spring: impl Into<Spring>,
+    ) -> SelectionSpringChange<T, F, A, M>
+    where
+        T: SpringValue<M>,
+    {
+        SelectionSpringChange {
+            change: self,
+            spring: spring.into(),
+            marker: PhantomData,
+        }
+    }
     pub fn over(mut self, duration: Duration) -> Self {
         self.duration = Some(duration);
         self
@@ -307,6 +300,49 @@ where
                     change = change.ease(ease);
                 }
                 change.lower(sequence)
+            }
+            Err(error) => {
+                sequence.context_mut().reject(error);
+                TrackFragment::silent(Duration::ZERO)
+            }
+        }
+    }
+}
+
+#[must_use = "schedule the selection spring with sequence.play"]
+pub struct SelectionSpringChange<T, F, A, M> {
+    change: SelectionChange<T, F, A>,
+    spring: Spring,
+    marker: PhantomData<fn() -> M>,
+}
+impl<Model, T, F, A, M>
+    AnimationChange<World<Model>, SceneContext<'_, Model>>
+    for SelectionSpringChange<T, F, A, M>
+where
+    Model: Model2d,
+    T: SpringValue<M> + Clone + ThreadSafe,
+    F: Field<TextSelection, T>,
+    A: Fn(&T) -> T + ThreadSafe,
+{
+    fn lower(
+        self,
+        sequence: &mut Sequence<
+            '_,
+            World<Model>,
+            SceneContext<'_, Model>,
+        >,
+    ) -> TrackFragment {
+        match self.change.property.resolve(sequence.context_mut()) {
+            Ok(property) => {
+                let mut change =
+                    property.map_target(self.change.target);
+                if let Some(duration) = self.change.duration {
+                    change = change.over(duration);
+                }
+                if let Some(ease) = self.change.ease {
+                    change = change.ease(ease);
+                }
+                change.spring::<M>(self.spring).lower(sequence)
             }
             Err(error) => {
                 sequence.context_mut().reject(error);

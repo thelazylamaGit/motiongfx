@@ -16,9 +16,10 @@
 //! ```
 pub use kurbo::{Affine, Cap, Join, Point, Rect, Size, Vec2};
 pub use motiongfx_authoring::{
-    BindingError, BindingSource, SampleTime, SceneError, SceneObject,
-    Signal, SignalId, Source, Spring, SpringCurve, SpringError,
-    World, animate, computed, signal, smooth,
+    BindingError, BindingSource, PreparationError, SampleTime,
+    SceneError, SceneObject, Signal, SignalId, Source, Spring,
+    SpringCurve, SpringError, World, animate, computed, signal,
+    smooth,
 };
 pub use motiongfx_text::{
     FontStyle, FontWeight, SelectionError, TextRange,

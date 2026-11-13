@@ -1,8 +1,6 @@
 //! Filled triangle state, typed targets and rounded geometry.
 use crate::rounded_triangle::{self, Geometry};
-use crate::{
-    Color, DrawObject, Object, Point, Position, SceneObject, World,
-};
+use crate::{Color, DrawObject, Object, Point, SceneObject, World};
 use kurbo::Affine;
 use motiongfx::prelude::SubjectSource;
 
@@ -31,4 +29,33 @@ fill: Color => new(Triangle.fill);
 stroke: Color => new(Triangle.stroke);
 line_cap: crate::Cap => discrete(Triangle.line_cap);
 line_join: crate::Join => discrete(Triangle.line_join);
+);
+
+crate::properties::handle_methods!(TriangleHandle,Triangle,TriangleId;
+position: Point;
+position_x: f64;
+position_y: f64;
+size: f64;
+angle: f64;
+radius: f64;
+rotation: f64;
+scale: f64;
+opacity: f64;
+stroke_width: f64;
+fill: Color;
+stroke: Color;
+line_cap: crate::Cap;
+line_join: crate::Join;
+);
+
+crate::properties::transform_methods!(
+    TriangleHandle,
+    Triangle,
+    TriangleId
+);
+
+crate::properties::fill_methods!(
+    TriangleHandle,
+    Triangle,
+    TriangleId
 );

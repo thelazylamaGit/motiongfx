@@ -73,7 +73,7 @@ fn reactive_caps_and_tip_joins_are_independent_discrete_seekable_styles()
     let mut animation = scene.animate(|sequence| {
         sequence.wait(s(1));
         sequence.play(cap.set(Cap::Square));
-        sequence.play(line.end_tip.line_join.set(Join::Round));
+        sequence.play(line.end_tip.line_join().set(Join::Round));
         sequence.wait(s(1));
     });
     let size = Size::new(400.0, 200.0);
@@ -277,18 +277,21 @@ fn attached_shapes_retain_typed_reactive_properties_and_seek_independently()
     let mut animation = scene.animate(|sequence| {
         sequence.parallel(|sequence| {
             sequence.play(radius.to(8.0).ease(ease::linear));
-            sequence
-                .play(line.end_tip.angle.to(1.0).ease(ease::linear));
-            sequence
-                .play(line.end_tip.size.to(30.0).ease(ease::linear));
+            sequence.play(
+                line.end_tip.angle().to(1.0).ease(ease::linear),
+            );
+            sequence.play(
+                line.end_tip.size().to(30.0).ease(ease::linear),
+            );
             sequence.play(
                 line.end_tip
-                    .fill
+                    .fill()
                     .to(colors::ORANGE)
                     .ease(ease::linear),
             );
-            sequence
-                .play(line.end.to((0.0, 200.0)).ease(ease::linear));
+            sequence.play(
+                line.end().to_xy(0.0, 200.0).ease(ease::linear),
+            );
         });
     });
     for (time, r, size, angle, end) in [
@@ -367,8 +370,8 @@ fn rounded_tip_radius_is_reactive_seekable_and_geometry_cache_ignores_style_chan
     let mut animation = scene.animate(|sequence| {
         sequence.play(radius.to(4.0).ease(ease::linear));
         sequence.parallel(|sequence| {
-            sequence.play(line.end_tip.fill.to(colors::BLUE));
-            sequence.play(line.end_tip.rotation.to(0.3));
+            sequence.play(line.end_tip.fill().to(colors::BLUE));
+            sequence.play(line.end_tip.rotation().to(0.3));
         });
     });
     let mut rendered = vello::Scene::new();
@@ -401,7 +404,7 @@ fn rounded_tip_radius_is_reactive_seekable_and_geometry_cache_ignores_style_chan
     let mut scene = Scene::new();
     let triangle = scene.add(Triangle::new());
     let mut animation = scene.animate(|sequence| {
-        sequence.play(triangle.radius.to(6.0).ease(ease::linear));
+        sequence.play(triangle.radius().to(6.0).ease(ease::linear));
     });
     animation.sample(ms(500));
     assert_eq!(animation.triangle(triangle).radius, 3.0);
@@ -431,7 +434,7 @@ fn short_lines_fit_tips_and_open_chevrons_keep_the_shaft_to_the_apex()
             Chevron::new().size(20.0).stroke(colors::ORANGE, 3.0),
         ));
     let animation = scene.animate(|sequence| {
-        sequence.play(line.end_tip.angle.to(0.9));
+        sequence.play(line.end_tip.angle().to(0.9));
     });
     rendered.reset();
     renderer.render(&animation, &mut rendered, size, size, 1.0);

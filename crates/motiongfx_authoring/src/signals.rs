@@ -177,6 +177,20 @@ pub struct SignalChange<T, F> {
     ease: Option<EaseFn>,
 }
 impl<T, F> SignalChange<T, F> {
+    /// Apply the same spring timing modifier as an object-property change.
+    pub fn spring<M>(
+        self,
+        spring: impl Into<crate::Spring>,
+    ) -> SignalTargetSpringChange<T, F, M>
+    where
+        T: crate::SpringValue<M>,
+    {
+        SignalTargetSpringChange {
+            change: self,
+            spring: spring.into(),
+            marker: std::marker::PhantomData,
+        }
+    }
     pub fn over(mut self, duration: Duration) -> Self {
         self.duration = Some(duration);
         self
@@ -190,6 +204,41 @@ impl<T, F> SignalChange<T, F> {
 /// A sequence capability: roots used only in timeline actions still register.
 pub trait RegisterSignals {
     fn signals(&mut self) -> &mut SignalValues;
+}
+
+#[must_use = "schedule the signal spring change with sequence.play"]
+pub struct SignalTargetSpringChange<T, F, M> {
+    change: SignalChange<T, F>,
+    spring: crate::Spring,
+    marker: std::marker::PhantomData<fn() -> M>,
+}
+impl<W: 'static, C, T, F, M> crate::AnimationChange<W, C>
+    for SignalTargetSpringChange<T, F, M>
+where
+    C: RegisterSignals,
+    T: crate::SpringValue<M> + Clone + ThreadSafe,
+    F: Fn(&T) -> T + ThreadSafe,
+    W: SubjectSource<SignalId, T>,
+{
+    fn lower(
+        self,
+        sequence: &mut crate::Sequence<'_, W, C>,
+    ) -> TrackFragment {
+        let id =
+            sequence.context.signals().register(&self.change.signal);
+        crate::Change {
+            property: Property {
+                id,
+                path: path!(T),
+                interp: self.change.interp,
+            },
+            target: self.change.target,
+            duration: self.change.duration,
+            ease: self.change.ease,
+        }
+        .spring::<M>(self.spring)
+        .lower(sequence)
+    }
 }
 impl RegisterSignals for &mut SignalValues {
     fn signals(&mut self) -> &mut SignalValues {

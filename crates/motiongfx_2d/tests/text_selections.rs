@@ -10,11 +10,12 @@ fn occurrence_and_range_queries_reuse_registered_paint_state() {
     let same_second = title.select_range(13..14);
     let mut animation = scene.animate(|sequence| {
         sequence.defaults(s(1), ease::linear);
-        sequence.play(first.fill.to(colors::BLUE));
-        sequence.play(second.opacity.to(0.0));
-        sequence.play(same_second.opacity.to(1.0));
+        sequence.play(first.fill().to(colors::BLUE));
+        sequence.play(second.opacity().to(0.0));
+        sequence.play(same_second.opacity().to(1.0));
         // A separately constructed equivalent query also finds the same state.
-        sequence.play(title.select_nth("&", 1).fill.to(colors::RED));
+        sequence
+            .play(title.select_nth("&", 1).fill().to(colors::RED));
     });
     assert_eq!(animation.model().text_selections().len(), 2);
     for (time, opacity) in
@@ -34,7 +35,7 @@ fn invalid_used_queries_return_helpful_preparation_errors() {
         let mut scene = Scene::new();
         let title = scene.add(Text::new("hello"));
         let result = scene.try_animate(|sequence| {
-            sequence.play(title.select(query).fill.to(colors::RED));
+            sequence.play(title.select(query).fill().to(colors::RED));
         });
         match result {
             Err(SceneError::Target(message)) => {
@@ -49,7 +50,7 @@ fn invalid_used_queries_return_helpful_preparation_errors() {
     let title = scene.add(Text::new("café"));
     assert!(matches!(
         scene.try_animate(|sequence| {
-            sequence.play(title.select_range(3..4).opacity.to(0.0));
+            sequence.play(title.select_range(3..4).opacity().to(0.0));
         }),
         Err(SceneError::Target(_))
     ));
@@ -64,7 +65,7 @@ fn deferred_selection_springs_use_core_sampling() {
     let title = scene.add(Text::new("hello"));
     let mut animation = scene.animate(|sequence| {
         sequence.play(
-            title.select("hello").opacity.spring_to(0.0, settings),
+            title.select("hello").opacity().to(0.0).spring(settings),
         );
     });
     for time in [ms(250), ms(500), ms(0)] {

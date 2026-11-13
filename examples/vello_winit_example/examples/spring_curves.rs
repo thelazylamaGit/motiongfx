@@ -282,7 +282,7 @@ fn build_animation() -> Animation {
             sequence.parallel(|sequence| {
                 for (ball, spring) in balls.iter().zip(springs) {
                     sequence.play(
-                        ball.position.x.spring_to(TRAVEL, spring),
+                        ball.position_x().to(TRAVEL).spring(spring),
                     );
                 }
                 sequence.play(
@@ -303,8 +303,7 @@ fn build_animation() -> Animation {
                 );
                 for ball in &balls {
                     sequence.play(
-                        ball.position
-                            .x
+                        ball.position_x()
                             .to(-TRAVEL)
                             .over(ms(500))
                             .ease(ease::cubic::ease_in_out),

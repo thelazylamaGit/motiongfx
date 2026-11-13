@@ -61,6 +61,17 @@ impl<I: Copy, S, T, F: Field<S, T>> Target<I, S, T, F> {
     {
         self.property().set(value)
     }
+    /// Coordinate convenience for point/vector values convertible from an xy pair.
+    pub fn to_xy(
+        self,
+        x: f64,
+        y: f64,
+    ) -> crate::Change<I, S, T, impl Fn(&T) -> T + ThreadSafe>
+    where
+        T: From<(f64, f64)> + Clone + ThreadSafe,
+    {
+        self.to(T::from((x, y)))
+    }
     pub fn offset<D: Copy + ThreadSafe>(
         self,
         delta: D,

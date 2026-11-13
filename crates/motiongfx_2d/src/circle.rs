@@ -73,14 +73,6 @@ impl CircleId {
 #[derive(Clone, Copy)]
 pub struct CircleHandle {
     pub(crate) id: CircleId,
-    pub position: circle_position,
-    pub radius: fields::radius::Target,
-    pub fill: fields::fill::Target,
-    pub stroke: fields::stroke::Target,
-    pub stroke_width: fields::stroke_width::Target,
-    pub opacity: fields::opacity::Target,
-    pub scale: fields::scale::Target,
-    pub rotation: fields::rotation::Target,
 }
 impl CircleHandle {
     pub fn id(self) -> CircleId {
@@ -113,18 +105,7 @@ impl Circle {
                 .order
                 .push(DrawObject::Circle(id));
         }
-        CircleHandle {
-            id,
-            position: circle_position_axes(id),
-            radius: motiongfx_authoring::Target::new(id),
-            fill: motiongfx_authoring::Target::new(id),
-            stroke: motiongfx_authoring::Target::new(id),
-
-            stroke_width: motiongfx_authoring::Target::new(id),
-            opacity: motiongfx_authoring::Target::new(id),
-            scale: motiongfx_authoring::Target::new(id),
-            rotation: motiongfx_authoring::Target::new(id),
-        }
+        CircleHandle { id }
     }
 }
 
@@ -172,3 +153,20 @@ pub fn circle_position_axes(id: CircleId) -> circle_position {
         motiongfx_authoring::Target::new(id),
     )
 }
+
+crate::properties::handle_methods!(CircleHandle,Circle,CircleId;
+radius: f64;
+fill: Color;
+stroke: Color;
+stroke_width: f64;
+opacity: f64;
+scale: f64;
+rotation: f64;
+position: Point;
+position_x: f64;
+position_y: f64;
+);
+
+crate::properties::transform_methods!(CircleHandle, Circle, CircleId);
+
+crate::properties::fill_methods!(CircleHandle, Circle, CircleId);

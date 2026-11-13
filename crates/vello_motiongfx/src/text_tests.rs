@@ -50,10 +50,10 @@ fn word_paint_seeks_and_source_changes_do_not_use_stale_ranges() {
     let word = text.select("world");
     let mut animation = scene.animate(|sequence| {
         sequence.parallel(|sequence| {
-            sequence.play(word.fill.to(colors::RED).over(s(1)));
-            sequence.play(word.opacity.to(0.5).over(s(1)));
+            sequence.play(word.fill().to(colors::RED).over(s(1)));
+            sequence.play(word.opacity().to(0.5).over(s(1)));
         });
-        sequence.play(text.content.set("different"));
+        sequence.play(text.set_content("different"));
         sequence.wait(s(1));
     });
     let mut renderer = Renderer::default();
@@ -83,7 +83,10 @@ fn word_paint_seeks_and_source_changes_do_not_use_stale_ranges() {
     let text = scene.add(Text::new("weight").font_weight(400.0));
     let mut animation = scene.animate(|sequence| {
         sequence.play(
-            text.font_weight.to(700.0).over(s(1)).ease(ease::linear),
+            text.font_weight()
+                .to(700.0)
+                .over(s(1))
+                .ease(ease::linear),
         );
     });
     animation.sample(ms(500));
@@ -100,7 +103,8 @@ fn a_reused_renderer_remaps_selection_ranges_without_reshaping() {
         let mut scene = Scene::new();
         let title = scene.add(Text::new("hello world"));
         let animation = scene.animate(|sequence| {
-            sequence.play(title.select(needle).fill.set(colors::RED));
+            sequence
+                .play(title.select(needle).fill().set(colors::RED));
             sequence.wait(s(1));
         });
         let mut frame = vello::Scene::new();

@@ -36,10 +36,10 @@ fn authored_square_matches_direct_motiongfx_at_arbitrary_times() {
     let mut scene = Scene::new();
     let square = scene.add(initial.clone());
     let mut authored = scene.animate(|sequence| {
-        sequence.play(square.position.offset((-80.0, 0.0)));
-        sequence.play(square.fill.to(orange));
-        sequence.play(square.scale.multiply(0.3));
-        sequence.play(square.rotation.offset(0.4));
+        sequence.play(square.shift(-80.0, 0.0));
+        sequence.play(square.fill().to(orange));
+        sequence.play(square.scale_by(0.3));
+        sequence.play(square.rotate(0.4));
     });
 
     // Independent baseline: the original low-level builder, not the
@@ -103,18 +103,16 @@ fn relative_targets_waits_overrides_and_multiple_objects() {
     let right = scene.add(Rectangle::default());
     let mut animation = scene.animate(|sequence| {
         sequence.defaults(s(1), ease::linear);
-        sequence
-            .play(left.position.offset((10.0, 0.0)).over(ms(200)));
+        sequence.play(left.shift(10.0, 0.0).over(ms(200)));
         sequence.wait(ms(300));
         sequence.play(
-            left.position
-                .offset((5.0, 0.0))
+            left.shift(5.0, 0.0)
                 .over(ms(500))
                 .ease(ease::quad::ease_in),
         );
         sequence.play_all([
-            left.scale.to(2.0).over(ms(400)),
-            right.scale.to(3.0).over(ms(800)),
+            left.scale().to(2.0).over(ms(400)),
+            right.scale().to(3.0).over(ms(800)),
         ]);
     });
     assert_eq!(animation.duration(), ms(1800));
@@ -141,7 +139,7 @@ fn custom_target_runs_during_baking_not_playback() {
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
     let mut animation = scene.animate(|sequence| {
-        sequence.play(square.scale.map_target(move |scale| {
+        sequence.play(square.scale().map_target(move |scale| {
             counter.fetch_add(1, Ordering::Relaxed);
             scale * 2.0
         }));
@@ -163,11 +161,11 @@ fn nested_axes_and_whole_position_operations_share_the_same_state() {
     let mut animation = scene.animate(|sequence| {
         sequence.defaults(s(1), ease::linear);
         sequence.parallel(|sequence| {
-            sequence.play(shape.position.x.to(30.0));
-            sequence.play(shape.position.y.offset(10.0));
-            sequence.play(title.position.to((100.0, 50.0)));
+            sequence.play(shape.position_x().to(30.0));
+            sequence.play(shape.shift_y(10.0));
+            sequence.play(title.position().to_xy(100.0, 50.0));
         });
-        sequence.play(shape.position.offset((5.0, -10.0)));
+        sequence.play(shape.shift(5.0, -10.0));
     });
     animation.sample(ms(500));
     assert_eq!(
@@ -203,16 +201,16 @@ fn text_style_animation_and_content_changes_are_seekable() {
     let mut animation = scene.animate(|sequence| {
         sequence.defaults(s(1), ease::linear);
         sequence.parallel(|sequence| {
-            sequence.play(title.position.x.to(100.0));
-            sequence.play(title.font_size.to(28.0));
-            sequence.play(title.opacity.to(0.5));
-            sequence.play(title.scale.to(2.0));
-            sequence.play(title.rotation.to(0.4));
-            sequence.play(title.fill.to(orange));
-            sequence.play(title.content.to("Second"));
+            sequence.play(title.position_x().to(100.0));
+            sequence.play(title.font_size().to(28.0));
+            sequence.play(title.opacity().to(0.5));
+            sequence.play(title.scale().to(2.0));
+            sequence.play(title.rotation().to(0.4));
+            sequence.play(title.fill().to(orange));
+            sequence.play(title.content().to("Second"));
         });
         sequence.wait(ms(500));
-        sequence.play(title.content.set("Third"));
+        sequence.play(title.set_content("Third"));
         sequence.wait(ms(500));
     });
     assert_eq!(animation.duration(), s(2));
@@ -327,12 +325,12 @@ fn anchored_text_inherits_parent_motion_and_keeps_independent_local_animation()
         sequence.defaults(s(1), ease::linear);
         // No animation is registered on the child during this first second.
         sequence.parallel(|sequence| {
-            sequence.play(bar.position.x.to(30.0));
+            sequence.play(bar.position_x().to(30.0));
             sequence
-                .play(bar.rotation.to(std::f64::consts::FRAC_PI_2));
-            sequence.play(bar.scale.to(2.0));
+                .play(bar.rotation().to(std::f64::consts::FRAC_PI_2));
+            sequence.play(bar.scale().to(2.0));
         });
-        sequence.play(label.position.x.to(5.0));
+        sequence.play(label.position_x().to(5.0));
     });
     let mut rendered = vello::Scene::new();
     for (time, expected) in [

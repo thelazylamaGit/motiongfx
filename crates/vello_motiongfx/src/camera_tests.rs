@@ -15,10 +15,10 @@ fn camera_pan_zoom_rotation_render_and_reverse_seek() {
     let mut animation = scene.animate(|sequence| {
         sequence.defaults(s(1), ease::linear);
         sequence.parallel(|sequence| {
-            sequence.play(camera.position.to((100.0, 50.0)));
-            sequence.play(camera.scale.to(3.0));
+            sequence.play(camera.position().to_xy(100.0, 50.0));
+            sequence.play(camera.scale().to(3.0));
             sequence.play(
-                camera.rotation.to(std::f64::consts::FRAC_PI_2),
+                camera.rotation().to(std::f64::consts::FRAC_PI_2),
             );
         });
         sequence.wait(s(1));
@@ -74,13 +74,13 @@ fn scale_pan_approaches_target_monotonically_and_retraces_on_seek() {
     let camera = scene.camera();
     let mut animation = scene.animate(|sequence| {
         sequence.parallel(|sequence| {
-            sequence.play(camera.scale.to(0.25).over(s(2)));
-            sequence.play(camera.position.y.to(300.0).over(s(2)));
+            sequence.play(camera.scale().to(0.25).over(s(2)));
+            sequence.play(camera.position_y().to(300.0).over(s(2)));
         });
         sequence.wait(s(1));
         sequence.parallel(|sequence| {
-            sequence.play(camera.scale.to(1.0).over(s(2)));
-            sequence.play(camera.position.y.to(0.0).over(s(2)));
+            sequence.play(camera.scale().to(1.0).over(s(2)));
+            sequence.play(camera.position_y().to(0.0).over(s(2)));
         });
     });
     let tangent = Point::new(0.0, -300.0);
@@ -138,11 +138,11 @@ fn follow_uses_nested_world_position_but_not_target_scale_or_rotation()
     let mut animation = scene.animate(|sequence| {
         sequence.defaults(s(1), ease::linear);
         sequence.parallel(|sequence| {
-            sequence.play(parent.position.x.offset(100.0));
-            sequence.play(target.position.x.to(20.0));
-            sequence.play(target.scale.to(0.0));
-            sequence.play(target.rotation.to(2.0));
-            sequence.play(camera.position.x.to(15.0));
+            sequence.play(parent.shift_x(100.0));
+            sequence.play(target.position_x().to(20.0));
+            sequence.play(target.scale().to(0.0));
+            sequence.play(target.rotation().to(2.0));
+            sequence.play(camera.position_x().to(15.0));
         });
     });
     for time in [0, 1000, 500, 0] {

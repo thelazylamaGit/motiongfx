@@ -76,18 +76,18 @@ fn main() -> Result<(), winit::error::EventLoopError> {
                 order.swap(j - 1, j);
                 j -= 1;
             }
-            sequence.play(status.content.set(format!(
+            sequence.play(status.set_content(format!(
                 "INSERTION PASS {i} / {}",
                 order.len() - 1
             )));
             // All bars move together; their labels follow automatically.
             sequence.play_all(order.iter().enumerate().map(
                 |(index, (_, bar))| {
-                    bar.position.x.to(slot(index, order.len()))
+                    bar.position_x().to(slot(index, order.len()))
                 },
             ));
         }
-        sequence.play(status.content.set("SORTED / HOLD"));
+        sequence.play(status.set_content("SORTED / HOLD"));
         sequence.wait(ms(600));
     });
 

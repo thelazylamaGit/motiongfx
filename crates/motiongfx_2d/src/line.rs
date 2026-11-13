@@ -74,18 +74,6 @@ impl LineId {
 #[derive(Clone, Copy)]
 pub struct LineHandle {
     pub(crate) id: LineId,
-    pub start: line_start,
-    pub end: line_end,
-    pub stroke: fields::stroke::Target,
-    pub stroke_width: fields::stroke_width::Target,
-    pub line_cap: fields::line_cap::Target,
-    pub line_join: fields::line_join::Target,
-    pub opacity: fields::opacity::Target,
-    pub reveal: fields::reveal::Target,
-    pub line_dash: fields::line_dash::Target,
-    pub dash_offset: fields::dash_offset::Target,
-    pub start_offset: fields::start_offset::Target,
-    pub end_offset: fields::end_offset::Target,
 }
 impl LineHandle {
     pub fn id(self) -> LineId {
@@ -105,21 +93,7 @@ impl<M: crate::Model2d> SceneObject<M> for Line {
             .graphics_mut()
             .order
             .push(DrawObject::Line(id));
-        LineHandle {
-            id,
-            start: line_start_axes(id),
-            end: line_end_axes(id),
-            stroke: motiongfx_authoring::Target::new(id),
-            line_cap: motiongfx_authoring::Target::new(id),
-            line_join: motiongfx_authoring::Target::new(id),
-            stroke_width: motiongfx_authoring::Target::new(id),
-            opacity: motiongfx_authoring::Target::new(id),
-            reveal: motiongfx_authoring::Target::new(id),
-            line_dash: motiongfx_authoring::Target::new(id),
-            dash_offset: motiongfx_authoring::Target::new(id),
-            start_offset: motiongfx_authoring::Target::new(id),
-            end_offset: motiongfx_authoring::Target::new(id),
-        }
+        LineHandle { id }
     }
 }
 impl<M: crate::Model2d> SubjectSource<LineId, Line>
@@ -187,3 +161,22 @@ pub fn line_end_axes(id: LineId) -> line_end {
         motiongfx_authoring::Target::new(id),
     )
 }
+
+crate::properties::handle_methods!(LineHandle,Line,LineId;
+stroke: Color;
+stroke_width: f64;
+line_cap: crate::Cap;
+line_join: crate::Join;
+opacity: f64;
+reveal: f64;
+line_dash: Arc<[f64]>;
+dash_offset: f64;
+start_offset: f64;
+end_offset: f64;
+start: Point;
+start_x: f64;
+start_y: f64;
+end: Point;
+end_x: f64;
+end_y: f64;
+);

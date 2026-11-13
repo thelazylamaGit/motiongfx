@@ -1,8 +1,6 @@
 //! Open chevron state, typed targets and geometry.
 use crate::rounded_triangle::Geometry;
-use crate::{
-    Color, DrawObject, Object, Point, Position, SceneObject, World,
-};
+use crate::{Color, DrawObject, Object, Point, SceneObject, World};
 use kurbo::Affine;
 use motiongfx::prelude::SubjectSource;
 
@@ -45,3 +43,27 @@ stroke: Color => new(Chevron.stroke);
 line_cap: crate::Cap => discrete(Chevron.line_cap);
 line_join: crate::Join => discrete(Chevron.line_join);
 );
+
+crate::properties::handle_methods!(ChevronHandle,Chevron,ChevronId;
+position: Point;
+position_x: f64;
+position_y: f64;
+size: f64;
+angle: f64;
+rotation: f64;
+scale: f64;
+opacity: f64;
+stroke_width: f64;
+fill: Color;
+stroke: Color;
+line_cap: crate::Cap;
+line_join: crate::Join;
+);
+
+crate::properties::transform_methods!(
+    ChevronHandle,
+    Chevron,
+    ChevronId
+);
+
+crate::properties::fill_methods!(ChevronHandle, Chevron, ChevronId);

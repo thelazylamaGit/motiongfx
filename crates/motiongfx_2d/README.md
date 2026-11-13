@@ -51,8 +51,11 @@ struct literals with `..Rectangle::default()` remain supported. Shared
 `Rectangle::from_size(size)` also accepts a tuple such as `(160.0, 160.0)`,
 a `Vec2`, or a `Size`.
 `.position((x, y))` sets the initial center and `.radius(value)` sets a corner
-radius. Both text and rectangle handles expose `position.to(...)` and
-`position.offset(...)`, plus `position.x` and `position.y` animation targets.
+radius. Object handles expose typed getters: `position().to(point)`,
+`position().to_xy(x, y)`, `position_x().to(x)` and `position_y().to(y)`.
+`shift(dx, dy)`, `scale_by(factor)` and `rotate(radians)` are relative helpers
+using the action-start value. `fill_to(color)` is an animated convenience;
+`set_fill(color)` is an immediate scheduled change.
 Avoid overlapping whole-position and per-axis actions on
 the same object at the same time; they write to overlapping fields.
 
@@ -84,10 +87,10 @@ let title = scene.add(
 ```
 
 `Text` exposes `position`, `font_size`, `fill`, `opacity`, `scale`, `rotation`
-and `content` targets. `sequence.play(title.content.set("Sorted"))` replaces
+and `content` targets. `sequence.play(title.set_content("Sorted"))` replaces
 content at the current sequence time without adding duration. The equivalent
-`sequence.set(title.content, "Sorted")` remains available. Alternatively,
-`sequence.play(title.content.to("Sorted").over(s(1)))` holds the old content
+`sequence.set(title.content(), "Sorted")` remains available. Alternatively,
+`sequence.play(title.content().to("Sorted").over(s(1)))` holds the old content
 until the change's end. These are discrete replacements, not glyph morphs.
 `Animation::text(handle)` reads sampled text state.
 
@@ -150,7 +153,7 @@ Text can anchor to a circle using the same `relative_to` method.
 
 `Path::new(points)` creates a polyline; `Path::from_bez_path(geometry)` accepts
 arbitrary quadratic/cubic geometry. `.stroke(color, width)` stores its style,
-and `.end(0.0)` initially hides it. Animate `path.end.to(1.0)` to reveal it.
+and `.end(0.0)` initially hides it. Animate `path.end().to(1.0)` to reveal it.
 `start`/`end` are normalized visible-range fractions. They reuse Peniko's
 existing segment-based tracing, not arc-length parameterization. Position,
 scale, rotation, opacity and stroke properties are also animatable.
@@ -215,7 +218,7 @@ let mut scene = Scene::new();
 let title = scene.add(Text::new("Shoes & Cats & Dogs"));
 let animation = scene.animate(|sequence| {
     let second = title.select_nth("&", 1); // zero-based occurrence
-    sequence.play(second.fill.to(ORANGE));
+    sequence.play(second.fill().to(ORANGE));
 });
 ```
 
@@ -236,19 +239,27 @@ Changed content disables the selection until the same source returns on a seek.
 Partial ligatures paint as whole clusters. Selections are metadata, not additional
 scene objects. Whole-object position/scale/rotation continue to work normally.
 
-Built-in object handles use zero-sized field markers and store IDs per property,
-not copies of accessor metadata. On 64-bit targets TextHandle is 136 bytes
-(previously 776) and CircleHandle is 88 bytes (previously 488). A reference to
-any handle is separately pointer-sized. Whole position and its axes retain
-`.position.to(...)` / `.position.x.to(...)` syntax; generic runtime-selected
-properties remain available in authoring.
+Built-in object handles store one typed ID, not one per property. Rectangle,
+Circle, Text, Line, Path, Triangle and Chevron handles are pointer-sized (8 bytes
+on 64-bit targets); the scene-wide camera has a zero-sized ID/handle. This
+replaces the previous bundles (Rectangle 104, Circle 88, Text 136 bytes). Typed
+getters construct just the requested target without heap allocation, e.g.
+`square.position_x().to(100.0)`. The getter itself is also a source/destination
+for computations and bindings: `scene.bind(square.position_x(), &x, |x| x)`.
+There is no separate public field-selector API needed for normal properties.
+Generic runtime-selected properties remain available in authoring. Timing and
+rendering performance have not been benchmarked; this is a handle-storage change.
+
+Construction builders retain their original fixed/signal/computed setters. In
+`Circle::new(10.0).position(&position)`, position is initial/reactive input;
+in `circle.position().to(point)`, it is a scheduled animation target.
 
 Each object's state, handle and fixed field declarations live together in its
 own source file (`circle.rs`, `line.rs`, `text.rs`, `triangle.rs`, `chevron.rs`,
 etc.). The `properties.rs` macro generates empty field markers and typed target
 aliases there. `fields.rs` is only a re-export index for existing advanced paths.
 The marker identifies which accessor to supply during preparation; it stores no
-value. Each target still stores its object ID, and the sampled object retains its
+value. Each on-demand target stores its object ID, and the sampled object retains its
 ordinary position/style values. This is static field identity, not a typestate
 state machine, and does not remove bounds checks or introduce object pointers.
 
@@ -319,8 +330,8 @@ Like other properties, these accept signals/computed inputs. Handle changes are
 discrete, not smoothly interpolated:
 
 ```rust
-sequence.play(line.line_cap.set(Cap::Square));
-sequence.play(line.end_tip.line_join.set(Join::Round));
+sequence.play(line.line_cap().set(Cap::Square));
+sequence.play(line.end_tip.line_join().set(Join::Round));
 ```
 
 Round caps/joins derive their rounding from stroke width. They are not a numeric
@@ -345,9 +356,9 @@ let line = scene.add(
         )
         .stroke(INK, 4.0),
 );
-sequence.play(line.start_tip.radius.to(10.0));
-sequence.play(line.end_tip.angle.to(0.9));
-sequence.play(line.end_tip.fill.to(ORANGE));
+sequence.play(line.start_tip.radius().to(10.0));
+sequence.play(line.end_tip.angle().to(0.9));
+sequence.play(line.end_tip.fill().to(ORANGE));
 ```
 
 `start_tip` / `end_tip` accept ordinary `Object<Circle>`, `Object<Triangle>` or
@@ -375,7 +386,7 @@ stroke:
 ```rust
 Triangle::new().size(24.0).angle(0.6).radius(2.0).fill(INK)
 // On a registered triangle tip:
-sequence.play(line.end_tip.radius.to(4.0));
+sequence.play(line.end_tip.radius().to(4.0));
 ```
 
 Radius defaults to zero (the original sharp triangle), accepts reactive inputs,
@@ -486,12 +497,12 @@ fraction without creating a path buffer, useful for animated grid lines.
 ## Advanced explicit bindings
 
 ```rust
-scene.bind(dot.position, curve.end, move |reveal| {
+scene.bind(dot.position(), curve.end(), move |reveal| {
     let angle = reveal * turns * std::f64::consts::TAU;
     Point::new(-320.0 + 80.0 * angle.cos(), 80.0 * angle.sin())
 });
-scene.bind(radius.end, dot.position, |position| position);
-scene.bind(connector.end, (curve.end, dot.position.y), move |(reveal, y)| {
+scene.bind(radius.end(), dot.position(), |position| position);
+scene.bind(connector.end(), (curve.end(), dot.position_y()), move |(reveal, y)| {
     Point::new(-240.0 + reveal * turns * 320.0, y)
 });
 ```
@@ -502,7 +513,7 @@ supplies its current sampled value, not an implicit progress parameter.
 Properties, `Computed<T>` handles, and tuples of two to five sources are
 supported. All values are local object state, not transformed world positions.
 For a shared calculation use `let orbit = curve.end.map(function)`;
-then `scene.bind(dot.position, &orbit, |position| position)`. Its output is cached
+then `scene.bind(dot.position(), &orbit, |position| position)`. Its output is cached
 once per changed input for all consumers. Tuples support one to five sources.
 
 `scene.try_animate(...)` returns `Result<Animation, SceneError>` and rejects
@@ -569,7 +580,11 @@ quadratic segments, retaining the normal `start`/`end` reveal properties.
 
 ## Springs
 
-Continuous scalar properties and Point/Vec2/Size support `.spring_to(value, settings)`
+Continuous scalar properties and Point/Vec2/Size support `.to(value).spring(settings)`.
+Relative helpers also support `shift(dx, dy).spring(settings)`. Spring timing
+replaces the sequence's tween defaults. Explicit `.over`/`.ease` conflict and are
+reported during checked preparation; the resulting spring change has neither
+method. There are no per-property spring helper variants. These changes run
 through core spring actions. Import `Spring` from this
 crate or its prelude. There are no spring-specific renderer changes.
 See [spring options, normalized rest units and limits](../../docs/springs.md).

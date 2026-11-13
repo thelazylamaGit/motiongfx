@@ -50,7 +50,7 @@ impl Path {
                     },
                 );
                 scene.bind(
-                    handle.geometry,
+                    handle.geometry(),
                     geometry,
                     std::convert::identity,
                 );
@@ -146,17 +146,6 @@ impl PathId {
 #[derive(Clone, Copy)]
 pub struct PathHandle {
     pub(crate) id: PathId,
-    pub position: path_position,
-    pub stroke: fields::stroke::Target,
-    pub stroke_width: fields::stroke_width::Target,
-    pub line_cap: fields::line_cap::Target,
-    pub line_join: fields::line_join::Target,
-    pub opacity: fields::opacity::Target,
-    pub scale: fields::scale::Target,
-    pub rotation: fields::rotation::Target,
-    pub start: fields::start::Target,
-    pub end: fields::end::Target,
-    pub geometry: fields::geometry::Target,
 }
 impl PathHandle {
     pub fn id(self) -> PathId {
@@ -177,20 +166,7 @@ impl<M: crate::Model2d> SceneObject<M> for Path {
             .graphics_mut()
             .order
             .push(DrawObject::Path(id));
-        PathHandle {
-            id,
-            position: path_position_axes(id),
-            stroke: motiongfx_authoring::Target::new(id),
-            line_cap: motiongfx_authoring::Target::new(id),
-            line_join: motiongfx_authoring::Target::new(id),
-            stroke_width: motiongfx_authoring::Target::new(id),
-            opacity: motiongfx_authoring::Target::new(id),
-            scale: motiongfx_authoring::Target::new(id),
-            rotation: motiongfx_authoring::Target::new(id),
-            start: motiongfx_authoring::Target::new(id),
-            end: motiongfx_authoring::Target::new(id),
-            geometry: motiongfx_authoring::Target::new(id),
-        }
+        PathHandle { id }
     }
 }
 
@@ -241,3 +217,21 @@ pub fn path_position_axes(id: PathId) -> path_position {
         motiongfx_authoring::Target::new(id),
     )
 }
+
+crate::properties::handle_methods!(PathHandle,Path,PathId;
+stroke: Color;
+stroke_width: f64;
+line_cap: crate::Cap;
+line_join: crate::Join;
+opacity: f64;
+scale: f64;
+rotation: f64;
+start: f64;
+end: f64;
+geometry: Arc<BezPath>;
+position: Point;
+position_x: f64;
+position_y: f64;
+);
+
+crate::properties::transform_methods!(PathHandle, Path, PathId);

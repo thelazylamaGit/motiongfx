@@ -104,11 +104,11 @@ the library's duration/easing defaults with 400ms and cubic ease-in-out.
 
 The title, dynamic input caption, per-bar value labels, and pass caption are
 `Text` scene objects. Each value label is anchored to its rectangle with
-`relative_to(bar)` and a local position. Only the rectangle's `position.x`
+`relative_to(bar)` and a local position. Only the rectangle's `position_x()`
 is animated; labels inherit the movement automatically. The sorting order
 stores `(value, rectangle_handle)` pairs, without a separate component wrapper
 or label animation tracks. The pass caption uses
-`sequence.play(status.content.set(...))`, so seeking also restores its text.
+`sequence.play(status.set_content(...))`, so seeking also restores its text.
 The ordinary Rust sorting loop schedules all bar moves together with `play_all`.
 The example contains only scene creation and choreography; reusable-crate tests
 cover nested properties, anchoring, text changes, rendering caches and seeking.

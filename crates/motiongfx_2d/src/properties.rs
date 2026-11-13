@@ -141,3 +141,114 @@ macro_rules! fields {
     }
 }
 pub(crate) use fields;
+
+// Getter methods materialize only one typed target; each object handle owns one ID.
+macro_rules! handle_methods {
+    ($handle:ident, $state:ty, $id:ty; $($name:ident: $value:ty;)*) => {
+        impl $handle {
+            $(pub fn $name(self) -> fields::$name::Target {
+                motiongfx_authoring::Target::new(self.id)
+            })*
+        }
+    }
+}
+pub(crate) use handle_methods;
+
+macro_rules! fill_methods {
+    ($handle:ident,$state:ty,$id:ty) => {
+        impl $handle {
+            /// Animate fill using normal sequence defaults.
+            pub fn fill_to(
+                self,
+                color: impl Into<crate::Color>,
+            ) -> motiongfx_authoring::Change<
+                $id,
+                $state,
+                crate::Color,
+                impl Fn(&crate::Color) -> crate::Color + Send + Sync,
+            > {
+                self.fill().to(color)
+            }
+            /// Replace fill at the scheduled time without consuming duration.
+            pub fn set_fill(
+                self,
+                color: impl Into<crate::Color>,
+            ) -> motiongfx_authoring::Change<
+                $id,
+                $state,
+                crate::Color,
+                impl Fn(&crate::Color) -> crate::Color + Send + Sync,
+            > {
+                self.fill().set(color)
+            }
+        }
+    };
+}
+pub(crate) use fill_methods;
+
+macro_rules! transform_methods {
+    ($handle:ident,$state:ty,$id:ty) => {
+        impl $handle {
+            /// Offset position from its action-start value.
+            pub fn shift(
+                self,
+                x: f64,
+                y: f64,
+            ) -> motiongfx_authoring::Change<
+                $id,
+                $state,
+                crate::Point,
+                impl Fn(&crate::Point) -> crate::Point + Send + Sync,
+            > {
+                self.position().offset((x, y))
+            }
+            pub fn shift_x(
+                self,
+                x: f64,
+            ) -> motiongfx_authoring::Change<
+                $id,
+                $state,
+                f64,
+                impl Fn(&f64) -> f64 + Send + Sync,
+            > {
+                self.position_x().offset(x)
+            }
+            pub fn shift_y(
+                self,
+                y: f64,
+            ) -> motiongfx_authoring::Change<
+                $id,
+                $state,
+                f64,
+                impl Fn(&f64) -> f64 + Send + Sync,
+            > {
+                self.position_y().offset(y)
+            }
+            /// Multiply scale from its action-start value.
+            pub fn scale_by(
+                self,
+                factor: f64,
+            ) -> motiongfx_authoring::Change<
+                $id,
+                $state,
+                f64,
+                impl Fn(&f64) -> f64 + Send + Sync,
+            > {
+                self.scale().multiply(factor)
+            }
+            /// Offset rotation in counterclockwise radians.
+            pub fn rotate(
+                self,
+                angle: f64,
+            ) -> motiongfx_authoring::Change<
+                $id,
+                $state,
+                f64,
+                impl Fn(&f64) -> f64 + Send + Sync,
+            > {
+                self.rotation().offset(angle)
+            }
+        }
+    };
+}
+pub(crate) use transform_methods;

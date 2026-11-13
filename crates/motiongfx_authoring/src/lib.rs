@@ -26,13 +26,13 @@ mod spring;
 mod target;
 pub use bindings::{BindingError, BindingPlan, BindingSource};
 pub use signals::{
-    RegisterSignals, Signal, SignalChange, SignalId, SignalValues,
-    SignalWorld, signal,
+    RegisterSignals, Signal, SignalChange, SignalId,
+    SignalTargetSpringChange, SignalValues, SignalWorld, signal,
 };
 pub use source::{Computed, Source, computed};
 pub use spring::{
     SignalSpringChange, Spring, SpringChange, SpringCurve,
-    SpringError, SpringSample, SpringValue,
+    SpringError, SpringSample, SpringTargetChange, SpringValue,
 };
 pub use target::{Field, Target};
 
@@ -58,6 +58,37 @@ pub fn smooth(t: f32) -> f32 {
     let error = 1.0 / (1.0 + 5.0_f32.exp());
     let sigmoid = 1.0 / (1.0 + (-10.0 * (t - 0.5)).exp());
     ((sigmoid - error) / (1.0 - 2.0 * error)).clamp(0.0, 1.0)
+}
+
+/// Invalid action settings detected while constructing the timeline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PreparationError {
+    Spring(SpringError),
+    ConflictingSpringTiming,
+}
+impl From<SpringError> for PreparationError {
+    fn from(error: SpringError) -> Self {
+        Self::Spring(error)
+    }
+}
+impl std::fmt::Display for PreparationError {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Spring(error)=>error.fmt(f),
+            Self::ConflictingSpringTiming=>f.write_str("spring changes cannot also specify .over() or .ease(); configure timing on the spring"),
+        }
+    }
+}
+impl std::error::Error for PreparationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Spring(error) => Some(error),
+            Self::ConflictingSpringTiming => None,
+        }
+    }
 }
 
 /// A subject identity plus a statically typed field accessor.
@@ -183,7 +214,7 @@ impl<I, S, T, F> Change<I, S, T, F> {
 
 /// A thin collector for existing MotionGfx track fragments.
 pub struct Sequence<'a, W, C = ()> {
-    preparation_error: Option<motiongfx::spring::SpringError>,
+    preparation_error: Option<PreparationError>,
     context: C,
     builder: TimelineBuilder<'a, W>,
     fragments: Vec<TrackFragment>,
@@ -343,7 +374,7 @@ impl<'a, W: 'static, C> Sequence<'a, W, C> {
 
     pub fn try_compile(
         self,
-    ) -> Result<Timeline<W>, motiongfx::spring::SpringError> {
+    ) -> Result<Timeline<W>, PreparationError> {
         if let Some(error) = self.preparation_error {
             return Err(error);
         }

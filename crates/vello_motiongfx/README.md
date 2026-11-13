@@ -14,7 +14,7 @@ use vello_motiongfx::Renderer;
 let mut scene = Scene::new();
 let dot = scene.add(Circle::new(12.0));
 let mut animation = scene.animate(|sequence| {
-    sequence.play(dot.position.x.to(100.0));
+    sequence.play(dot.position_x().to(100.0));
 });
 let mut renderer = Renderer::default();
 let mut frame = vello::Scene::new();

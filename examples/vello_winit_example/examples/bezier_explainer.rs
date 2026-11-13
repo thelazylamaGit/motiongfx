@@ -211,7 +211,7 @@ fn main() -> Result<(), winit::error::EventLoopError> {
     let animation = scene.animate(|sequence| {
         sequence.defaults(s(1), ease::linear);
         sequence.play_all(grid_lines.iter().map(|line| {
-            line.reveal
+            line.reveal()
                 .to(1.0)
                 .over(ms(900))
                 .ease(ease::cubic::ease_in_out)
@@ -219,18 +219,17 @@ fn main() -> Result<(), winit::error::EventLoopError> {
         sequence.play(guides.to(1.0).over(ms(600)));
         sequence.play(
             chapter
-                .content
-                .set("02  SLIDE TWO POINTS - TRACE A CURVE"),
+                .set_content("02  SLIDE TWO POINTS - TRACE A CURVE"),
         );
         sequence.parallel(|sequence| {
             sequence.play(t.to(1.0).over(s(4)));
-            sequence.play(curve.end.to(1.0).over(s(4)));
+            sequence.play(curve.end().to(1.0).over(s(4)));
         });
         sequence.play(t.to(0.5).ease(ease::cubic::ease_in_out));
         sequence.play(
-            chapter
-                .content
-                .set("03  MOVE P1 - THE WHOLE CURVE RESPONDS"),
+            chapter.set_content(
+                "03  MOVE P1 - THE WHOLE CURVE RESPONDS",
+            ),
         );
         for offset in [200.0, -240.0, 40.0] {
             sequence.play(
@@ -240,9 +239,9 @@ fn main() -> Result<(), winit::error::EventLoopError> {
             );
         }
         sequence.play(
-            chapter
-                .content
-                .set("04  SAME MATH AT EVERY TIMELINE POSITION"),
+            chapter.set_content(
+                "04  SAME MATH AT EVERY TIMELINE POSITION",
+            ),
         );
         sequence.play(
             t.to(1.0).over(ms(1500)).ease(ease::cubic::ease_in_out),

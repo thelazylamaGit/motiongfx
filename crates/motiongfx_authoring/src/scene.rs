@@ -11,7 +11,7 @@ use std::{any::TypeId, time::Duration};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SceneError {
     Binding(BindingError),
-    Preparation(motiongfx::spring::SpringError),
+    Preparation(crate::PreparationError),
     Target(String),
 }
 impl From<BindingError> for SceneError {
@@ -21,7 +21,12 @@ impl From<BindingError> for SceneError {
 }
 impl From<motiongfx::spring::SpringError> for SceneError {
     fn from(e: motiongfx::spring::SpringError) -> Self {
-        Self::Preparation(e)
+        Self::Preparation(e.into())
+    }
+}
+impl From<crate::PreparationError> for SceneError {
+    fn from(error: crate::PreparationError) -> Self {
+        Self::Preparation(error)
     }
 }
 impl std::fmt::Display for SceneError {

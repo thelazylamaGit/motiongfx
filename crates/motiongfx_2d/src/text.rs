@@ -102,20 +102,6 @@ impl TextId {
 #[derive(Clone, Copy)]
 pub struct TextHandle {
     pub(crate) id: TextId,
-    pub content: fields::content::Target,
-    pub position: text_position,
-    pub font_size: fields::font_size::Target,
-    pub font_family: fields::font_family::Target,
-    pub font_weight: fields::font_weight::Target,
-    pub font_style: fields::font_style::Target,
-    pub line_height: fields::line_height::Target,
-    pub letter_spacing: fields::letter_spacing::Target,
-    pub wrap_width: fields::wrap_width::Target,
-    pub fill: fields::fill::Target,
-    pub opacity: fields::opacity::Target,
-    pub scale: fields::scale::Target,
-    pub rotation: fields::rotation::Target,
-    pub align: fields::align::Target,
 }
 impl TextHandle {
     pub fn id(self) -> TextId {
@@ -157,23 +143,7 @@ pub(crate) fn insert_text<M: Model2d>(
         .graphics_mut()
         .order
         .push(DrawObject::Text(id));
-    TextHandle {
-        id,
-        content: motiongfx_authoring::Target::new(id),
-        position: text_position_axes(id),
-        font_size: motiongfx_authoring::Target::new(id),
-        font_family: motiongfx_authoring::Target::new(id),
-        font_weight: motiongfx_authoring::Target::new(id),
-        font_style: motiongfx_authoring::Target::new(id),
-        line_height: motiongfx_authoring::Target::new(id),
-        letter_spacing: motiongfx_authoring::Target::new(id),
-        wrap_width: motiongfx_authoring::Target::new(id),
-        fill: motiongfx_authoring::Target::new(id),
-        opacity: motiongfx_authoring::Target::new(id),
-        scale: motiongfx_authoring::Target::new(id),
-        rotation: motiongfx_authoring::Target::new(id),
-        align: motiongfx_authoring::Target::new(id),
-    }
+    TextHandle { id }
 }
 
 // Fixed field identity is generated locally; no accessor metadata is stored in
@@ -210,4 +180,42 @@ pub fn text_position_axes(id: TextId) -> text_position {
         motiongfx_authoring::Target::new(id),
         motiongfx_authoring::Target::new(id),
     )
+}
+
+crate::properties::handle_methods!(TextHandle,Text,TextId;
+content: Arc<str>;
+font_size: f64;
+font_family: Arc<str>;
+font_weight: FontWeight;
+font_style: FontStyle;
+line_height: f64;
+letter_spacing: f64;
+wrap_width: f64;
+fill: Color;
+opacity: f64;
+scale: f64;
+rotation: f64;
+align: TextAlign;
+position: Point;
+position_x: f64;
+position_y: f64;
+);
+
+crate::properties::transform_methods!(TextHandle, Text, TextId);
+
+crate::properties::fill_methods!(TextHandle, Text, TextId);
+
+impl TextHandle {
+    /// Replace plain text at the scheduled time, without a tween or duration.
+    pub fn set_content(
+        self,
+        content: impl Into<Arc<str>>,
+    ) -> motiongfx_authoring::Change<
+        TextId,
+        Text,
+        Arc<str>,
+        impl Fn(&Arc<str>) -> Arc<str> + Send + Sync,
+    > {
+        self.content().set(content)
+    }
 }

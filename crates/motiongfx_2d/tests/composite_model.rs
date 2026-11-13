@@ -64,7 +64,7 @@ fn portable_objects_and_other_models_share_sources_schedule_and_backward_seeking
     );
     let (z, opacity) = scene.add(Depth::default());
     let shared =
-        computed((dot.position.x, &progress), |(x, p)| x + p);
+        computed((dot.position_x(), &progress), |(x, p)| x + p);
     scene.bind(z, &shared, |v| v * 2.0);
     let follower =
         scene.add(Circle::new(3.0).position(z.map(|z| (0.0, z))));

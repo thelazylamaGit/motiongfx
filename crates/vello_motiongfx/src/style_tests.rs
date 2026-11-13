@@ -95,9 +95,9 @@ fn later_style_or_direct_setter_removes_obsolete_reactive_wiring() {
         .try_animate(|sequence| {
             sequence.parallel(|sequence| {
                 sequence
-                    .play(a.font_size.to(40.0).ease(ease::linear));
+                    .play(a.font_size().to(40.0).ease(ease::linear));
                 sequence
-                    .play(b.font_size.to(40.0).ease(ease::linear));
+                    .play(b.font_size().to(40.0).ease(ease::linear));
             });
         })
         .unwrap();
