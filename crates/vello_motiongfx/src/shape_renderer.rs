@@ -278,11 +278,17 @@ wedge_renderer!(Chevron, false);
 /// Records Vello commands and owns renderer-specific geometry/text caches.
 #[derive(Default)]
 pub struct Renderer {
+    text_fonts: Option<motiongfx_text::FontSystem>,
     pub(crate) path_geometry: Vec<path_renderer::PathGeometry>,
     pub(crate) text_layouts: Vec<text_renderer::TextLayout>,
     pub(crate) triangle_geometry: Vec<CachedTriangle>,
 }
 impl Renderer {
+    /// Lazily create the shared font/layout resources, including embedded Fira
+    /// Sans. Register application fonts here before rendering font-backed text.
+    pub fn fonts_mut(&mut self) -> &mut motiongfx_text::FontSystem {
+        self.text_fonts.get_or_insert_with(Default::default)
+    }
     pub fn render<M: Model2d>(
         &mut self,
         animation: &motiongfx_authoring::Animation<M>,
@@ -322,9 +328,9 @@ impl Renderer {
                 .push(path_renderer::PathGeometry::new(path));
         }
         self.text_layouts.truncate(graphics.texts().len());
-        for text in &graphics.texts()[self.text_layouts.len()..] {
+        for _ in &graphics.texts()[self.text_layouts.len()..] {
             self.text_layouts
-                .push(text_renderer::TextLayout::new(text));
+                .push(text_renderer::TextLayout::default());
         }
         self.triangle_geometry.truncate(graphics.triangles().len());
         for triangle in
@@ -387,6 +393,8 @@ impl Renderer {
                         text,
                         scene,
                         screen * graphics.text_parent_transform(text),
+                        &mut self.text_fonts,
+                        graphics.text_selections(),
                     );
                 }
             }

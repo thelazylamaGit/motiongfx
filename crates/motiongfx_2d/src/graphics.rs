@@ -11,6 +11,7 @@ pub struct Graphics {
     pub(crate) lines: Vec<Line>,
     pub(crate) paths: Vec<Path>,
     pub(crate) texts: Vec<Text>,
+    pub(crate) text_selections: Vec<TextSelection>,
     pub(crate) order: Vec<DrawObject>,
 }
 

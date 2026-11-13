@@ -1,7 +1,7 @@
-//! Temporary 5x7 vector lettering, with no font file or shaping engine.
+//! Legacy immediate 5x7 vector lettering, with no font file or shaping engine.
 //! ASCII letters are displayed in uppercase; unknown characters use `?`.
-//! This renderer is separate from Text state so proper font layout can replace
-//! it later. Legacy immediate drawing remains available through `draw`.
+//! Retained for preview controls and low-level examples. Authored `Text` uses
+//! the font-backed renderer instead; this is not an alternate Text font mode.
 
 use vello::Scene;
 use vello::kurbo::{Affine, BezPath, Point, Rect, Shape, Size};

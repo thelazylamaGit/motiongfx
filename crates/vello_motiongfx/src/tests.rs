@@ -269,14 +269,29 @@ fn mixed_text_and_rectangle_objects_render_in_insertion_order() {
         None,
         &Rect::new(-5.0, -5.0, 5.0, 5.0).to_rounded_rect(0.0),
     );
-    lettering::draw(
-        &mut expected,
-        screen,
-        Point::ZERO,
-        "A",
-        Color::WHITE,
-        1.0,
+    let prepared = renderer.fonts_mut().layout(
+        "A".into(),
+        &motiongfx_text::LayoutStyle {
+            size: 7.0,
+            ..Default::default()
+        },
     );
+    for run in &prepared.runs {
+        expected
+            .draw_glyphs(&run.font)
+            .font_size(run.font_size)
+            .normalized_coords(&run.normalized_coords)
+            .transform(screen)
+            .brush(Color::WHITE)
+            .draw(
+                Fill::NonZero,
+                run.glyphs.iter().map(|g| vello::Glyph {
+                    id: g.id,
+                    x: g.x,
+                    y: g.y,
+                }),
+            );
+    }
     expected.fill(
         Fill::NonZero,
         screen,
@@ -292,7 +307,7 @@ fn mixed_text_and_rectangle_objects_render_in_insertion_order() {
         actual.encoding().path_data,
         expected.encoding().path_data
     );
-    assert_eq!(actual.encoding().n_paths, 3);
+    assert_eq!(actual.encoding().resources.glyph_runs.len(), 1);
 }
 
 #[test]
@@ -341,9 +356,9 @@ fn anchored_text_inherits_parent_motion_and_keeps_independent_local_animation()
             Size::new(100.0, 100.0),
             1.0,
         );
-        assert_eq!(rendered.encoding().n_paths, 2);
+        assert_eq!(rendered.encoding().resources.glyph_runs.len(), 1);
         assert_eq!(
-            renderer.text_layouts[label.id().index()].rebuilds,
+            renderer.text_layouts[label.id().index()].fonts.builds(),
             1
         );
     }

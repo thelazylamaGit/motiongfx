@@ -14,7 +14,8 @@ individual APIs; example source is the reference for working usage.
   foundation. Do not introduce a competing timeline merely to shorten syntax.
 - Keep window/GPU setup and playback controls out of animation descriptions.
   `motiongfx_authoring` owns shared scene/sampling; `motiongfx_2d` owns portable
-  objects/geometry/styles; `vello_motiongfx` owns rendering/caches;
+  objects/geometry/styles; `motiongfx_text` owns font shaping/layout;
+  `vello_motiongfx` owns rendering/caches;
   `vello_winit_motiongfx` owns the native preview host.
   See [the implemented separation](docs/backend-separation.md) for adapter contracts.
 - Prefer explicit object creation and understandable animated properties.
@@ -48,10 +49,10 @@ individual APIs; example source is the reference for working usage.
 Run checks appropriate to the changed crates. For authoring/Vello/host changes:
 
 ```sh
-cargo test -p motiongfx_authoring -p motiongfx_2d -p vello_motiongfx -p vello_winit_motiongfx -p vello_winit_example --all-targets
-cargo test -p motiongfx_authoring -p motiongfx_2d -p vello_motiongfx -p vello_winit_motiongfx --doc
-cargo clippy -p motiongfx_authoring -p motiongfx_2d -p vello_motiongfx -p vello_winit_motiongfx -p vello_winit_example --all-targets -- -D warnings
-cargo fmt -p motiongfx_authoring -p motiongfx_2d -p vello_motiongfx -p vello_winit_motiongfx -p vello_winit_example -- --check
+cargo test -p motiongfx_text -p motiongfx_authoring -p motiongfx_2d -p vello_motiongfx -p vello_winit_motiongfx -p vello_winit_example --all-targets
+cargo test -p motiongfx_text -p motiongfx_authoring -p motiongfx_2d -p vello_motiongfx -p vello_winit_motiongfx --doc
+cargo clippy -p motiongfx_text -p motiongfx_authoring -p motiongfx_2d -p vello_motiongfx -p vello_winit_motiongfx -p vello_winit_example --all-targets -- -D warnings
+cargo fmt -p motiongfx_text -p motiongfx_authoring -p motiongfx_2d -p vello_motiongfx -p vello_winit_motiongfx -p vello_winit_example -- --check
 ```
 
 Put meaningful engine/API tests in crate tests. Avoid filling demonstration

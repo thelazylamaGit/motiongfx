@@ -10,6 +10,7 @@ current APIs, rationale and future options.
 | Actions, timelines, interpolation, baking, sampling | Existing `motiongfx` |
 | Shared Scene/Animation lifecycle, registration/property preparation, signals/computations, native binding/update execution | `motiongfx_authoring` |
 | 2D state/storage, shape builders/handles, geometry, styles, attachments, 2D camera semantics | `motiongfx_2d` |
+| Font shaping/layout, glyph/source mappings and bounds | `motiongfx_text` |
 | Vello command recording and renderer caches/resources | `vello_motiongfx` |
 | Native window/surface/clock/controls | `vello_winit_motiongfx` |
 | Serialized documents, named registries and compilation | Existing `motiongfx_scene`, distinct from live authoring |

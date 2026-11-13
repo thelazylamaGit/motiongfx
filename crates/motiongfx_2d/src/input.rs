@@ -9,6 +9,11 @@ use std::sync::Arc;
 pub struct Input<T, M = Graphics>(
     pub(crate) motiongfx_authoring::Input<M, T>,
 );
+impl<M> From<f64> for Input<crate::FontWeight, M> {
+    fn from(value: f64) -> Self {
+        Self::fixed(value.into())
+    }
+}
 impl<T: Clone, M> Clone for Input<T, M> {
     fn clone(&self) -> Self {
         Self(self.0.clone())

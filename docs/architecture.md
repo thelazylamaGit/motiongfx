@@ -1,6 +1,6 @@
 # Native authoring architecture and direction
 
-This note records the current native authoring work as of 2026-11-13. It is a
+This note records the current native authoring work as of 2026-11-14. It is a
 handoff for contributors and coding agents, not a commitment to implement every
 future feature below. Update it alongside architectural changes.
 
@@ -31,6 +31,7 @@ engine, build a complete editor, or introduce ECS.
 | [`motiongfx_authoring`](../crates/motiongfx_authoring/README.md) | Shared `Scene<M>`/`Animation<M>` lifecycle, registration/property preparation, sequences, signals/computations and native binding/update execution. No graphics/window dependency. |
 | [`motiongfx_2d`](../crates/motiongfx_2d/README.md) | Portable 2D objects/storage, geometry, styles, typed handles, attachments and camera semantics. Uses Kurbo/Peniko directly, not Vello/Winit. |
 | [`peniko_motiongfx`](../crates/peniko_motiongfx/README.md) | Geometry/color interpolation and path-related integration; not a window host or complete scene renderer. |
+| [`motiongfx_text`](../crates/motiongfx_text/README.md) | Shared Parley font/layout contexts, embedded/registered fonts, positioned glyphs, UTF-8 cluster ranges and layout bounds; no scene/window/GPU. |
 | [`vello_motiongfx`](../crates/vello_motiongfx/README.md) | Vello drawing and renderer-owned caches. Consumes portable sampled models; compatibility re-exports do not implement a second model or lifecycle. |
 | [`vello_winit_motiongfx`](../crates/vello_winit_motiongfx/README.md) | Native window/GPU setup, resize/DPI handling, playback clock, play/pause and scrubbing controls. These are shared host facilities, not required scene objects. |
 | [`motiongfx_scene`](../crates/motiongfx_scene/README.md) | Serializable scene/timeline documents, named registries and compilation into core actions. Distinct from live `motiongfx_authoring::Scene<M>`; not currently a dependency of native authoring. |
@@ -170,7 +171,7 @@ a calculation does not omit that circle from the picture.
 ## Which API to use
 
 Reusable appearance settings use typed partial styles. `TextStyle` currently
-contains optional typed inputs for font size, alignment, fill and opacity;
+contains optional typed inputs for font family/size/weight/style, spacing, wrapping, alignment, fill and opacity;
 content/transforms/parent attachment remain object-specific. `Object::style`
 accepts a compatible `ApplyStyle<T>` implementation and applies only configured
 fields through the existing object setters. Later styles/setters win, including
@@ -306,10 +307,28 @@ Useful comparison cases:
   on resize. Headless seek/timing regressions are in the example support folder.
 - `camera_zoom`: camera transforms without changing the underlying objects.
 
-Native `Text` currently uses temporary vector lettering, not general font
-shaping. Do not describe it as Parley/Typst support. Camera/parent transforms and
-basic text are present; full layout, rich code/glyph transitions, 3D, and a
-general effect stack are not established by this API.
+Native `Text` now uses Parley shaping and Vello glyph runs. The independent
+`motiongfx_text` crate retains source/cluster mappings and advance/line bounds;
+`motiongfx_2d` owns portable text/selection state; Vello owns shared font contexts
+and per-object layout caches. Default output uses embedded Fira Sans, not OS
+font discovery or the old hardcoded lettering. Additional fonts can be registered
+on the renderer and supplied to the host with `Window::renderer`.
+
+Layout keys contain content and font/layout inputs plus font registration revision.
+Paint, opacity and transforms do not reshape. Invalid numeric styles produce no
+glyphs. Static font faces do not offer continuous weight morphing; variable-font
+coordinates are preserved when supplied by Parley. No benchmark is claimed.
+
+Typed literal/byte-range selections animate fill/opacity without independent draw
+nodes. Selections use the initial fixed source snapshot, validate UTF-8 boundaries,
+and expand to whole clusters. Changed source disables them; backward seeking to
+the same source restores them. Later overlapping selections win; selection fill
+is independently owned, initialized from the text fill. No automatic edit remapping,
+per-part transforms, text matching, write-in, code highlighting or Typst adapter
+is implemented. These are future extensions, not reasons to add another timeline.
+Legacy immediate 5x7 lettering remains for preview chrome and two low-level demos;
+it is not an authored font mode. Full layout, 3D and a general effect stack remain
+outside the current scope.
 
 Shape morphing, animatable gradients/shadows/blur and
 richer text/code transitions have been discussed as future capabilities. Their

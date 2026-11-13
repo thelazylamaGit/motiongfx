@@ -1,0 +1,16 @@
+[package]
+name = "motiongfx_text"
+description = "Renderer-independent font layout and source selections for MotionGfx."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+motiongfx_interp = { workspace = true, features = ["std"] }
+parley = { version = "0.11.1", default-features = false, features = ["std"] }
+peniko = { workspace = true, features = ["std"] }
+kurbo = "0.13"
+
+[lints]
+workspace = true

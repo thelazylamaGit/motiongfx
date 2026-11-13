@@ -196,20 +196,29 @@ waits, parallel blocks/collections, chained branches, and staggered collections.
 It expands to the same builder API and does not change playback or rendering.
 See `crates/motiongfx_authoring/README.md` for its syntax and scope.
 
-The temporary renderer is still 5x7 vector lettering, **not a real font**.
-ASCII letters display in uppercase, newline starts a new line, and unsupported
-characters use a question mark. `font_size` is the seven-cell glyph height in
-logical canvas units. No font selection, shaping, Unicode layout, or typesetting
-integration is implemented yet.
+Text uses real font shaping through [motiongfx_text](../motiongfx_text/README.md)
+and Vello glyph runs. Fira Sans is embedded by default; `.font_family("...")`
+selects a registered family. `TextStyle` shares font/layout/paint inputs just
+like explicit setters. `font_weight` accepts numeric values or `FontWeight`
+constants; `font_style` selects normal/italic/oblique. Line height is a font-size
+multiplier, letter spacing is in canvas units, and wrap width zero is unconstrained.
+Position anchors the block's top; `TextAlign` anchors its total width horizontally.
+It does not set per-paragraph alignment or provide a general layout system.
 
-Text state/handles live in this crate's `text.rs`; Vello cached rendering lives in
-`vello_motiongfx/src/text_renderer.rs` and `lettering.rs`. Geometry is separate from cloned/sampled
-state, and rebuilds only when content changes. Font size currently scales the
-unit geometry, so font-size, transform, color and opacity animations reuse it.
-Content is stored as `Arc<str>` so sampling does not copy string allocations.
-This separation allows replacing the lettering/layout code with proper font
-rendering later while preserving the basic authoring API. Font-dependent
-layout would need to include its font/style inputs in its cache key.
+`text.select(&mut scene, "word")?`, `select_nth` and `select_range` register typed
+fill/opacity targets. Literal selection uses the initial fixed source; animated
+content has no automatic selection remapping. Invalid/missing selections return
+`SelectionError`. Later overlapping selections win. A selection initially copies
+the text's fill, then owns its fill independently; opacity multiplies text opacity.
+Changed content disables the selection until the same source returns on a seek.
+Partial ligatures paint as whole clusters. Selections are metadata, not additional
+scene objects. Whole-object position/scale/rotation continue to work normally.
+
+Renderer-owned layout is cached by content, font and layout inputs; paint and
+transform animation do not reshape. Font size or weight changes can reshape,
+while scale reuses glyph layout. Source strings are `Arc<str>`, avoiding copies
+of their allocations when sampling. Advanced write-in, per-part transforms and
+text replacement/matching transitions are future work, not implemented features.
 
 `Scene::animate` consumes the scene, builds a MotionGfx timeline and
 bakes its targets. `Animation::sample` uses the existing MotionGfx sampler;

@@ -1,6 +1,9 @@
-//! Text authoring state, independent of the temporary lettering renderer.
+//! Portable text state, independent of renderer-owned glyph/layout caches.
 
-use crate::{Color, Parent, Point, Position, SceneObject};
+use crate::{
+    Color, FontStyle, FontWeight, Parent, Point, Position,
+    SceneObject, TextSelectionId,
+};
 use crate::{DrawObject, Model2d, World};
 use motiongfx::prelude::{SubjectSource, path};
 use motiongfx_authoring::Property;
@@ -17,18 +20,25 @@ pub enum TextAlign {
 
 /// Plain text with its own position, style and transform. Position is the top
 /// of the text block; horizontal anchoring is controlled by `align`.
-/// The initial renderer uses limited ASCII vector lettering, not font shaping.
+/// Defaults to embedded Fira Sans. Family selection and layout are shared across renderers.
 #[derive(Clone)]
 pub struct Text {
     pub content: Arc<str>,
     pub position: Point,
     pub font_size: f64,
+    pub font_family: Arc<str>,
+    pub font_weight: FontWeight,
+    pub font_style: FontStyle,
+    pub line_height: f64,
+    pub letter_spacing: f64,
+    pub wrap_width: f64,
     pub fill: Color,
     pub opacity: f64,
     pub scale: f64,
     pub rotation: f64,
     pub align: TextAlign,
     pub(crate) parent: Option<Parent>,
+    pub(crate) selections: Vec<TextSelectionId>,
 }
 
 impl Text {
@@ -39,14 +49,24 @@ impl Text {
             content: Arc::from(""),
             position: Point::ZERO,
             font_size: 24.0,
+            font_family: "Fira Sans".into(),
+            font_weight: FontWeight::NORMAL,
+            font_style: FontStyle::Normal,
+            line_height: 1.3,
+            letter_spacing: 0.0,
+            wrap_width: 0.0,
             fill: Color::WHITE,
             opacity: 1.0,
             scale: 1.0,
             rotation: 0.0,
             align: TextAlign::Left,
             parent: None,
+            selections: Vec::new(),
         })
         .content(content)
+    }
+    pub fn selections(&self) -> &[TextSelectionId] {
+        &self.selections
     }
 }
 
@@ -54,6 +74,8 @@ crate::object::properties!(Text;
     content: Arc<str>, position: Point, scale: f64, rotation: f64;
     style TextStyle {
         font_size: f64, fill: Color, opacity: f64, align: TextAlign,
+        font_family: Arc<str>, font_weight: FontWeight, font_style: FontStyle,
+        line_height: f64, letter_spacing: f64, wrap_width: f64,
     }
 );
 impl<M: crate::Model2d> crate::Object<Text, M> {
@@ -84,6 +106,12 @@ pub struct TextHandle {
     pub content: Property<TextId, Text, Arc<str>>,
     pub position: Position<TextId, Text>,
     pub font_size: Property<TextId, Text, f64>,
+    pub font_family: Property<TextId, Text, Arc<str>>,
+    pub font_weight: Property<TextId, Text, FontWeight>,
+    pub font_style: Property<TextId, Text, FontStyle>,
+    pub line_height: Property<TextId, Text, f64>,
+    pub letter_spacing: Property<TextId, Text, f64>,
+    pub wrap_width: Property<TextId, Text, f64>,
     pub fill: Property<TextId, Text, Color>,
     pub opacity: Property<TextId, Text, f64>,
     pub scale: Property<TextId, Text, f64>,
@@ -140,6 +168,12 @@ pub(crate) fn insert_text<M: Model2d>(
             path!(Text.position.y),
         ),
         font_size: Property::new(id, path!(Text.font_size)),
+        font_family: Property::discrete(id, path!(Text.font_family)),
+        font_weight: Property::new(id, path!(Text.font_weight)),
+        font_style: Property::discrete(id, path!(Text.font_style)),
+        line_height: Property::new(id, path!(Text.line_height)),
+        letter_spacing: Property::new(id, path!(Text.letter_spacing)),
+        wrap_width: Property::new(id, path!(Text.wrap_width)),
         fill: Property::new(id, path!(Text.fill)),
         opacity: Property::new(id, path!(Text.opacity)),
         scale: Property::new(id, path!(Text.scale)),

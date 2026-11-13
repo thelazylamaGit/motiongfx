@@ -41,10 +41,19 @@ Portable objects, styles, attachment semantics, camera and geometry live in
 Geometry/color interpolation remains supplied by `peniko_motiongfx`.
 See [architecture](../../docs/architecture.md).
 
-The initial text adapter still uses cached ASCII vector lettering, not font
-shaping or Typst. The legacy public `lettering` module supports low-level host
-examples. Rich font/layout integration can replace this renderer without
-putting Vello resources into portable Text state.
+Text is shaped by [motiongfx_text](../motiongfx_text/README.md), then emitted as
+Vello glyph runs. One renderer-owned `FontSystem` shares font resources and one
+layout cache per text object retains only the current source/style. Font size,
+family, weight, style, spacing and wrap width are layout inputs; fill, opacity,
+selection paint and scene transforms are resolved afterwards. Reshaping happens
+on relevant changes, not for every transform sample. The four embedded Fira Sans
+faces provide deterministic default text without system font discovery.
+
+Register custom font bytes with `renderer.fonts_mut().register_font(bytes)`
+(check its boolean result), then select their actual family name in `Text`.
+To use this renderer in a native preview, pass it to `Window::renderer(renderer)`.
+The legacy `lettering` module remains only for immediate preview controls and
+low-level demonstrations; authored Text has one font-backed rendering path.
 
 Integration tests here compare Vello command output, exercise cache reuse and
 verify authoring behavior against core MotionGfx, including backward seeking.

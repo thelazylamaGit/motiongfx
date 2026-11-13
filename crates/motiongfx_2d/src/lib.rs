@@ -20,6 +20,9 @@ pub use motiongfx_authoring::{
     Signal, SignalId, Source, Spring, SpringCurve, SpringError,
     World, animate, computed, signal, smooth,
 };
+pub use motiongfx_text::{
+    FontStyle, FontWeight, SelectionError, TextRange,
+};
 pub use peniko::Color;
 use peniko_motiongfx as _;
 pub type Scene = motiongfx_authoring::Scene<Graphics>;
@@ -58,6 +61,7 @@ mod properties;
 mod rounded_triangle;
 mod style;
 mod text;
+mod text_selection;
 mod tips;
 mod updates;
 pub use background::BackgroundId;
@@ -72,6 +76,9 @@ pub use path::{BezPath, Path, PathHandle, PathId};
 pub use properties::Position;
 pub use style::ApplyStyle;
 pub use text::{Text, TextAlign, TextHandle, TextId, TextStyle};
+pub use text_selection::{
+    TextSelection, TextSelectionHandle, TextSelectionId,
+};
 pub use tips::{
     EndpointTip, LineTip, LineTipHandle, LineWithTips, NoTip,
 };
@@ -85,9 +92,9 @@ pub use rounded_triangle::Geometry;
 pub mod prelude {
     pub use crate::{
         Animation, Animation2dExt, Camera, Cap, Chevron, Circle,
-        Color, Join, Line, Model2d, Path, Point, Rectangle, Scene,
-        Scene2dExt, Size, Spring, Text, TextAlign, TextStyle,
-        Triangle, Vec2, computed, signal,
+        Color, FontStyle, FontWeight, Join, Line, Model2d, Path,
+        Point, Rectangle, Scene, Scene2dExt, Size, Spring, Text,
+        TextAlign, TextStyle, Triangle, Vec2, computed, signal,
     };
 }
 

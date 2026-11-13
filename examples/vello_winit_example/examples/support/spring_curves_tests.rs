@@ -16,7 +16,8 @@ fn curve_geometry_and_spring_balls_are_independent_of_seek_history() {
         .map(|s| s.prepare().unwrap().duration())
         .max()
         .unwrap()
-        + ms(1800);
+        // Initial wait (500), post-run hold (100), then rewind (500).
+        + ms(1100);
     let morph_times = [ms(250), ms(750), ms(500)]
         .map(|offset| second_start + offset);
     let mut morph_paths = Vec::new();

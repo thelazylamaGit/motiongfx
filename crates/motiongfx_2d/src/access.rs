@@ -120,6 +120,9 @@ impl Graphics {
     pub fn texts(&self) -> &[Text] {
         &self.texts
     }
+    pub fn text_selections(&self) -> &[TextSelection] {
+        &self.text_selections
+    }
     pub fn draw_order(&self) -> &[DrawObject] {
         &self.order
     }

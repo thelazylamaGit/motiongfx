@@ -21,6 +21,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `camera_zoom` | Manim-style `Zoom` | Parallel camera pan/zoom, a hold, and returning to the original view |
 | `sine_unit_circle` | Manim `SineCurveUnitCircle` | Shared progress signal, `.map`/`computed!` positions, reactive object inputs, and cached path reveal |
 | `bezier_explainer` | Quadratic Bézier lesson | Typed signals/computed values, source-aware object creation, exact quadratic geometry, and ping-pong playback |
+| `text_animation` | Native font text | Embedded Fira Sans, fade/slide/scale and typed word fill/opacity animation |
 | `radius_area` | Motion Canvas radius/area signals | One animated radius drives circle size, a dashed line with inline triangle tips, label positions and computed area text; labels share a typed `TextStyle` |
 
 ```sh
@@ -30,6 +31,7 @@ cargo run -p vello_winit_example --example camera_zoom
 cargo run -p vello_winit_example --example sine_unit_circle
 cargo run -p vello_winit_example --example bezier_explainer
 cargo run -p vello_winit_example --example radius_area
+cargo run -p vello_winit_example --example text_animation
 ```
 
 The radius/area example mirrors the supplied signal relationships: radius
@@ -40,8 +42,8 @@ The displayed area is `PI * r * r`, in mathematical units; only geometry uses
 the 100px/unit scale. Source y-down label positions are converted to y-up,
 with a 20px top inset replacing the source's text padding. The radius line
 uses reusable native dash/arrow/endpoint-trim support, with its tip 8px inside
-the circle. Text uses the existing cached 5x7 lettering, not a font renderer:
-font weight 700 and the source font metrics are not reproduced.
+the circle. Authored Text uses embedded Fira Sans through Parley/Vello; metrics can differ
+from the source scene font.
 `scene.set_background(...)` selects a light clear color without a background
 rectangle, making the supplied red/dark annotation colors easy to inspect.
 No explicit bindings or update callbacks are needed in the example.
@@ -110,8 +112,8 @@ or label animation tracks. The pass caption uses
 The ordinary Rust sorting loop schedules all bar moves together with `play_all`.
 The example contains only scene creation and choreography; reusable-crate tests
 cover nested properties, anchoring, text changes, rendering caches and seeking.
-The initial text renderer is still cached ASCII vector lettering, not a real
-font/shaping engine. The original annotated low-level version remains as
+Authored Text uses cached real-font shaping. The original annotated low-level
+version retains the legacy immediate lettering and remains as
 `insertion_sort_low_level` for comparisons.
 
 Run from the workspace root:

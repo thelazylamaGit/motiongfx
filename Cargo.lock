@@ -3988,6 +3988,7 @@ dependencies = [
  "kurbo",
  "motiongfx",
  "motiongfx_authoring",
+ "motiongfx_text",
  "peniko",
  "peniko_motiongfx",
 ]
@@ -4018,6 +4019,16 @@ dependencies = [
  "serde_json",
  "typarena",
  "uuid",
+]
+
+[[package]]
+name = "motiongfx_text"
+version = "0.5.0"
+dependencies = [
+ "kurbo",
+ "motiongfx_interp",
+ "parley",
+ "peniko",
 ]
 
 [[package]]
@@ -6039,6 +6050,7 @@ dependencies = [
  "motiongfx",
  "motiongfx_2d",
  "motiongfx_authoring",
+ "motiongfx_text",
  "peniko_motiongfx",
  "vello",
 ]

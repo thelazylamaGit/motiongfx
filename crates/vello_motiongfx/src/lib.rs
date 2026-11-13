@@ -38,4 +38,6 @@ mod style_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod text_tests;
+#[cfg(test)]
 mod update_tests;

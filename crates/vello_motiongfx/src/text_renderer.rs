@@ -1,103 +1,129 @@
-//! Cached output of the temporary text renderer, separate from sampled Text.
+//! Renderer-owned text caches. Paint and transforms are resolved after layout.
+use crate::{Text, TextAlign, TextSelection};
+use motiongfx_text::{FontSystem, LayoutCache, LayoutStyle};
+use std::{ops::Range, sync::Arc};
+use vello::kurbo::Affine;
+use vello::peniko::{Color, Fill};
 
-use crate::{Text, TextAlign, lettering};
-use std::sync::Arc;
-use vello::kurbo::{Affine, BezPath, Size};
-use vello::peniko::Fill;
-
+#[derive(Default)]
 pub(crate) struct TextLayout {
-    content: Arc<str>,
-    path: BezPath,
-    size: Size,
-    #[cfg(test)]
-    pub(crate) rebuilds: usize,
+    active_selections: Vec<usize>,
+    pub(crate) fonts: LayoutCache,
 }
-
-impl TextLayout {
-    pub(crate) fn new(text: &Text) -> Self {
-        let (path, size) = lettering::layout(&text.content);
-        Self {
-            content: text.content.clone(),
-            path,
-            size,
-            #[cfg(test)]
-            rebuilds: 1,
+fn anchor(align: TextAlign, width: f64) -> f64 {
+    match align {
+        TextAlign::Left => 0.0,
+        TextAlign::Center => width / 2.0,
+        TextAlign::Right => width,
+    }
+}
+fn paint(
+    text: &Text,
+    range: &Range<usize>,
+    selections: &[TextSelection],
+    active: &[usize],
+) -> Color {
+    let mut color = text.fill;
+    let mut opacity = text.opacity.clamp(0.0, 1.0) as f32;
+    for &index in active {
+        let selection = &selections[index];
+        let selected = selection.range.range();
+        if selected.start < range.end && range.start < selected.end {
+            color = selection.fill;
+            opacity = text.opacity.clamp(0.0, 1.0) as f32
+                * selection.opacity.clamp(0.0, 1.0) as f32;
         }
     }
-
+    color.with_alpha(color.components[3] * opacity)
+}
+impl TextLayout {
     pub(crate) fn render(
         &mut self,
         text: &Text,
         scene: &mut vello::Scene,
         screen: Affine,
+        fonts: &mut Option<FontSystem>,
+        selections: &[TextSelection],
     ) {
-        if self.content != text.content {
-            *self = Self {
-                #[cfg(test)]
-                rebuilds: self.rebuilds + 1,
-                ..Self::new(text)
-            };
-        }
-        let opacity = text.opacity.clamp(0.0, 1.0);
-        if opacity == 0.0
-            || text.font_size <= 0.0
-            || text.scale == 0.0
-        {
+        if text.scale == 0.0 || text.opacity <= 0.0 {
             return;
         }
-        let anchor = match text.align {
-            TextAlign::Left => 0.0,
-            TextAlign::Center => self.size.width / 2.0,
-            TextAlign::Right => self.size.width,
-        };
-        // Lettering paths use y-down coordinates to keep glyphs upright.
-        let xf = screen
+        self.active_selections.clear();
+        for id in text.selections() {
+            if let Some(selection) = selections.get(id.index())
+                && (Arc::ptr_eq(
+                    selection.range.source(),
+                    &text.content,
+                ) || selection.range.source().as_ref()
+                    == text.content.as_ref())
+            {
+                self.active_selections.push(id.index());
+            }
+        }
+        let transform = screen
             * Affine::translate((text.position.x, -text.position.y))
             * Affine::rotate(-text.rotation)
-            * Affine::scale(text.scale * text.font_size / 7.0)
-            * Affine::translate((-anchor, 0.0));
-        let alpha = text.fill.components[3] * opacity as f32;
-        scene.fill(
-            Fill::NonZero,
-            xf,
-            text.fill.with_alpha(alpha),
-            None,
-            &self.path,
+            * Affine::scale(text.scale);
+        let layout = self.fonts.get(
+            fonts.get_or_insert_with(FontSystem::default),
+            text.content.clone(),
+            LayoutStyle {
+                family: text.font_family.clone(),
+                size: text.font_size,
+                weight: text.font_weight,
+                style: text.font_style,
+                line_height: text.line_height,
+                letter_spacing: text.letter_spacing,
+                wrap_width: text.wrap_width,
+            },
         );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{Point, colors};
-
-    #[test]
-    fn geometry_is_reused_for_transform_style_and_size_changes() {
-        let mut text: crate::Object<Text> = Text::new("Abc\n123");
-        let mut layout = TextLayout::new(&text);
-        let mut scene = vello::Scene::new();
-        layout.render(&text, &mut scene, Affine::IDENTITY);
-        assert!(!scene.encoding().path_data.is_empty());
-        assert_eq!(layout.rebuilds, 1);
-        assert_eq!(layout.size, Size::new(17.0, 16.0));
-        text.position = Point::new(40.0, 20.0);
-        text.font_size = 48.0;
-        text.scale = 2.0;
-        text.rotation = 0.5;
-        text.fill = colors::BLUE;
-        text.opacity = 0.25;
-        text.align = TextAlign::Center;
-        scene.reset();
-        layout.render(&text, &mut scene, Affine::IDENTITY);
-        assert_eq!(layout.rebuilds, 1);
-        text.content = "Changed".into();
-        scene.reset();
-        layout.render(&text, &mut scene, Affine::IDENTITY);
-        assert_eq!(layout.rebuilds, 2);
-        text.content = "Abc\n123".into();
-        scene.reset();
-        layout.render(&text, &mut scene, Affine::IDENTITY);
-        assert_eq!(layout.rebuilds, 3);
+        let transform = transform
+            * Affine::translate((
+                -anchor(text.align, layout.size.width),
+                0.0,
+            ));
+        for run in &layout.runs {
+            // Batch adjacent glyphs with the same resolved paint. Selection
+            // animation reads no font files and performs no shaping.
+            let mut start = 0;
+            while start < run.glyphs.len() {
+                let color = paint(
+                    text,
+                    &run.glyphs[start].source,
+                    selections,
+                    &self.active_selections,
+                );
+                let mut end = start + 1;
+                while end < run.glyphs.len()
+                    && paint(
+                        text,
+                        &run.glyphs[end].source,
+                        selections,
+                        &self.active_selections,
+                    ) == color
+                {
+                    end += 1;
+                }
+                if color.components[3] > 0.0 {
+                    scene
+                        .draw_glyphs(&run.font)
+                        .font_size(run.font_size)
+                        .normalized_coords(&run.normalized_coords)
+                        .transform(transform)
+                        .brush(color)
+                        .draw(
+                            Fill::NonZero,
+                            run.glyphs[start..end].iter().map(|g| {
+                                vello::Glyph {
+                                    id: g.id,
+                                    x: g.x,
+                                    y: g.y,
+                                }
+                            }),
+                        );
+                }
+                start = end;
+            }
+        }
     }
 }

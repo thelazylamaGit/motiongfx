@@ -29,6 +29,7 @@ pub struct Window {
     title: &'static str,
     canvas: Size,
     playback_mode: PlaybackMode,
+    renderer: vello_motiongfx::Renderer,
 }
 
 impl Window {
@@ -44,11 +45,22 @@ impl Window {
             title,
             canvas,
             playback_mode: PlaybackMode::Once,
+            renderer: vello_motiongfx::Renderer::default(),
         }
     }
 
     pub fn playback_mode(mut self, mode: PlaybackMode) -> Self {
         self.playback_mode = mode;
+        self
+    }
+
+    /// Use a configured scene renderer, for example with additional font files
+    /// registered through `Renderer::fonts_mut()` before opening the window.
+    pub fn renderer(
+        mut self,
+        renderer: vello_motiongfx::Renderer,
+    ) -> Self {
+        self.renderer = renderer;
         self
     }
 
@@ -59,7 +71,7 @@ impl Window {
         let event_loop = winit::event_loop::EventLoop::new()?;
         let mut app = VelloWinitApp::new(AnimationDemo {
             animation,
-            renderer: vello_motiongfx::Renderer::default(),
+            renderer: self.renderer,
             title: self.title,
             canvas: self.canvas,
             viewport: self.canvas,
