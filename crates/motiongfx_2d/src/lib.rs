@@ -16,8 +16,9 @@
 //! ```
 pub use kurbo::{Affine, Cap, Join, Point, Rect, Size, Vec2};
 pub use motiongfx_authoring::{
-    BindingError, BindingSource, SampleTime, SceneObject, Signal,
-    SignalId, Source, World, animate, computed, signal, smooth,
+    BindingError, BindingSource, SampleTime, SceneError, SceneObject,
+    Signal, SignalId, Source, Spring, SpringCurve, SpringError,
+    World, animate, computed, signal, smooth,
 };
 pub use peniko::Color;
 use peniko_motiongfx as _;
@@ -85,8 +86,8 @@ pub mod prelude {
     pub use crate::{
         Animation, Animation2dExt, Camera, Cap, Chevron, Circle,
         Color, Join, Line, Model2d, Path, Point, Rectangle, Scene,
-        Scene2dExt, Size, Text, TextAlign, TextStyle, Triangle, Vec2,
-        computed, signal,
+        Scene2dExt, Size, Spring, Text, TextAlign, TextStyle,
+        Triangle, Vec2, computed, signal,
     };
 }
 

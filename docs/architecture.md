@@ -243,6 +243,41 @@ Ordinary graphics handles do not enforce scene identity; mixing handles between
 scenes is unsupported and may alias a valid local ID. Purity, numerical validity,
 and simulation determinism are not guaranteed by the type system.
 
+## Analytical springs
+
+Springs are core actions, with analytical response maths in motiongfx_interp
+and thin property/signal spring_to descriptions in authoring. Physical, visual and timed
+settings are distinct configuration types. Neither spring change exposes over/ease.
+They start at rest, use finite normalized settling tolerances, and reconstruct
+from absolute elapsed time. The public SpringCurve sampler also drives graphs.
+See [spring contracts](springs.md) for exact units, defaults, validation and examples.
+Visual duration uses Motion's frequency/bounce calibration, including overdamped
+compensation; it is a pacing control, not the first 95% crossing or a fixed end.
+Timed mode calibrates frequency to fit conservative rest envelopes within an
+exact requested duration; the existing sampler and timeline need no new mode.
+
+Springs reserve their full settling duration (the exact requested time for timed
+mode) using existing track ordering.
+There is no arrival-based continuation or spring-specific overlap policy.
+Track compilation and ordinary action conflict behavior remain unchanged.
+Authoring Sequence::try_compile reports invalid spring settings; Scene::try_animate
+returns SceneError, wrapping BindingError or SpringError.
+
+Rest delta/speed are normalized (0.001 and 0.01/s), deliberately independent of
+start-to-target distance so existing ordering can schedule before target baking.
+They are not Motion-style absolute pixel/property-unit thresholds. Preparation
+uses a conservative energy bound for physical/visual settlement, and analytical
+tail envelopes for timed calibration. There is no initial velocity,
+live settings change, or interruption support.
+Future takeovers must preserve the earlier clip until takeover and seed the next
+motion from its sampled position/velocity without changing the original time scale.
+The spring_curves example compares physical, visual and timed spring_to actions;
+settings interpolate through signals BETWEEN runs. Its presets expose ordinary
+Spring builders, with automatic direction alternation, shared time-axis fitting,
+parameter/settling readouts and synchronized response markers. Raw Spring
+descriptions support bounded same-mode interpolation and diagnostic Display;
+this does not change the fixed prepared coefficients of active actions.
+
 ## Reference examples and current limits
 
 See the [example guide](../examples/vello_winit_example/README.md) for commands.
@@ -276,7 +311,7 @@ shaping. Do not describe it as Parley/Typst support. Camera/parent transforms an
 basic text are present; full layout, rich code/glyph transitions, 3D, and a
 general effect stack are not established by this API.
 
-Configurable springs, shape morphing, animatable gradients/shadows/blur and
+Shape morphing, animatable gradients/shadows/blur and
 richer text/code transitions have been discussed as future capabilities. Their
 designs are not locked in by this document. Keep graphics effects associated
 with their owning object where appropriate, and preserve the core timeline

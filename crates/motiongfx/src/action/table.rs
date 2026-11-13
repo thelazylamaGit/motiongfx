@@ -181,6 +181,19 @@ impl<'w, T> ActionBuilder<'w, T>
 where
     T: 'static,
 {
+    /// Select a core analytical spring instead of ordinary eased interpolation.
+    pub fn with_spring<M>(
+        self,
+        spring: impl Into<crate::spring::Spring>,
+    ) -> crate::spring::SpringActionBuilder<'w, T>
+    where
+        T: crate::spring::SpringValue<M>,
+    {
+        crate::spring::SpringActionBuilder {
+            inner: self.with_interp(T::interp),
+            spring: spring.into(),
+        }
+    }
     /// Set the interpolation method of the action.
     pub fn with_interp(
         self,
@@ -199,6 +212,19 @@ pub struct InterpActionBuilder<'w, T> {
 }
 
 impl<T> InterpActionBuilder<'_, T> {
+    pub(crate) fn play_spring(
+        self,
+        curve: crate::spring::SpringCurve,
+    ) -> TrackFragment {
+        self.inner.table.insert(
+            self.inner.id,
+            crate::spring::SpringStorage(curve),
+        );
+        TrackFragment::single(
+            self.inner.key,
+            ActionClip::new(self.inner.id, curve.duration()),
+        )
+    }
     /// Set the easing method of the action.
     pub fn with_ease(self, ease: EaseFn) -> Self {
         self.inner.table.insert_by_column(

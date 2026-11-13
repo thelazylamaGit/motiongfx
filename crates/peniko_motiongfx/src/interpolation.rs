@@ -7,6 +7,11 @@ use peniko::kurbo::{
 
 use crate::Peniko;
 
+// Continuous geometry whose interpolation supports overshoot without clamping.
+impl motiongfx::spring::SpringValue<Peniko> for Point {}
+impl motiongfx::spring::SpringValue<Peniko> for Vec2 {}
+impl motiongfx::spring::SpringValue<Peniko> for Size {}
+
 /// Linearly interpolates between two `f64` values.
 #[inline]
 pub(crate) const fn lerp_f64(a: f64, b: f64, t: f32) -> f64 {

@@ -16,18 +16,23 @@ pub use input::{Input, PreparedInput};
 pub use object::{ObjectDefinition, Register};
 mod values;
 pub use scene::{
-    Animation, NativeUpdate, Scene, SceneObject, SceneSequence,
-    UpdateTargets, World,
+    Animation, NativeUpdate, Scene, SceneError, SceneObject,
+    SceneSequence, UpdateTargets, World,
 };
 pub use values::SampleTime;
 mod signals;
 mod source;
+mod spring;
 pub use bindings::{BindingError, BindingPlan, BindingSource};
 pub use signals::{
     RegisterSignals, Signal, SignalChange, SignalId, SignalValues,
     SignalWorld, signal,
 };
 pub use source::{Computed, Source, computed};
+pub use spring::{
+    SignalSpringChange, Spring, SpringChange, SpringCurve,
+    SpringError, SpringSample, SpringValue,
+};
 
 /// Library-wide authoring defaults. Individual sequences and changes may
 /// override these without changing other animations or process-global state.
@@ -176,6 +181,7 @@ impl<I, S, T, F> Change<I, S, T, F> {
 
 /// A thin collector for existing MotionGfx track fragments.
 pub struct Sequence<'a, W, C = ()> {
+    preparation_error: Option<motiongfx::spring::SpringError>,
     context: C,
     builder: TimelineBuilder<'a, W>,
     fragments: Vec<TrackFragment>,
@@ -203,6 +209,7 @@ impl<'a, W: 'static, C> Sequence<'a, W, C> {
         let defaults = AnimationDefaults::default();
         Self {
             context,
+            preparation_error: None,
             builder: registry.create_builder::<W>(),
             fragments: Vec::new(),
             duration: defaults.duration,
@@ -321,7 +328,16 @@ impl<'a, W: 'static, C> Sequence<'a, W, C> {
     }
 
     pub fn compile(self) -> Timeline<W> {
-        self.builder.compile(self.fragments.ord_chain().compile())
+        self.try_compile().expect("invalid animation preparation")
+    }
+
+    pub fn try_compile(
+        self,
+    ) -> Result<Timeline<W>, motiongfx::spring::SpringError> {
+        if let Some(error) = self.preparation_error {
+            return Err(error);
+        }
+        Ok(self.builder.compile(self.fragments.ord_chain().compile()))
     }
 }
 

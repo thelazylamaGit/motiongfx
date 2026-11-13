@@ -250,7 +250,9 @@ fn repeated_setters_replace_wiring_and_source_aware_fields_reject_timeline_write
         scene.try_animate(|sequence| {
             sequence.play(dot.radius.to(20.0));
         }),
-        Err(BindingError::AnimatedDestination(_))
+        Err(SceneError::Binding(BindingError::AnimatedDestination(
+            _
+        )))
     ));
 
     let source = signal(0.0);

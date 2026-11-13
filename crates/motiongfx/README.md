@@ -79,6 +79,43 @@ timeline.sample_queued_actions(&registry, &mut world);
 assert!((world.0[0] - 5.0).abs() < f32::EPSILON);
 ```
 
+## Analytical springs
+
+Springs are core actions, independent of authoring/rendering. Use
+`TimelineBuilder::spring` or `ActionBuilder::with_spring`:
+
+```rust
+use motiongfx::prelude::*;
+# struct World(Vec<f64>);
+# impl SubjectSource<usize,f64> for World {
+# fn get_source(&self,id:usize)->Option<&f64> {self.0.get(id)}
+# fn apply_source<R>(&mut self,id:usize,f:impl FnOnce(&mut f64)->R)->Option<R> {self.0.get_mut(id).map(f)}
+# }
+# let mut world=World(vec![0.0]);
+let mut registry = Registry::new();
+let mut builder = registry.create_builder::<World>();
+let movement = builder.spring(0_usize, path!(f64), |_| 100.0,
+    Spring::visual(ms(500)).bounce(0.4))
+    .try_play()?;
+let mut timeline = builder.compile(movement.compile());
+timeline.bake_actions(&registry, &world);
+timeline.set_target_time(ms(250));
+timeline.queue_actions();
+timeline.sample_queued_actions(&registry, &mut world);
+# Ok::<(), motiongfx::spring::SpringError>(())
+```
+
+Spring builders have `.play()` / checked `.try_play()`, with no duration argument
+or easing setter. `Spring::timed(duration).bounce(...)` fits the full transition
+into exactly that duration; physical and visual modes derive their settling time.
+Springs reserve their full settling duration in ordinary
+track ordering. Existing overlap/conflict rules apply equally to springs and
+other actions; no spring-specific interruption policy is added.
+`SpringValue<M>` opts continuous values into overshooting interpolation; scalars
+are built in and geometry integrations opt in suitable types.
+See [spring contracts and limitations](../../docs/springs.md), including normalized
+rest units, fixed settings, and unsupported interruptions/live velocity.
+
 ## Creating your first animation
 
 ### The World

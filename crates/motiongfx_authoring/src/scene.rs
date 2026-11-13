@@ -7,6 +7,42 @@ use motiongfx::prelude::*;
 use motiongfx::subject::SubjectId;
 use std::{any::TypeId, time::Duration};
 
+/// Checked finalization includes core action preparation and binding validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SceneError {
+    Binding(BindingError),
+    Preparation(motiongfx::spring::SpringError),
+}
+impl From<BindingError> for SceneError {
+    fn from(e: BindingError) -> Self {
+        Self::Binding(e)
+    }
+}
+impl From<motiongfx::spring::SpringError> for SceneError {
+    fn from(e: motiongfx::spring::SpringError) -> Self {
+        Self::Preparation(e)
+    }
+}
+impl std::fmt::Display for SceneError {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Binding(e) => e.fmt(f),
+            Self::Preparation(e) => e.fmt(f),
+        }
+    }
+}
+impl std::error::Error for SceneError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Binding(e) => Some(e),
+            Self::Preparation(e) => Some(e),
+        }
+    }
+}
+
 /// Common reactive state and an application-selected model (or composite model).
 /// Models implement typed SubjectSource access for this wrapper using their own
 /// IDs. No per-sample type registry is used to select model storage.
@@ -191,14 +227,14 @@ impl<M: 'static> Scene<M> {
         self,
         author: impl FnOnce(&mut SceneSequence<'_, M>),
     ) -> Animation<M> {
-        self.try_animate(author).expect("invalid scene bindings")
+        self.try_animate(author).expect("invalid scene preparation")
     }
     /// Finalize construction hooks, validate bindings, bake action targets, then
     /// sample time zero. Rendering and render cache allocation happen separately.
     pub fn try_animate(
         mut self,
         author: impl FnOnce(&mut SceneSequence<'_, M>),
-    ) -> Result<Animation<M>, BindingError> {
+    ) -> Result<Animation<M>, SceneError> {
         for (_, prepare) in std::mem::take(&mut self.preparation) {
             prepare(&mut self);
         }
@@ -208,7 +244,7 @@ impl<M: 'static> Scene<M> {
             &mut self.world.signals,
         );
         author(&mut sequence);
-        let mut timeline = sequence.compile();
+        let mut timeline = sequence.try_compile()?;
         self.bindings.prepare(&self.world, &timeline)?;
         timeline.bake_actions(&registry, &self.world);
         let mut animation = Animation {

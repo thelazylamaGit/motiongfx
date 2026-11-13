@@ -446,7 +446,7 @@ For a shared calculation use `let orbit = curve.end.map(function)`;
 then `scene.bind(dot.position, &orbit, |position| position)`. Its output is cached
 once per changed input for all consumers. Tuples support one to five sources.
 
-`scene.try_animate(...)` returns `Result<Animation, BindingError>` and rejects
+`scene.try_animate(...)` returns `Result<Animation, SceneError>` and rejects
 cycles, overlapping binding destinations, and timeline writes to bound fields.
 `scene.animate(...)` keeps its existing return type and panics on these errors
 during construction. Both initialize the sampled animation and bindings at
@@ -507,3 +507,10 @@ For expensive work, cache explicitly or use the separate derived-value API.
 The Bézier example now uses computed inputs and source-aware builders, with
 no direct updates. `Path::quadratic` and `set_quadratic` use exact
 quadratic segments, retaining the normal `start`/`end` reveal properties.
+
+## Springs
+
+Continuous scalar properties and Point/Vec2/Size support `.spring_to(value, settings)`
+through core spring actions. Import `Spring` from this
+crate or its prelude. There are no spring-specific renderer changes.
+See [spring options, normalized rest units and limits](../../docs/springs.md).

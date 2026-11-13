@@ -59,7 +59,41 @@ local marker instead. `impl_float_interpolation!` generates these
 impls for any type with float arithmetic, and `impl_int_interpolation!`
 reuses the built-in integer impls under a marker.
 
-## `no_std`
+## Analytical springs
+
+`spring::Spring` provides separate physical, visual and timed configuration types.
+`prepare` validates settings once and returns a Copy analytical sampler:
+
+```rust
+use motiongfx_interp::spring::Spring;
+use core::time::Duration;
+let curve = Spring::visual(Duration::from_millis(500))
+    .bounce(0.25).rest_delta(0.001).rest_speed(0.01).prepare()?;
+let sample = curve.sample(Duration::from_millis(200));
+assert!(sample.position.is_finite() && sample.velocity.is_finite());
+let timed = Spring::timed(Duration::from_millis(500))
+    .bounce(0.4).prepare()?;
+assert_eq!(timed.duration(), Duration::from_millis(500));
+# Ok::<(), motiongfx_interp::spring::SpringError>(())
+```
+
+Core actions accept settings directly; explicit `prepare` is for consumers such
+as graph visualizers, not a mandatory `.build()`. Sampling evaluates closed-form
+underdamped, critical or overdamped responses from absolute elapsed time.
+Visual mode uses Motion's visual-duration calibration, including negative-bounce
+compensation. The requested time controls pace; the settling tail may extend
+beyond it. `arrival()` reports a separate first-95% diagnostic milestone.
+`Spring::timed(duration).bounce(...)` instead fits the full settling tail into
+exactly the requested time, using preparation-time frequency calibration.
+`Spring` descriptions support bounded same-mode `Interpolation<()>` for
+visualizers and `Display` for main-parameter readouts. Interpolating descriptions
+does not modify already prepared spring actions; those retain fixed coefficients.
+Rest tolerances use **normalized displacement and displacement/second**, not
+pixels. This makes fixed analytical-curve scheduling independent of target
+distance. The endpoint snaps the small residual to exact position 1, velocity 0.
+See [defaults, validation, and timing semantics](../../docs/springs.md).
+
+## `no_std` support
 
 The `std` feature is on by default and uses the standard library's
 float intrinsics. With it disabled, the same math goes through

@@ -246,3 +246,25 @@ Authored examples import their shapes, styles, signals and 2D scene alias from
 `vello_motiongfx::Renderer` to record Vello commands. Geometry and text caches
 belong to the renderer. Existing low-level examples intentionally keep their
 custom Vello drawing. See [architecture](../../docs/architecture.md).
+
+## Analytical spring comparison
+
+```sh
+cargo run -p vello_winit_example --example spring_curves
+```
+
+Three panels compare physical, visual and timed springs, with settling-time
+readouts, moving balls and synchronized curve markers. Edit/add presets in
+`experiments()` using the normal Spring builders: stiffness, damping, mass,
+duration, bounce and rest tolerances are available as appropriate to each mode.
+Balls alternate direction automatically. Each run waits for the longest spring;
+the shared graph time axis automatically expands to show every settling tail.
+Settings smoothly morph between runs; labels show their current main parameters
+and settling duration. The shared time axis changes continuously during a morph.
+Active spring coefficients stay fixed during each ball run.
+After each run, curve markers rewind smoothly along the current curves before
+the next settings morph; demonstration balls hold their settled endpoints.
+The preview supports the existing Space/playback/scrubbing controls.
+
+Rest tolerances are normalized fractions, not pixels. See
+[spring semantics and current limits](../../docs/springs.md).

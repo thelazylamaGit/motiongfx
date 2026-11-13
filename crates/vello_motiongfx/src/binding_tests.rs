@@ -126,7 +126,7 @@ fn binding_validation_rejects_feedback_and_cycles_through_derived_values()
     });
     assert!(matches!(
         scene.try_animate(|_| {}),
-        Err(BindingError::Cycle)
+        Err(SceneError::Binding(BindingError::Cycle))
     ));
 
     let mut scene = Scene::new();
@@ -138,7 +138,7 @@ fn binding_validation_rejects_feedback_and_cycles_through_derived_values()
     scene.bind(b.position, a.position, |position| position);
     assert!(matches!(
         scene.try_animate(|_| {}),
-        Err(BindingError::Cycle)
+        Err(SceneError::Binding(BindingError::Cycle))
     ));
 }
 
@@ -151,7 +151,7 @@ fn binding_validation_rejects_overlapping_writers_and_timeline_actions()
     scene.bind(dot.position.x, dot.radius, |r| r);
     assert!(matches!(
         scene.try_animate(|_| {}),
-        Err(BindingError::ConflictingWriters(_))
+        Err(SceneError::Binding(BindingError::ConflictingWriters(_)))
     ));
 
     let mut scene = Scene::new();
@@ -164,7 +164,9 @@ fn binding_validation_rejects_overlapping_writers_and_timeline_actions()
     });
     assert!(matches!(
         result,
-        Err(BindingError::AnimatedDestination(_))
+        Err(SceneError::Binding(BindingError::AnimatedDestination(
+            _
+        )))
     ));
 
     // Sibling axes are independent writers. Different subjects are too.
@@ -193,7 +195,7 @@ fn binding_validation_rejects_missing_properties_in_standalone_computations()
     second.bind(b.position.x, &shared, |r| r);
     assert!(matches!(
         second.try_animate(|_| {}),
-        Err(BindingError::MissingProperty(_))
+        Err(SceneError::Binding(BindingError::MissingProperty(_)))
     ));
 
     let mut second = Scene::new();
@@ -201,7 +203,7 @@ fn binding_validation_rejects_missing_properties_in_standalone_computations()
     second.bind(rectangle.position.x, a.radius, |r| r);
     assert!(matches!(
         second.try_animate(|_| {}),
-        Err(BindingError::MissingProperty(_))
+        Err(SceneError::Binding(BindingError::MissingProperty(_)))
     ));
 }
 

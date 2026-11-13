@@ -3,6 +3,7 @@ use crate::action::{
     ActionId, ActionTable, InterpStorage, SampleMode, Segment,
 };
 use crate::registry::LensRegistry;
+use crate::spring::SpringStorage;
 use crate::subject::SubjectId;
 use crate::world::SubjectSource;
 
@@ -30,6 +31,9 @@ where
     else {
         return;
     };
+    // Probe the optional column once per pipeline; ordinary actions retain
+    // their existing easing path. Spring parameters are already prepared.
+    let spring_col = table.type_column::<SpringStorage>();
 
     for &(id, sample_mode) in ctx.samples {
         let Some(segment) =
@@ -62,9 +66,22 @@ where
             SampleMode::Start => segment.start.clone(),
             SampleMode::End => segment.end.clone(),
             SampleMode::Interp(t) => {
-                let t = match ease {
-                    Some(ease) => ease.0(t),
-                    None => t,
+                let spring = spring_col.and_then(|col| {
+                    table.get_by_column::<SpringStorage>(col, &id)
+                });
+                let t = if let Some(spring) = spring {
+                    spring
+                        .0
+                        .sample(core::time::Duration::from_secs_f64(
+                            t as f64
+                                * spring.0.duration().as_secs_f64(),
+                        ))
+                        .position as f32
+                } else {
+                    match ease {
+                        Some(ease) => ease.0(t),
+                        None => t,
+                    }
                 };
 
                 interp.0(&segment.start, &segment.end, t)

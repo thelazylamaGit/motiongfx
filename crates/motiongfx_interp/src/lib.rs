@@ -4,3 +4,4 @@
 pub mod ease;
 pub mod interpolation;
 mod ops;
+pub mod spring;

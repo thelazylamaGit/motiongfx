@@ -437,6 +437,23 @@ pub struct TimelineBuilder<'a, W> {
 }
 
 impl<'a, W: 'static> TimelineBuilder<'a, W> {
+    /// A spring is a core action, using the same target baking and typed lenses.
+    pub fn spring<I, S, T, M>(
+        &mut self,
+        target: I,
+        path: Path<S, T>,
+        action: impl Action<T>,
+        spring: impl Into<crate::spring::Spring>,
+    ) -> crate::spring::SpringActionBuilder<'_, T>
+    where
+        W: SubjectSource<I, S>,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
+        T: crate::spring::SpringValue<M> + Clone + ThreadSafe,
+    {
+        self.act_builder(target, path, action)
+            .with_spring::<M>(spring)
+    }
     /// Creates an empty timeline builder.
     pub fn new(registry: &'a mut Registry) -> Self {
         Self {

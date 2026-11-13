@@ -156,6 +156,8 @@ fn shared_lifecycle_rejects_model_binding_conflicts() {
     scene.bind(point.x, point.x, |x| x + 1.0);
     assert!(matches!(
         scene.try_animate(|_| {}),
-        Err(motiongfx_authoring::BindingError::Cycle)
+        Err(motiongfx_authoring::SceneError::Binding(
+            motiongfx_authoring::BindingError::Cycle
+        ))
     ));
 }

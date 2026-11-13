@@ -8,6 +8,7 @@ pub mod pipeline;
 pub mod registry;
 mod resources;
 pub mod sequence;
+pub mod spring;
 pub mod subject;
 pub mod time;
 pub mod timeline;
@@ -19,6 +20,7 @@ pub use motiongfx_interp;
 pub use nonempty;
 
 pub mod prelude {
+    pub use crate::spring::{Spring, SpringCurve, SpringValue};
     pub use field_path::path::Path;
     pub use motiongfx_interp::ease::{self, EaseFn};
     pub use motiongfx_interp::interpolation::{

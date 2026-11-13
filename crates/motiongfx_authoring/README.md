@@ -89,7 +89,36 @@ See [headless shared model tests](tests/shared_scene.rs) and the
 [portable 2D model](../motiongfx_2d/README.md) for complete adapters. Standalone
 `Sequence<W>` and `BindingPlan<W>` remain usable without this scene lifecycle.
 
-## Native derived relationships
+## Spring changes
+
+`Property::spring_to(value, settings)` and `Signal::spring_to(value, settings)`
+lower to core analytical spring actions. Their separate change types have no
+`.over()` or `.ease()`. `Spring::physical()` configures stiffness/damping/mass;
+`Spring::visual(duration)` configures visual timing/bounce. Both support optional
+normalized rest tolerances. `Spring::timed(duration).bounce(...)` fits the full
+transition into exactly the requested time, using the same `.spring_to` API:
+
+```rust,ignore
+sequence.play(ball.position.x.spring_to(
+    200.0, Spring::timed(ms(500)).bounce(0.4),
+));
+```
+
+`SpringValue<M>` restricts springs to continuous
+values supporting overshoot; discrete strings, colors and integers do not opt in.
+
+Springs reserve their full settling duration (exactly the requested time for
+timed mode). Existing core overlap/conflict
+rules apply unchanged; there is no spring-specific interruption policy.
+
+`Sequence::try_compile` returns `SpringError` for invalid spring settings; `compile` panics on it.
+`Scene::try_animate` now returns `SceneError::Binding(BindingError)` or
+`SceneError::Preparation(SpringError)`. `animate` remains the convenience
+which panics on invalid preparation. Settings are fixed per action; no live
+parameter changes or velocity-preserving interruption is implied.
+See [spring usage and limitations](../../docs/springs.md).
+
+## Native derived relationships and validation
 
 `BindingPlan<W>` optionally calculates properties after timeline sampling.
 `bind(destination, source, function)` stores an ordinary native Rust closure;
@@ -118,8 +147,8 @@ randomness and numerical validity are not statically checked.
 This is optional native binding support, not automatic dependency tracking or
 a scripting interpreter. Ordinary property handles still do not identify their
 owning scene; mixing handles between scenes is unsupported. The shared `Scene<M>`
-owns the plan and finalizes it through `try_animate` (returns `BindingError`)
-or `animate` (panics on a binding error during construction).
+owns the plan and finalizes it through `try_animate` (returns `SceneError`)
+or `animate` (panics on a preparation or binding error during construction).
 
 ## Standalone sources
 
