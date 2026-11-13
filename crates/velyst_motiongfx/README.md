@@ -11,6 +11,27 @@
 rendered by [Velyst](https://github.com/voxell-tech/velyst), path by
 path, with [Bevy MotionGfx](https://crates.io/crates/bevy_motiongfx).
 
+## Workspace status
+
+This integration is currently excluded from the workspace pending compatible
+Velyst/bevy_vello dependencies for the workspace's Bevy 0.20 integration. Its
+source is retained, but the examples below are not currently buildable as part
+of this workspace. This is separate from native Vello/Winit text support.
+
+The unused workspace dependency declarations were removed during cleanup.
+For reference, they previously were:
+
+```toml
+velyst_motiongfx = { version = "0.4.0", path = "crates/velyst_motiongfx" }
+bevy_vello = { version = "0.14", default-features = false }
+velyst = "0.0.1"
+```
+
+These are historical settings, not a compatible dependency recommendation.
+Restoring the integration requires selecting compatible versions, restoring
+the necessary workspace declarations (including the inherited `velyst`
+dependency), updating integration APIs, and re-enabling/testing the crate.
+
 ## Core Concepts
 
 - **`VelystKanva`** holds the paths Velyst draws for a Typst

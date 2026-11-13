@@ -15,3 +15,6 @@ peniko_motiongfx = { workspace = true }
 vello = { workspace = true }
 winit = { workspace = true }
 pollster = { workspace = true }
+
+[lints]
+workspace = true
