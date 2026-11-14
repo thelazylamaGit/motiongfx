@@ -401,6 +401,39 @@ fn duplicate_marker_names_report_both_locations() {
 }
 
 #[test]
+fn overlapping_changes_to_one_property_report_both_lines() {
+    let line = line!();
+    let result = scene().try_compile([
+        all([x(0).to(1.0), y(0).to(1.0), x(0).to(2.0)]),
+        // Touching end to start is not an overlap.
+        x(1).to(1.0),
+        x(1).to(2.0),
+        flow(ms(50), [x(2).to(1.0), x(2).to(2.0)]),
+    ]);
+    let Err(SceneError::Animation(errors)) = result else {
+        panic!("expected overlap errors");
+    };
+    let mut found: Vec<_> = errors
+        .iter()
+        .map(|error| {
+            let AnimationErrorKind::Overlap { field, later } =
+                error.kind
+            else {
+                panic!("expected an overlap, got {error}");
+            };
+            assert!(field.ends_with('x'), "{field}");
+            (error.location.line() - line, later.line() - line)
+        })
+        .collect();
+    found.sort();
+    // The all([..]) on line +2, and the flow on line +6.
+    assert_eq!(found, [(2, 2), (6, 6)]);
+    assert!(
+        errors[0].to_string().contains("overlaps a later one at")
+    );
+}
+
+#[test]
 #[should_panic(expected = "have no timing of")]
 fn timing_on_a_marker_panics() {
     let _ = marker::<Items>("loop").over(ms(10));

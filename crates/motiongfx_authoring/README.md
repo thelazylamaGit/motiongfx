@@ -139,7 +139,11 @@ file and line of the animation and a `kind`:
 - `DiscreteSpring`: a spring on a discrete property;
 - `Target(..)`: a target that could not be resolved, such as a missing text
   selection (downcast it to inspect the concrete error);
-- `DuplicateMarker`: a marker name used twice, with both locations.
+- `DuplicateMarker`: a marker name used twice, with both locations;
+- `Overlap`: two changes to the same property (or a point and one of its
+  axes) running at the same time. Core would keep only the later-written
+  one, so this is reported at the earlier one with the later one's line.
+  Run them one after another with `chain`, or animate different properties.
 
 Both enums are `#[non_exhaustive]`, so matches need a `_` arm.
 
@@ -174,8 +178,9 @@ flow(ms(300), [
 ```
 
 Overshoot is the interpolation's own extrapolation: colour channels briefly
-leave 0–1 and rendering saturates them. Existing core overlap/conflict rules
-apply unchanged; there is no spring-specific interruption policy. Settings
+leave 0–1 and rendering saturates them. A spring overlapping a later change
+to the same property is an `Overlap` error like any other; there is no
+spring-specific interruption policy. Settings
 are fixed per action; no live parameter changes or velocity-preserving
 interruption is implied. See [spring usage and limitations](../../docs/springs.md).
 

@@ -7,7 +7,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-motiongfx = { workspace = true, features = ["std"] }
+# `diagnostics` reports dropped overlapping clips, turned into errors.
+motiongfx = { workspace = true, features = ["std", "diagnostics"] }
 
 [lints]
 workspace = true

@@ -56,8 +56,9 @@ radius. Object handles expose typed getters: `position().to(point)`,
 `shift(dx, dy)`, `scale_by(factor)` and `rotate(radians)` are relative helpers
 using the action-start value. `fill_to(color)` is an animated convenience;
 `set_fill(color)` is an immediate scheduled change.
-Avoid overlapping whole-position and per-axis actions on
-the same object at the same time; they write to overlapping fields.
+Whole-position and per-axis changes on the same object write overlapping
+fields, so running them at the same time is a `compile` error (as is any
+overlap on one property); separate axes are independent.
 
 `Scene` owns the objects and gives them identities for MotionGfx targeting;
 it is not a renderer or window. A standalone rectangle is just initial state.

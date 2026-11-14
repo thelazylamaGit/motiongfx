@@ -298,7 +298,8 @@ infallible exact value, letting non-springable siblings such as colors tween in
 step via `.over(spring.duration())`. Authoring springs any interpolated
 property; only discrete properties are refused, when compiling.
 There is no arrival-based continuation or spring-specific overlap policy.
-Track compilation and ordinary action conflict behavior remain unchanged.
+Track compilation is unchanged; authoring turns the clips core would drop for
+overlapping a later write into `compile` errors with both lines.
 Invalid spring settings are reported by Scene::try_compile as
 SceneError::Animation, with the animation's file and line.
 

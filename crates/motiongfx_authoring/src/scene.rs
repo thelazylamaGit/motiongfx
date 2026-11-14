@@ -3,6 +3,7 @@ use crate::{
     BindingError, BindingPlan, Property, SignalId, SignalValues,
     SignalWorld, Source,
 };
+use motiongfx::action::ActionId;
 use motiongfx::prelude::*;
 use motiongfx::subject::SubjectId;
 use std::{any::TypeId, time::Duration};
@@ -104,6 +105,9 @@ pub struct SceneContext<'a, M> {
     pub(crate) builder: TimelineBuilder<'a, World<M>>,
     pub(crate) defaults: crate::AnimationDefaults,
     errors: Vec<crate::AnimationError>,
+    /// Each core action with the line that created it, for overlap errors.
+    pub(crate) actions:
+        Vec<(ActionId, &'static std::panic::Location<'static>)>,
     /// Marker names seen so far, with where each was first used.
     markers: std::collections::HashMap<
         motiongfx::track::MarkerName,
@@ -349,6 +353,7 @@ impl<M: 'static> Scene<M> {
             builder: registry.create_builder(),
             defaults: self.defaults,
             errors: Vec::new(),
+            actions: Vec::new(),
             markers: Default::default(),
             caches: Default::default(),
         };
@@ -358,12 +363,17 @@ impl<M: 'static> Scene<M> {
             .map(|step| step.lower(&mut context))
             .ord_chain();
         let SceneContext {
-            builder, errors, ..
+            builder,
+            mut errors,
+            actions,
+            ..
         } = context;
+        let track = fragment.compile();
+        errors.extend(overlaps(&track, &actions));
         if !errors.is_empty() {
             return Err(SceneError::Animation(errors));
         }
-        let mut timeline = builder.compile(fragment.compile());
+        let mut timeline = builder.compile(track);
         self.bindings.prepare(&self.world, &timeline)?;
         timeline.bake_actions(&registry, &self.world);
         let mut animation = CompiledScene {
@@ -386,6 +396,30 @@ impl<M> std::fmt::Debug for Scene<M> {
             .field("updates", &self.updates.len())
             .finish_non_exhaustive()
     }
+}
+/// Core keeps only the later-written of two overlapping changes to
+/// aliasing fields. Report each dropped change at its own line, naming the
+/// change that would replace it.
+fn overlaps(
+    track: &Track,
+    actions: &[(ActionId, &'static std::panic::Location<'static>)],
+) -> Vec<crate::AnimationError> {
+    let conflicts = track.conflicts();
+    if conflicts.is_empty() {
+        return Vec::new();
+    }
+    let lines: std::collections::HashMap<_, _> =
+        actions.iter().copied().collect();
+    conflicts
+        .iter()
+        .map(|conflict| crate::AnimationError {
+            location: lines[&conflict.dropped],
+            kind: crate::AnimationErrorKind::Overlap {
+                field: conflict.dropped_field.field_path(),
+                later: lines[&conflict.winner],
+            },
+        })
+        .collect()
 }
 /// One compiled core timeline, native dependency plan and sampled model.
 /// Renderers consume the read-only model; this type owns no rendering resources.

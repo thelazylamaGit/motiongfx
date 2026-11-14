@@ -120,10 +120,12 @@ springs reserve exactly their requested duration. Ordinary sequential actions
 start after that clip ends; parallel, staggered and other composition use the existing
 core ordering combinators without changes. There is no arrival-based continuation.
 
-Existing conflict rules apply to all actions, including springs. A later-authored
-overlapping write on the same or an aliasing property can drop the earlier clip
-entirely; it does not preserve a prefix or inherit velocity. This initial spring
-implementation neither changes that policy nor adds special overlap rejection.
+Existing conflict rules apply to all actions, including springs. In core, a
+later-authored overlapping write on the same or an aliasing property drops the
+earlier clip entirely; it does not preserve a prefix or inherit velocity.
+Authoring's `Scene::compile` reports such overlaps as errors instead. Springs
+settle for a while, so a spring followed by an overlapping change to the same
+property is the usual way to hit this.
 General interruption/live retargeting is deferred to future timeline work.
 
 `SpringValue<M>` opts continuous types into overshoot-capable interpolation

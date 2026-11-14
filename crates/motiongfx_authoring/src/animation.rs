@@ -425,42 +425,41 @@ where
     T: Clone + ThreadSafe,
     World<M>: SubjectSource<I, S>,
 {
-    match &timing.motion {
-        Motion::Spring(_)
-            if matches!(property.interp, Interp::Discrete) =>
-        {
-            report(
-                context,
-                timing,
-                AnimationErrorKind::DiscreteSpring,
-            )
-        }
-        Motion::Spring(spring) => {
-            let result = context
-                .builder
-                .act_builder(property.id, property.path, target)
-                .with_interp(property.interp.function())
-                .with_spring(**spring)
-                .try_play();
-            result.unwrap_or_else(|error| {
-                report(
-                    context,
-                    timing,
-                    AnimationErrorKind::Spring(error),
-                )
-            })
-        }
-        Motion::Tween { over, ease } => {
-            let duration = over.unwrap_or(context.defaults.duration);
-            let ease = ease.unwrap_or(context.defaults.ease);
-            context
-                .builder
-                .act_builder(property.id, property.path, target)
-                .with_interp(property.interp.function())
-                .with_ease(ease)
-                .play(duration)
-        }
+    if let Motion::Spring(_) = timing.motion
+        && let Interp::Discrete = property.interp
+    {
+        return report(
+            context,
+            timing,
+            AnimationErrorKind::DiscreteSpring,
+        );
     }
+    let action = context
+        .builder
+        .act_builder(property.id, property.path, target)
+        .with_interp(property.interp.function());
+    let id = action.id();
+    let fragment = match &timing.motion {
+        Motion::Spring(spring) => {
+            let result = action.with_spring(**spring).try_play();
+            match result {
+                Ok(fragment) => fragment,
+                Err(error) => {
+                    return report(
+                        context,
+                        timing,
+                        AnimationErrorKind::Spring(error),
+                    );
+                }
+            }
+        }
+        Motion::Tween { over, ease } => action
+            .with_ease(ease.unwrap_or(context.defaults.ease))
+            .play(over.unwrap_or(context.defaults.duration)),
+    };
+    // Remembered so `compile` can point an overlap at this line.
+    context.actions.push((id, timing.location));
+    fragment
 }
 
 /// Record a problem with one change; it adds no time to the timeline.
@@ -500,6 +499,14 @@ pub enum AnimationErrorKind {
         name: MarkerName,
         first: &'static Location<'static>,
     },
+    /// This change overlaps a later-written change (at `later`) on the
+    /// same or an overlapping property, such as `position` and
+    /// `position_x`. The later one would replace this one entirely.
+    Overlap {
+        /// The property this change animates.
+        field: &'static str,
+        later: &'static Location<'static>,
+    },
 }
 
 impl std::fmt::Display for AnimationError {
@@ -517,6 +524,10 @@ impl std::fmt::Display for AnimationError {
             AnimationErrorKind::DuplicateMarker { name, first } => write!(
                 f,
                 "marker \"{name}\" is already used at {first}; marker names must be unique"
+            ),
+            AnimationErrorKind::Overlap { field, later } => write!(
+                f,
+                "this animation of `{field}` overlaps a later one at {later}, which would replace it; run them one after another with chain([..]) or animate different properties"
             ),
         }
     }

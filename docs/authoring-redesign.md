@@ -185,10 +185,12 @@ anim.delay(ms(500))     // start this one later
 - **Not overlapping, any order:** valid. Parallel branches naturally add a
   later-starting clip before an earlier one; core sorts each property's clips
   at compile (fixed in `7c7e2f4`, previously sampled wrong values).
-- **Overlapping:** core currently keeps the later-written clip and drops the
-  whole earlier clip, silently. Planned: report it as a `compile` error with
-  both locations (core already finds every overlap; its `diagnostics` feature
-  records them). Possible later feature: **takeover**, where the earlier clip
+- **Overlapping:** core keeps the later-written clip and drops the whole
+  earlier clip. `compile` reports this as `AnimationErrorKind::Overlap` at the
+  dropped change, naming the later one's line (authoring enables core's
+  `diagnostics` feature, which records the drops, and keeps each action's ID
+  with its line while lowering; no measurable setup cost, see
+  Measurements). Possible later feature: **takeover**, where the earlier clip
   is cut at the overlap and the later one starts from the value at that
   moment. Baking already chains start values, so this is a contained core
   change with no per-frame cost.
@@ -266,7 +268,8 @@ Mistakes that need the scene are reported by `compile` as
 first; each with the file and line of the animation):
 - springing a discrete property,
 - invalid spring settings, missing or invalid text selections,
-- (step 4) duplicate marker names; (planned) overlapping clips on one property.
+- duplicate marker names; overlapping changes to one property (or a point
+  and its axis).
 
 Binding errors keep their existing `SceneError` variants.
 
@@ -400,8 +403,9 @@ deferred.
    examples *(not yet done: the headless tests build, sample and encode
    every example, but nobody has looked at the windows)*.
 
-Separate, any time: stop the preview host redrawing while idle (see Rendering
-performance); overlap errors (easiest after step 6).
+Done after the plan: the preview host only redraws while playing or after a
+change (see Rendering performance), and overlapping changes are `compile`
+errors.
 
 ## 11. Measurements
 
@@ -548,16 +552,16 @@ Review notes to resolve during phase 2:
 
 ## Rendering performance (separate from the redesign)
 
-- Confirmed: `vello_winit_motiongfx` handles `RedrawRequested` by rendering and
-  immediately calling `request_redraw()`, so it renders at display rate while
-  paused and idle. With a zero-size window, `render()` returns before
-  presenting, so that loop is not throttled by vsync.
-- Fix: request redraws only while playing, scrubbing or using controls, on
-  resize/scale changes and exposure. Also: let demos request redraws
-  (`VelloDemo::window_event` cannot today), redraw for control hover/drag,
-  draw one final frame when playback stops at the end, stop on
-  `Occluded(true)`, and decide whether the clock pauses while hidden. The event
-  loop uses the default wait mode, so it idles once redraws stop.
+- Fixed: the preview host used to request a new frame after every frame, so
+  it rendered at display rate while paused (measured: 24% of a CPU core on a
+  paused `moving_square`, plus GPU work). It now keeps a frame loop only while
+  the clock is playing and the window is visible and non-zero-sized, and
+  otherwise redraws once when something changes: a seek, play/pause, focus
+  loss (which pauses), resize, scale change, `Occluded(false)`, or a demo
+  returning `true` from `VelloDemo::window_event`. The final frame at the end
+  of playback is drawn because rendering advances the clock first. Paused
+  idle now measures 0.3% of a core. The controls draw no hover state, so
+  cursor movement alone doesn't redraw.
 - Per-frame breakdown to measure on a stress scene (1k/10k/50k objects):
   `queue_actions` (sorts queued fields each frame), sampling,
   `bindings.evaluate` (visits every node), updates, Vello encoding, submission,

@@ -1,7 +1,7 @@
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
-    Circle, CircleHandle, CompiledScene2dExt, Scene, TextHandle, all,
-    wait,
+    AnimationErrorKind, Circle, CircleHandle, CompiledScene2dExt,
+    Scene, SceneError, TextHandle, all, wait,
 };
 use std::mem::{needs_drop, size_of};
 
@@ -87,4 +87,29 @@ fn compact_fields_remain_sources_and_general_property_targets() {
         assert_eq!(animation.circle(b).radius, radius);
         assert_eq!(animation.circle(b).position.x, x);
     }
+}
+
+/// A whole point and one of its axes write the same field, so animating
+/// both at once is an overlap; separate axes are not.
+#[test]
+fn position_and_its_axis_overlap_but_separate_axes_do_not() {
+    let mut scene = Scene::new();
+    let dot = scene.add(Circle::new(2.0));
+    let result = scene.try_compile([
+        all([dot.position_x().to(10.0), dot.position_y().to(5.0)]),
+        all([
+            dot.position().to_xy(1.0, 1.0),
+            dot.position_x().to(3.0),
+        ]),
+    ]);
+    let Err(SceneError::Animation(errors)) = result else {
+        panic!("expected an overlap error");
+    };
+    assert!(matches!(
+        errors[..],
+        [motiongfx_2d::AnimationError {
+            kind: AnimationErrorKind::Overlap { .. },
+            ..
+        }]
+    ));
 }
