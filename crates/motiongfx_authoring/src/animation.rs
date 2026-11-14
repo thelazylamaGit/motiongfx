@@ -1,17 +1,12 @@
-//! Animations as values: one [`Animation`] type, group combinators, and
-//! the lowering of an animation tree into core track fragments.
+//! [`Animation`] values, the group functions that combine them, and how
+//! `compile` turns them into core timeline fragments.
 //!
-//! An `Animation` is a description. Nothing is registered until
-//! [`Scene::compile`](crate::Scene::compile) lowers it, so animations can
-//! be built anywhere, returned from functions, stored, cloned and reused.
-//! Lowering walks the tree once, in source order, and combines fragments
-//! with core's own `chain`/`all`/`flow`; playback is plain core.
-//!
-//! Storage is kept to what each case needs: a change stores its compact
-//! target (an object ID; the field is a zero-sized type) and its timing,
-//! spring settings are boxed only when a spring is used, and groups hold
-//! their children. Mistakes visible while building (timing on a group,
-//! a spring mixed with `.over()`/`.ease()`) panic at the caller's line.
+//! An `Animation` is a description: nothing happens until
+//! [`Scene::compile`](crate::Scene::compile) lowers it, so animations can be
+//! built anywhere, returned from functions, stored, cloned and reused.
+//! Lowering walks the tree once, in order, combining fragments with core's
+//! own `chain`/`all`/`flow`. See `docs/authoring-redesign.md` for the
+//! representation and its costs.
 
 use crate::{
     Field, Interp, Property, SceneContext, Spring, SpringError,
@@ -29,6 +24,18 @@ use std::{panic::Location, sync::Arc, time::Duration};
 ///
 /// `M` is the scene's model. `motiongfx_2d` exports `Animation` with its
 /// 2D model filled in, so 2D code writes plain `Animation`.
+///
+/// ```
+/// use motiongfx::prelude::{ms, s};
+/// use motiongfx_authoring::{Animation, all, chain, signal, wait};
+/// let x = signal(0.0);
+/// let y = signal(0.0);
+/// let move_then_rise: Animation<()> = chain([
+///     x.to(100.0).over(ms(500)),
+///     wait(ms(200)),
+///     all([x.to(0.0), y.to(50.0)]).delay(s(1)),
+/// ]);
+/// ```
 #[must_use = "an animation does nothing until it is passed to `scene.compile(..)` or a group"]
 pub struct Animation<M>(Node<M>);
 
@@ -128,6 +135,9 @@ impl Timing {
 /// selections in `motiongfx_2d`. Most implementations resolve their
 /// target, then call [`lower_change`].
 pub trait Step<M>: Send + Sync + 'static {
+    /// Add this change to the timeline with `timing`, returning its
+    /// fragment. Report problems with `context.report(..)` and return an
+    /// empty fragment.
     fn lower(
         &self,
         context: &mut SceneContext<'_, M>,
@@ -169,6 +179,10 @@ impl<M: 'static> Animation<M> {
     }
 
     /// How long this change takes. Without it, the scene default applies.
+    ///
+    /// # Panics
+    ///
+    /// At the caller's line, on a group, wait or marker, or on a spring.
     #[track_caller]
     pub fn over(mut self, duration: Duration) -> Self {
         match self.motion() {
@@ -179,6 +193,10 @@ impl<M: 'static> Animation<M> {
     }
 
     /// Easing curve. Without it, the scene default applies.
+    ///
+    /// # Panics
+    ///
+    /// At the caller's line, on a group, wait or marker, or on a spring.
     #[track_caller]
     pub fn ease(mut self, ease: EaseFn) -> Self {
         match self.motion() {
@@ -189,7 +207,13 @@ impl<M: 'static> Animation<M> {
     }
 
     /// Animate with a spring instead of a tween; the spring decides the
-    /// duration. Cannot be combined with `.over()`/`.ease()`.
+    /// duration. Invalid settings, or a spring on a discrete property, are
+    /// reported by `compile`.
+    ///
+    /// # Panics
+    ///
+    /// At the caller's line, on a group, wait or marker, or after `.over()`,
+    /// `.ease()` or `.set(..)`.
     #[track_caller]
     pub fn spring(mut self, spring: impl Into<Spring>) -> Self {
         let motion = self.motion();
@@ -479,10 +503,13 @@ fn report<M: 'static>(
 /// of the animation that caused it.
 #[derive(Debug, Clone)]
 pub struct AnimationError {
+    /// Where the animation was written.
     pub location: &'static Location<'static>,
+    /// What is wrong with it.
     pub kind: AnimationErrorKind,
 }
 
+/// What is wrong with an animation; see [`AnimationError`].
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum AnimationErrorKind {
@@ -496,7 +523,9 @@ pub enum AnimationErrorKind {
     Target(Arc<dyn std::error::Error + Send + Sync>),
     /// A marker name used twice; `first` is where it was first used.
     DuplicateMarker {
+        /// The repeated name.
         name: MarkerName,
+        /// Where the name was first used.
         first: &'static Location<'static>,
     },
     /// This change overlaps a later-written change (at `later`) on the
@@ -505,6 +534,7 @@ pub enum AnimationErrorKind {
     Overlap {
         /// The property this change animates.
         field: &'static str,
+        /// Where the change that replaces this one was written.
         later: &'static Location<'static>,
     },
 }

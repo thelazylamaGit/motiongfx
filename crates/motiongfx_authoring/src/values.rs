@@ -4,8 +4,12 @@ use crate::{
 };
 use std::time::Duration;
 
-/// Absolute clamped timeline time, including backward seeks.
-#[derive(Clone, Copy)]
+/// The scene's sample time as a source, from [`Scene::time`]. Reads the
+/// time last passed to `sample` (clamped to the duration), so derived values
+/// follow seeks in either direction.
+///
+/// [`Scene::time`]: crate::Scene::time
+#[derive(Clone, Copy, Debug)]
 pub struct SampleTime;
 impl<M> BindingSource<World<M>> for SampleTime {
     type Value = Duration;

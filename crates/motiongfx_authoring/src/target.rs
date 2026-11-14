@@ -1,4 +1,4 @@
-//! Compact built-in field targets. Metadata is materialized only when needed.
+//! [`Target`]: a compact [`Property`] for fields known at compile time.
 use crate::{
     Animation, BindingPlan, BindingSource, Computed, Property,
     Source, World,
@@ -11,17 +11,24 @@ use std::{
     time::Duration,
 };
 
-/// A statically known field. Implementations are zero-sized marker types;
-/// the general `Property` remains available for runtime-selected paths.
+/// A field known at compile time, such as a circle's radius. Implemented
+/// by empty marker types that model crates declare for each field.
 pub trait Field<S, T>: Send + Sync + 'static {
+    /// The field of object `id`.
     fn property<I: Copy>(id: I) -> Property<I, S, T>;
 }
 
-/// Object identity with a field selected by its type, without stored accessors.
+/// One field of one object, like [`Property`], but storing only the
+/// object's ID: the field is part of the type (`F`). Object handles return
+/// these, e.g. `circle.radius()`.
 pub struct Target<I, S, T, F> {
     id: I,
-    // Field/subject/value types identify metadata, not owned object storage.
-    #[allow(clippy::type_complexity)]
+    // `fn() -> ..` names the types without owning values of them, so a
+    // `Target` is `Copy`, `Send` and `Sync` whatever they are.
+    #[expect(
+        clippy::type_complexity,
+        reason = "a marker type; naming it would add nothing"
+    )]
     marker: PhantomData<fn() -> (S, T, F)>,
 }
 /// Shows the object ID and the field's type name.
@@ -45,16 +52,18 @@ impl<I: Copy, S, T, F> Clone for Target<I, S, T, F> {
     }
 }
 impl<I: Copy, S, T, F: Field<S, T>> Target<I, S, T, F> {
+    /// The field `F` of object `id`.
     pub const fn new(id: I) -> Self {
         Self {
             id,
             marker: PhantomData,
         }
     }
-    /// Expand into the existing general property representation without allocation.
+    /// The same field as a [`Property`].
     pub fn property(self) -> Property<I, S, T> {
         F::property(self.id)
     }
+    /// A value calculated from this field, for other objects to follow.
     pub fn map<W: 'static, U, A>(
         &self,
         calculate: A,
@@ -67,7 +76,7 @@ impl<I: Copy, S, T, F: Field<S, T>> Target<I, S, T, F> {
         Computed::new(self, calculate)
     }
 }
-/// Changes; see [`Property`] for the same methods.
+/// Animating the field; the same methods as [`Property`]'s.
 impl<I, S, T, F> Target<I, S, T, F>
 where
     I: SubjectId,
@@ -129,7 +138,7 @@ where
         self.to_with(move |previous: &T| previous.clone() * factor)
     }
 
-    /// Coordinate convenience for point/vector values convertible from an xy pair.
+    /// Animate a point or vector to `(x, y)`.
     #[track_caller]
     pub fn to_xy<M: 'static>(self, x: f64, y: f64) -> Animation<M>
     where

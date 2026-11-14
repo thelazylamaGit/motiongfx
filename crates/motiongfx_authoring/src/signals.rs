@@ -1,4 +1,5 @@
-//! Immutable signal descriptions and independent scene-local playback values.
+//! Signals: animatable values that aren't part of any object, such as a
+//! progress value several objects follow.
 
 use crate::source::SourceId;
 use crate::{
@@ -16,14 +17,26 @@ use std::{
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
+/// A signal's slot in one scene's [`SignalValues`].
 pub struct SignalId(usize);
 
 struct Initial<T> {
     id: SourceId,
     value: T,
 }
-/// A standalone writable animation input. Clones share the description,
-/// not mutable playback state. Methods borrow the handle rather than consume it.
+/// An animatable value that isn't part of any object, such as a progress
+/// value that several objects follow. Create one with [`signal`].
+///
+/// A signal is a description: each scene that uses it keeps its own current
+/// value, starting from the initial one. Clones refer to the same signal.
+///
+/// ```
+/// use motiongfx::prelude::ms;
+/// use motiongfx_authoring::{Animation, signal};
+/// let progress = signal(0.0);
+/// // Changes to signals are animations like any other.
+/// let fill: Animation<()> = progress.to(1.0).over(ms(500));
+/// ```
 pub struct Signal<T>(Arc<Initial<T>>);
 /// Shows the signal's initial value.
 impl<T: std::fmt::Debug> std::fmt::Debug for Signal<T> {
@@ -41,14 +54,15 @@ impl<T> Clone for Signal<T> {
 }
 
 impl<T: Clone + ThreadSafe> Signal<T> {
+    /// A signal starting at `initial`.
     pub fn new(initial: T) -> Self {
         Self(Arc::new(Initial {
             id: SourceId::new(),
             value: initial,
         }))
     }
-    /// Animate to `value`. (`Marker` selects the interpolation impl and
-    /// is inferred.)
+    /// Animate to `value`. (`Marker` picks how `T` interpolates and is
+    /// inferred.)
     #[track_caller]
     pub fn to<M: 'static, Marker>(
         &self,
@@ -112,6 +126,7 @@ impl<T: Clone + ThreadSafe> Signal<T> {
             interp,
         })
     }
+    /// A value calculated from this signal, for objects to follow.
     pub fn map<W, U, F>(&self, calculate: F) -> Computed<W, U>
     where
         W: 'static + SignalWorld + SubjectSource<SignalId, T>,
@@ -122,24 +137,27 @@ impl<T: Clone + ThreadSafe> Signal<T> {
         Computed::new(self, calculate)
     }
 }
+/// A signal starting at `initial`; shorthand for [`Signal::new`].
 pub fn signal<T: Clone + ThreadSafe>(initial: T) -> Signal<T> {
     Signal::new(initial)
 }
 
-/// Construction-only lookup maps stable description identities to dense slots.
-/// Sampling uses the slots directly and never traverses the descriptions.
+/// The current value of every signal one scene uses, each in its own slot.
 #[derive(Default)]
 pub struct SignalValues {
     ids: HashMap<SourceId, SignalId>,
     values: Vec<Box<dyn Any + Send + Sync>>,
 }
 impl SignalValues {
+    /// The current value of `signal`, or `None` if it was never registered.
     pub fn registered_value<T: ThreadSafe>(
         &self,
         signal: &Signal<T>,
     ) -> Option<&T> {
         self.get(*self.ids.get(&signal.0.id)?)
     }
+    /// Give `signal` a slot holding its initial value, or return the slot
+    /// it already has.
     pub fn register<T: Clone + ThreadSafe>(
         &mut self,
         signal: &Signal<T>,
@@ -152,9 +170,11 @@ impl SignalValues {
         self.ids.insert(signal.0.id, id);
         id
     }
+    /// The value in slot `id`, if it exists and holds a `T`.
     pub fn get<T: ThreadSafe>(&self, id: SignalId) -> Option<&T> {
         self.values.get(id.0)?.downcast_ref()
     }
+    /// Run `f` on the value in slot `id`, if it exists and holds a `T`.
     pub fn apply<T: ThreadSafe, R>(
         &mut self,
         id: SignalId,
@@ -163,7 +183,9 @@ impl SignalValues {
         Some(f(self.values.get_mut(id.0)?.downcast_mut()?))
     }
 }
+/// A world that stores signal values, so signals can be read in it.
 pub trait SignalWorld {
+    /// The signal values.
     fn signals_mut(&mut self) -> &mut SignalValues;
 }
 impl<W, T> Source<W> for Signal<T>
@@ -189,8 +211,8 @@ where
     }
 }
 
-/// A signal change. The signal gets its scene-local slot when lowered, so
-/// signals can be described before or without a scene.
+/// A change to a signal. The signal gets its slot in the scene when the
+/// scene compiles, so signals can be created without a scene.
 struct SignalStep<T, F> {
     signal: Signal<T>,
     target: F,

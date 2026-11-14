@@ -1,6 +1,12 @@
-//! Renderer-independent scene authoring over ordinary MotionGfx timelines.
-//! Timeline descriptions lower to core actions. Optional native bindings
-//! evaluate explicit property relationships after timeline sampling.
+//! Scene authoring for MotionGfx, independent of any renderer or object
+//! model.
+//!
+//! Add objects to a [`Scene`], describe [`Animation`]s as values (combined
+//! with [`chain`], [`all`], [`flow`], [`wait`] and [`marker`]), then
+//! [`Scene::compile`] them into a [`CompiledScene`] that can be sampled at
+//! any time. [`signal`]s and [`computed()`] values drive object fields that
+//! follow other values. A model crate such as `motiongfx_2d` supplies the
+//! objects; see its docs for a complete example.
 
 use motiongfx::prelude::*;
 use motiongfx::subject::SubjectId;
@@ -56,14 +62,19 @@ impl Default for AnimationDefaults {
     }
 }
 
-/// Normalized sigmoid easing (Manim's default `smooth` function).
+/// Manim's default easing: a sigmoid curve, rescaled to run exactly from
+/// 0 to 1. The default ease for every scene.
 pub fn smooth(t: f32) -> f32 {
     let error = 1.0 / (1.0 + 5.0_f32.exp());
     let sigmoid = 1.0 / (1.0 + (-10.0 * (t - 0.5)).exp());
     ((sigmoid - error) / (1.0 - 2.0 * error)).clamp(0.0, 1.0)
 }
 
-/// A subject identity plus a statically typed field accessor.
+/// One field of one object, such as a circle's radius: the object's ID,
+/// the path to the field, and how the field interpolates.
+///
+/// Built-in objects return the more compact [`Target`] from their handles;
+/// use `Property` for fields chosen at runtime or custom models.
 pub struct Property<I, S, T> {
     id: I,
     path: Path<S, T>,
@@ -121,6 +132,7 @@ impl<I: Copy, S, T> Clone for Property<I, S, T> {
 }
 
 impl<I: Copy, S, T> Property<I, S, T> {
+    /// The field at `path` of object `id`, interpolated smoothly.
     pub fn new<M>(id: I, path: Path<S, T>) -> Self
     where
         T: Interpolation<M>,
@@ -132,8 +144,9 @@ impl<I: Copy, S, T> Property<I, S, T> {
         }
     }
 
-    /// A property whose value changes only at the end of an action.
-    /// Useful for text and other values without a meaningful interpolation.
+    /// The field at `path` of object `id`, which jumps to its new value at
+    /// the end of a change; for text and other values that can't blend.
+    /// Discrete properties can't spring.
     pub fn discrete(id: I, path: Path<S, T>) -> Self
     where
         T: Clone,
@@ -146,8 +159,8 @@ impl<I: Copy, S, T> Property<I, S, T> {
     }
 }
 
-/// Changes. `M` is the scene's model and is inferred from where the
-/// animation is used.
+/// Animating the property. Each method returns an [`Animation`]; `M`, the
+/// scene's model, is inferred from where the animation is used.
 impl<I, S, T> Property<I, S, T>
 where
     I: SubjectId,
@@ -210,7 +223,7 @@ where
 }
 
 impl<I, S, T> Property<I, S, T> {
-    /// Describe a calculation from this sampled property.
+    /// A value calculated from this property, for other objects to follow.
     pub fn map<W: 'static, U, F>(
         &self,
         calculate: F,

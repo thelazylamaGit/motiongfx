@@ -1,6 +1,6 @@
-//! Spring settings. Any animation takes a spring through
-//! [`Animation::spring`](crate::Animation::spring); it lowers to the core spring
-//! action primitive with the property's own interpolation.
+//! Spring settings, re-exported from core. Pass one to
+//! [`Animation::spring`](crate::Animation::spring) to animate a change with
+//! a spring instead of a tween.
 pub use motiongfx::spring::{
     Spring, SpringCurve, SpringError, SpringSample, SpringValue,
 };

@@ -1,4 +1,4 @@
-//! Fixed values and typed sources accepted by authoring descriptors.
+//! [`Input`]: a fixed value or a source, accepted by object builder setters.
 
 use crate::bindings::{BindingDependency, DerivedValues};
 use crate::{
@@ -9,11 +9,16 @@ use motiongfx::prelude::{SubjectSource, ThreadSafe};
 use motiongfx::subject::SubjectId;
 use std::sync::Arc;
 
-/// Fixed inputs create no binding. Sources use the existing dependency plan;
-/// they are not reactive cells embedded in the stored object's state.
+/// A value for an object field: either fixed, or read from a signal,
+/// computed value or another object's property each time the scene is
+/// sampled. Builder setters take `impl Into<Input<..>>`, so callers pass
+/// `10.0`, `&radius` or `radius.map(..)` directly.
 pub enum Input<M, T> {
+    /// A constant; it becomes the field's initial value.
     Fixed(T),
+    /// Follows a signal.
     Signal(Signal<T>),
+    /// Follows a computed value.
     Computed(Computed<World<M>, T>),
     #[doc(hidden)]
     Reader(Reader<M, T>),
@@ -29,6 +34,7 @@ impl<M, T: Clone> Clone for Input<M, T> {
     }
 }
 impl<M, T> Input<M, T> {
+    /// The value, if this input is fixed.
     pub fn as_fixed(&self) -> Option<&T> {
         if let Self::Fixed(v) = self {
             Some(v)
@@ -74,6 +80,8 @@ impl<M, T> Clone for PreparedReader<M, T> {
     }
 }
 impl<M: 'static, T: Clone + PartialEq + ThreadSafe> Input<M, T> {
+    /// Follow `source`, converting each value with `convert`; for example a
+    /// computed `(f64, f64)` tuple used as a `Point`.
     pub fn mapped<S, F>(source: S, convert: F) -> Self
     where
         S: Source<World<M>>,
@@ -176,7 +184,7 @@ impl<M: 'static, T> From<&Computed<World<M>, T>> for Input<M, T> {
         Self::Computed(value.clone())
     }
 }
-/// Prepared once during scene construction; playback uses indexed sources.
+/// An [`Input`] registered in a scene, read while sampling.
 #[doc(hidden)]
 pub enum PreparedInput<M, T> {
     Fixed(T),

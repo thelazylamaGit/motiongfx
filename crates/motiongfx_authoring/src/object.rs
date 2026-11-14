@@ -1,5 +1,5 @@
-//! Model-neutral descriptor storage and property wiring. Model crates can wrap
-//! this type to provide their own inherent shape builders and input conversions.
+//! [`ObjectDefinition`]: an object's initial state plus the bindings its
+//! reactive inputs need, shared by model crates' object builders.
 use crate::{Input, Property, Scene, SceneObject, World};
 use motiongfx::prelude::{Path, SubjectSource, ThreadSafe};
 use motiongfx::subject::SubjectId;
@@ -8,14 +8,19 @@ use std::{
     sync::Arc,
 };
 
-/// Construction hook used by model descriptors to wire a field after insertion.
+/// Wires one field of a newly added object, for example by binding it to a
+/// signal. Receives the scene and the object's handle.
 pub type Register<T, M> = Arc<
     dyn Fn(&mut Scene<M>, <T as SceneObject<M>>::Handle)
         + Send
         + Sync,
 >;
-/// Initial state and construction-only property wiring. Model crates wrap this
-/// to add inherent builders without duplicating binding preparation.
+/// An object being described: its initial state, plus how to bind any
+/// fields set from signals or computed values once it is added to a scene.
+///
+/// Model crates wrap this in their own builder type (such as
+/// `motiongfx_2d::Object`) to add methods like `.fill(..)`. Dereferences to
+/// the state being built.
 pub struct ObjectDefinition<T: SceneObject<M>, M> {
     state: T,
     bindings: Vec<(
@@ -32,14 +37,15 @@ impl<T: SceneObject<M> + Clone, M> Clone for ObjectDefinition<T, M> {
     }
 }
 impl<T: SceneObject<M>, M: 'static> ObjectDefinition<T, M> {
+    /// Start from `state`, with no fields bound.
     pub fn new(state: T) -> Self {
         Self {
             state,
             bindings: Vec::new(),
         }
     }
-    /// Replace any previous hook for this field. Runs once per insertion,
-    /// including insertion of a cloned descriptor, never during sampling.
+    /// Run `register` when the object is added, replacing any earlier hook
+    /// for `field`. Each added copy of the definition runs it once.
     pub fn on_insert(
         &mut self,
         field: motiongfx::field_path::field::UntypedField,
@@ -48,6 +54,8 @@ impl<T: SceneObject<M>, M: 'static> ObjectDefinition<T, M> {
         self.bindings.retain(|(previous, _)| *previous != field);
         self.bindings.push((field, register));
     }
+    /// Add the object with `insert`, then run its field hooks with the
+    /// returned handle.
     pub fn insert_with(
         self,
         scene: &mut Scene<M>,
@@ -62,8 +70,9 @@ impl<T: SceneObject<M>, M: 'static> ObjectDefinition<T, M> {
         }
         handle
     }
-    /// Fixed inputs write initial state directly; dynamic inputs register a
-    /// native binding on insertion. The last setter for a field wins.
+    /// Set the field at `path` from `value`. A fixed value becomes initial
+    /// state; a signal, computed value or property binds the field when the
+    /// object is added. Setting a field again replaces the earlier input.
     pub fn property<I, V>(
         mut self,
         value: Input<M, V>,

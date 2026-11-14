@@ -1,7 +1,11 @@
-//! Typed native relationships evaluated after timeline sampling.
+//! Bindings: object fields calculated from other values after each sample,
+//! such as a label that follows a circle.
 //!
-//! Dependencies are explicit and frozen at preparation. Closure input/output
-//! types are checked by Rust; writer conflicts and cycles are checked once.
+//! A [`BindingPlan`] holds every binding in a scene. It is checked once
+//! ([`BindingPlan::prepare`]: missing properties, two bindings writing one
+//! field, bound fields that are also animated, cycles) and then evaluated
+//! after each sample, in dependency order. A binding recalculates only when
+//! its inputs change.
 
 use crate::{Property, source::SourceId};
 use motiongfx::action::{ActionKey, ActionTable};
@@ -14,13 +18,20 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Invalid relationships are reported before playback starts.
+/// A binding problem found when the scene compiles.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BindingError {
+    /// A binding reads or writes a property that doesn't exist, usually a
+    /// handle from another scene.
     MissingProperty(String),
+    /// A computed value registered in a different scene.
     ForeignDerived,
+    /// Two bindings write the same field (or a point and one of its axes).
     ConflictingWriters(String),
+    /// A bound field is also animated; the binding would overwrite it.
     AnimatedDestination(String),
+    /// Bindings depend on each other in a loop.
     Cycle,
 }
 
@@ -121,7 +132,7 @@ impl PropertyKey {
     }
 }
 
-/// Opaque dependency metadata used by typed binding sources.
+/// What a binding source reads, so the plan can order bindings.
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct BindingDependency(Dependency);
@@ -131,14 +142,16 @@ enum Dependency {
     Computed { plan: u64, index: usize },
 }
 
-/// Type-erased cached outputs. Only typed `ComputedSlot<T>` handles can read them.
+/// Cached computed values, read through [`ComputedSlot`]s.
 #[doc(hidden)]
 #[derive(Default)]
 pub struct DerivedValues(Vec<Option<Box<dyn Any + Send + Sync>>>);
 
-/// A source can be a property, derived value, or tuple of sources.
-/// Implementations should report every value read in `dependencies`.
+/// A registered source a binding reads while sampling: a property, a
+/// computed value's [`ComputedSlot`], or a tuple of up to five of these.
+/// Implementations must report everything they read in `dependencies`.
 pub trait BindingSource<W>: Clone + ThreadSafe {
+    /// The value read.
     type Value: Clone + PartialEq + ThreadSafe;
     #[doc(hidden)]
     fn read(
@@ -179,7 +192,8 @@ where
     }
 }
 
-/// Read-only handle to one shared, cached native calculation.
+/// A computed value registered in one [`BindingPlan`]; reads its cached
+/// result.
 pub struct ComputedSlot<T> {
     plan: u64,
     index: usize,
@@ -250,8 +264,10 @@ struct Node<W> {
     evaluate: Evaluate<W>,
 }
 
-/// Build once, prepare once, evaluate after each timeline sample.
-/// Scene ownership for ordinary property handles is not enforced here.
+/// Every binding and computed value in one scene. Add them with
+/// [`bind`](Self::bind) and [`computed`](Self::computed), check them once
+/// with [`prepare`](Self::prepare), then call [`evaluate`](Self::evaluate)
+/// after each sample. A [`Scene`](crate::Scene) does all of this for you.
 pub struct BindingPlan<W> {
     id: u64,
     registered: HashMap<SourceId, usize>,
@@ -294,7 +310,7 @@ impl<W: 'static> BindingPlan<W> {
     ) {
         self.registered.insert(id, slot.index);
     }
-    /// Read a typed source after evaluation, including a cached derived value.
+    /// The current value of `source`, after [`evaluate`](Self::evaluate).
     pub fn read_source<S: BindingSource<W>>(
         &self,
         world: &W,
@@ -303,7 +319,12 @@ impl<W: 'static> BindingPlan<W> {
         source.read(world, &self.values)
     }
 
-    /// Validate a source used outside the dependency graph, such as an update.
+    /// Check a source read outside the plan (such as by `scene.update`):
+    /// its properties exist and its computed values belong to this plan.
+    ///
+    /// # Errors
+    ///
+    /// The first problem found.
     pub fn validate_source<S: BindingSource<W>>(
         &self,
         world: &W,
@@ -322,6 +343,9 @@ impl<W: 'static> BindingPlan<W> {
         Ok(())
     }
 
+    /// Set `destination` to `calculate(value)` whenever `source`'s value
+    /// changes. `calculate` should depend only on its input, so seeking
+    /// reproduces the same result.
     pub fn bind<I, S, T, Source, F>(
         &mut self,
         destination: impl Into<Property<I, S, T>>,
@@ -370,6 +394,8 @@ impl<W: 'static> BindingPlan<W> {
         self.values.0.push(None);
     }
 
+    /// Cache `calculate(value)` of `source`, recalculated when its value
+    /// changes, for other bindings to read through the returned slot.
     pub fn computed<Source, T, F>(
         &mut self,
         source: Source,
@@ -416,9 +442,14 @@ impl<W: 'static> BindingPlan<W> {
         }
     }
 
-    /// Check property existence, conflicting writers, animated destinations
-    /// (including raw appended tracks), foreign derived handles, and cycles.
-    /// Calculates one dependency order; no graph sorting happens in playback.
+    /// Check every binding against `world` and `timeline`, and work out
+    /// the order to evaluate them in. Call again after adding bindings.
+    ///
+    /// # Errors
+    ///
+    /// A [`BindingError`] for a missing property, two bindings writing one
+    /// field, a bound field that the timeline animates, a computed value
+    /// from another plan, or a cycle.
     pub fn prepare(
         &mut self,
         world: &W,
@@ -522,8 +553,12 @@ impl<W: 'static> BindingPlan<W> {
         Ok(())
     }
 
-    /// Call after sampling. Unchanged inputs skip closure execution and writes.
-    /// Functions must be deterministic functions of their declared inputs.
+    /// Run the bindings whose inputs changed since the last call (all of
+    /// them the first time). Call after each timeline sample.
+    ///
+    /// # Panics
+    ///
+    /// If [`prepare`](Self::prepare) hasn't succeeded since the last change.
     pub fn evaluate(&mut self, world: &mut W) {
         assert!(self.prepared, "prepare bindings before evaluation");
         for &index in &self.order {

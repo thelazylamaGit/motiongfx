@@ -1,4 +1,5 @@
-//! Renderer-independent construction and sampling over statically typed models.
+//! [`Scene`] (building) and [`CompiledScene`] (playing), shared by every
+//! model, plus the [`World`] they store objects and signals in.
 use crate::{
     BindingError, BindingPlan, Property, SignalId, SignalValues,
     SignalWorld, Source,
@@ -12,10 +13,10 @@ use std::{any::TypeId, time::Duration};
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum SceneError {
-    /// An invalid binding (cycle, missing property, conflicting writers).
+    /// An invalid binding, such as a cycle or two bindings writing one field.
     Binding(BindingError),
-    /// Every problem found while compiling animations, each with the
-    /// source location of the animation that caused it.
+    /// Every problem found in the animations, each with the file and line
+    /// of the animation that caused it.
     Animation(Vec<crate::AnimationError>),
 }
 impl From<BindingError> for SceneError {
@@ -52,25 +53,31 @@ impl std::error::Error for SceneError {
     }
 }
 
-/// Common reactive state and an application-selected model (or composite model).
-/// Models implement typed SubjectSource access for this wrapper using their own
-/// IDs. No per-sample type registry is used to select model storage.
+/// Everything a scene animates: the model `M` (its objects), the current
+/// signal values and the sample time.
+///
+/// A model makes its objects animatable by implementing core's
+/// `SubjectSource<Id, Object> for World<M>` for each object type, with its
+/// own ID types.
 pub struct World<M> {
     model: M,
     signals: SignalValues,
     time: Duration,
 }
 impl<M> World<M> {
+    /// The model: the scene's objects.
     pub fn model(&self) -> &M {
         &self.model
     }
+    /// The model, mutably.
     pub fn model_mut(&mut self) -> &mut M {
         &mut self.model
     }
+    /// The time last sampled.
     pub fn time(&self) -> Duration {
         self.time
     }
-    /// Inspect a root registered by this scene. This lookup is for inspection, not binding evaluation.
+    /// The current value of `signal`, or `None` if this scene never used it.
     pub fn signal_value<T: ThreadSafe>(
         &self,
         signal: &crate::Signal<T>,
@@ -97,9 +104,8 @@ impl<M, T: ThreadSafe> SubjectSource<SignalId, T> for World<M> {
 }
 
 /// What a [`Step`](crate::Step) can use while the scene compiles: the
-/// model, construction caches and error reporting. Changes are added to
-/// the timeline with [`lower_change`](crate::lower_change). The context
-/// is dropped before playback.
+/// model, caches and error reporting. Steps add their changes to the
+/// timeline with [`lower_change`](crate::lower_change).
 pub struct SceneContext<'a, M> {
     world: &'a mut World<M>,
     pub(crate) builder: TimelineBuilder<'a, World<M>>,
@@ -116,13 +122,16 @@ pub struct SceneContext<'a, M> {
     caches: std::collections::HashMap<TypeId, Box<dyn std::any::Any>>,
 }
 impl<M> SceneContext<'_, M> {
+    /// The model being compiled.
     pub fn model(&self) -> &M {
         self.world.model()
     }
+    /// The model, mutably; for example to register a text selection.
     pub fn model_mut(&mut self) -> &mut M {
         self.world.model_mut()
     }
-    /// Memoize target resolution during construction only, never sampling.
+    /// A cache of type `T`, shared by every step while this scene compiles;
+    /// for example to resolve each text selection once.
     pub fn cache<T: Default + 'static>(&mut self) -> &mut T {
         self.caches
             .entry(TypeId::of::<T>())
@@ -130,7 +139,8 @@ impl<M> SceneContext<'_, M> {
             .downcast_mut()
             .expect("cache key and value type agree")
     }
-    /// Record a problem with one animation; `compile` reports them all.
+    /// Record a problem with one animation. `compile` reports them all
+    /// together.
     pub fn report(&mut self, error: crate::AnimationError) {
         self.errors.push(error);
     }
@@ -162,9 +172,10 @@ type Prepare<M> = Box<dyn FnOnce(&mut Scene<M>) + Send + Sync>;
 type Update<M> =
     dyn FnMut(&mut World<M>, &BindingPlan<World<M>>) + Send + Sync;
 
-/// A prepared native callback. Model adapters select/borrow their typed targets.
+/// A callback that runs on every sample, made by [`UpdateTargets`].
 pub struct NativeUpdate<M>(Box<Update<M>>);
 impl<M> NativeUpdate<M> {
+    /// Wrap `update`, which receives the world and the bindings' values.
     pub fn new(
         update: impl FnMut(&mut World<M>, &BindingPlan<World<M>>)
         + ThreadSafe,
@@ -172,11 +183,17 @@ impl<M> NativeUpdate<M> {
         Self(Box::new(update))
     }
 }
-/// Model adapter for borrowing callback targets. Preparation checks target
-/// existence/aliasing; the returned callback reads sources before mutable
-/// borrowing. No update dependency sorting or writer validation is implied.
+/// The objects a `scene.update` callback changes: one handle, or a tuple
+/// or array of them (see [`UpdateStorage`](crate::UpdateStorage)).
 pub trait UpdateTargets<M>: Sized {
+    /// What the callback receives, such as `&mut Circle`.
     type Objects<'a>;
+    /// Check the targets, then build a callback that reads `source` and
+    /// passes its value and the borrowed objects to `update`.
+    ///
+    /// # Panics
+    ///
+    /// If a target isn't in this scene or is borrowed twice.
     fn callback<S, F>(
         self,
         source: S,
@@ -187,19 +204,25 @@ pub trait UpdateTargets<M>: Sized {
         S: crate::BindingSource<World<M>>,
         F: for<'a> FnMut(Self::Objects<'a>, S::Value) + ThreadSafe;
 }
-/// Register an object or reusable component in the shared scene and return its
-/// typed animation handles. Components may add several constituent objects.
+/// Something [`Scene::add`] accepts: an object description, or a reusable
+/// component that adds several objects and returns its own handle type.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be added to the scene",
     label = "not a scene object",
     note = "pass an object description such as `Circle::new(..)`, or implement `SceneObject` for a component"
 )]
 pub trait SceneObject<M> {
+    /// What `scene.add` returns, used to animate the object.
     type Handle;
+    /// Add this object (or component) to `scene`.
     fn insert_into(self, scene: &mut Scene<M>) -> Self::Handle;
 }
 
-/// One authoring lifecycle for any model, including composite 2D/3D stores.
+/// A scene being built: add objects, bind values, then
+/// [`compile`](Self::compile) it with its animations.
+///
+/// `M` is the model that stores the objects; `motiongfx_2d::Scene` is this
+/// type with its 2D model filled in, and has an example.
 pub struct Scene<M> {
     world: World<M>,
     bindings: BindingPlan<World<M>>,
@@ -213,11 +236,13 @@ impl<M: Default + 'static> Default for Scene<M> {
     }
 }
 impl<M: Default + 'static> Scene<M> {
+    /// An empty scene.
     pub fn new() -> Self {
         Self::default()
     }
 }
 impl<M: 'static> Scene<M> {
+    /// A scene starting from `model`.
     pub fn with_model(model: M) -> Self {
         Self {
             world: World {
@@ -237,9 +262,11 @@ impl<M: 'static> Scene<M> {
     pub fn defaults(&mut self, duration: Duration, ease: EaseFn) {
         self.defaults = crate::AnimationDefaults { duration, ease };
     }
+    /// The model: the objects added so far.
     pub fn model(&self) -> &M {
         self.world.model()
     }
+    /// The model, mutably.
     pub fn model_mut(&mut self) -> &mut M {
         self.world.model_mut()
     }
@@ -249,11 +276,14 @@ impl<M: 'static> Scene<M> {
     pub fn add<T: SceneObject<M>>(&mut self, object: T) -> T::Handle {
         object.insert_into(self)
     }
+    /// The sample time as a source, for values that depend on time
+    /// directly.
     pub fn time(&self) -> crate::SampleTime {
         crate::SampleTime
     }
-    /// A keyed construction hook. Reconfiguring the same model feature replaces
-    /// its previous hook. These type identities are never looked up in sampling.
+    /// Run `prepare` just before the scene compiles. A later call with the
+    /// same key `K` replaces the earlier one, which suits settings where the
+    /// last call wins, such as the background colour.
     pub fn prepare_with<K: 'static>(
         &mut self,
         prepare: impl FnOnce(&mut Self) + ThreadSafe,
@@ -262,8 +292,10 @@ impl<M: 'static> Scene<M> {
         self.preparation.retain(|(previous, _)| *previous != key);
         self.preparation.push((key, Box::new(prepare)));
     }
-    /// Explicit cached property wiring. Prefer source-aware model builders for
-    /// ordinary relationships; both register into this same dependency plan.
+    /// Set `destination` to `calculate(value)` of `source` after each
+    /// sample, recalculating only when the value changes. Object builders
+    /// usually do this for you (`Circle::new(&radius)`); use `bind` to wire
+    /// objects that already exist.
     pub fn bind<I, S, T, A, F>(
         &mut self,
         destination: impl Into<Property<I, S, T>>,
@@ -281,9 +313,12 @@ impl<M: 'static> Scene<M> {
             source.register(&mut self.world, &mut self.bindings);
         self.bindings.bind(destination, source, calculate);
     }
-    /// A native callback on every sample, after all bindings and in registration
-    /// order. Assign from sampled inputs for seeking; accumulating frame deltas
-    /// does not reconstruct earlier states.
+    /// Run `update` on every sample, after the bindings, with `source`'s
+    /// value and mutable access to `targets` (one handle, or a tuple or
+    /// array of them). Updates run in the order they were added.
+    ///
+    /// Set fields from the value rather than accumulating changes from one
+    /// frame to the next, so seeking backwards gives the same result.
     ///
     /// # Panics
     ///
@@ -331,9 +366,9 @@ impl<M: 'static> Scene<M> {
             )
         })
     }
-    /// Run preparation hooks, lower the animations in source order,
-    /// validate bindings, bake action targets, then sample time zero.
-    /// Rendering and render caches are separate.
+    /// Compile animations into a playable [`CompiledScene`], or return
+    /// every problem found. The steps run in order, like
+    /// [`chain`](crate::chain).
     ///
     /// # Errors
     ///
@@ -421,8 +456,8 @@ fn overlaps(
         })
         .collect()
 }
-/// One compiled core timeline, native dependency plan and sampled model.
-/// Renderers consume the read-only model; this type owns no rendering resources.
+/// A compiled scene, ready to [`sample`](Self::sample) at any time,
+/// forwards or backwards. Renderers draw [`model`](Self::model).
 pub struct CompiledScene<M> {
     world: World<M>,
     registry: Registry,
@@ -443,12 +478,15 @@ impl<M: 'static> std::fmt::Debug for CompiledScene<M> {
     }
 }
 impl<M: 'static> CompiledScene<M> {
+    /// The world as last sampled, including signal values and time.
     pub fn state(&self) -> &World<M> {
         &self.world
     }
+    /// The objects as last sampled.
     pub fn model(&self) -> &M {
         self.world.model()
     }
+    /// How long the animation runs.
     pub fn duration(&self) -> Duration {
         self.timeline.tracks()[0].duration()
     }
@@ -462,8 +500,8 @@ impl<M: 'static> CompiledScene<M> {
     ) -> &[(motiongfx::track::MarkerName, Duration)] {
         self.timeline.tracks()[0].markers()
     }
-    /// Reconstruct the core timeline at clamped absolute time, evaluate cached
-    /// bindings, then run native callbacks. Baking does not precompute frames.
+    /// Show the scene at `time` (clamped to the duration): apply the
+    /// animations, then the bindings, then the `scene.update` callbacks.
     pub fn sample(&mut self, time: Duration) {
         self.timeline.set_target_time(time);
         self.world.time = self.timeline.target_time();
