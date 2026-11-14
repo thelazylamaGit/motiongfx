@@ -38,7 +38,8 @@ fn invalid_used_queries_return_helpful_preparation_errors() {
             sequence.play(title.select(query).fill().to(colors::RED));
         });
         match result {
-            Err(SceneError::Target(message)) => {
+            Err(error @ SceneError::Animation(_)) => {
+                let message = error.to_string();
                 assert!(message.contains(query));
                 assert!(message.contains("hello"));
                 assert!(message.contains("text_selections.rs"));
@@ -52,7 +53,7 @@ fn invalid_used_queries_return_helpful_preparation_errors() {
         scene.try_animate(|sequence| {
             sequence.play(title.select_range(3..4).opacity().to(0.0));
         }),
-        Err(SceneError::Target(_))
+        Err(SceneError::Animation(_))
     ));
 }
 

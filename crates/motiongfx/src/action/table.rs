@@ -250,6 +250,23 @@ impl<T> InterpActionBuilder<'_, T> {
     }
 }
 
+impl<'w, T> InterpActionBuilder<'w, T> {
+    /// Drive this action's interpolation with a spring instead of an
+    /// ease. Spring progress overshoots past 1 (and can dip below 0),
+    /// so the interpolation must extrapolate or clamp sensibly there.
+    /// [`ActionBuilder::with_spring`] restricts this to
+    /// [`SpringValue`](crate::spring::SpringValue) types instead.
+    pub fn with_spring(
+        self,
+        spring: impl Into<crate::spring::Spring>,
+    ) -> crate::spring::SpringActionBuilder<'w, T> {
+        crate::spring::SpringActionBuilder {
+            inner: self,
+            spring: spring.into(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

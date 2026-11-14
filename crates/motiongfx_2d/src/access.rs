@@ -50,7 +50,7 @@ impl<M: Model2d> Scene2dExt<M> for motiongfx_authoring::Scene<M> {
 }
 /// Read sampled 2D objects by typed handle. Handles must belong to this scene;
 /// the pre-existing ID representation does not enforce scene identity.
-pub trait Animation2dExt<M: Model2d> {
+pub trait CompiledScene2dExt<M: Model2d> {
     fn background(&self) -> Color;
     fn camera(&self) -> &Camera;
     fn rectangle(&self, handle: RectangleHandle) -> &Rectangle;
@@ -61,8 +61,8 @@ pub trait Animation2dExt<M: Model2d> {
     fn path(&self, handle: PathHandle) -> &Path;
     fn text(&self, handle: TextHandle) -> &Text;
 }
-impl<M: Model2d> Animation2dExt<M>
-    for motiongfx_authoring::Animation<M>
+impl<M: Model2d> CompiledScene2dExt<M>
+    for motiongfx_authoring::CompiledScene<M>
 {
     fn background(&self) -> Color {
         self.model().graphics().background.0

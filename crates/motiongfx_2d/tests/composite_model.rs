@@ -1,7 +1,7 @@
 //! A portable 2D store and a second model share the actual authoring lifecycle.
 use motiongfx::prelude::*;
 use motiongfx_2d::{
-    Animation2dExt, Circle, Graphics, Model2d, Point, computed,
+    Circle, CompiledScene2dExt, Graphics, Model2d, Point, computed,
     signal,
 };
 use motiongfx_authoring::{Property, Scene, SceneObject, World};

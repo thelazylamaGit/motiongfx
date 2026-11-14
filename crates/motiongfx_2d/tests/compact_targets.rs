@@ -1,6 +1,6 @@
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
-    Animation2dExt, Circle, CircleHandle, Scene, TextHandle,
+    Circle, CircleHandle, CompiledScene2dExt, Scene, TextHandle,
 };
 use std::mem::{needs_drop, size_of};
 

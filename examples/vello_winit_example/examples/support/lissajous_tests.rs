@@ -38,7 +38,10 @@ fn original_timing() -> (Duration, Duration) {
     (grid, grid + curves)
 }
 
-fn frame(animation: &mut Animation, time: Duration) -> vello::Scene {
+fn frame(
+    animation: &mut CompiledScene,
+    time: Duration,
+) -> vello::Scene {
     animation.sample(time);
     let mut frame = vello::Scene::new();
     let canvas = Size::new(CANVAS.0, CANVAS.1);

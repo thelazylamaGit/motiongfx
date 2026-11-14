@@ -2,8 +2,8 @@
 use crate::*;
 use motiongfx::prelude::{SubjectSource, ThreadSafe, TrackFragment};
 use motiongfx_authoring::{
-    AnimationChange, Field, Property, SceneContext, Sequence,
-    SpringValue,
+    AnimationError, AnimationErrorKind, Field, Property,
+    SceneContext, Sequence, Step, Timing, lower_change,
 };
 use std::{
     collections::HashMap, marker::PhantomData, ops::Range,
@@ -81,24 +81,18 @@ impl TextSelectionHandle {
     ) -> SelectionProperty<f64, fields::opacity::Marker> {
         self.property()
     }
-    pub fn fill_to(
+    #[track_caller]
+    pub fn fill_to<M: Model2d>(
         &self,
         color: impl Into<Color>,
-    ) -> SelectionChange<
-        Color,
-        fields::fill::Marker,
-        impl Fn(&Color) -> Color + ThreadSafe,
-    > {
+    ) -> motiongfx_authoring::Animation<M> {
         self.fill().to(color)
     }
-    pub fn set_fill(
+    #[track_caller]
+    pub fn set_fill<M: Model2d>(
         &self,
         color: impl Into<Color>,
-    ) -> SelectionChange<
-        Color,
-        fields::fill::Marker,
-        impl Fn(&Color) -> Color + ThreadSafe,
-    > {
+    ) -> motiongfx_authoring::Animation<M> {
         self.fill().set(color)
     }
 }
@@ -199,153 +193,99 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
             .insert(self.query.clone(), id);
         Ok(F::property(id))
     }
-    pub fn map_target<A: Fn(&T) -> T + ThreadSafe>(
+    /// A change whose target is calculated from the value at its start.
+    #[track_caller]
+    pub fn map_target<M, A>(
         &self,
         target: A,
-    ) -> SelectionChange<T, F, A> {
-        SelectionChange {
+    ) -> motiongfx_authoring::Animation<M>
+    where
+        M: Model2d,
+        T: Clone + ThreadSafe,
+        A: Fn(&T) -> T + Clone + ThreadSafe,
+    {
+        motiongfx_authoring::Animation::from_step(SelectionStep {
             property: self.clone(),
             target,
-            duration: None,
-            ease: None,
-        }
+        })
     }
-    pub fn to(
+    /// Animate to `value`.
+    #[track_caller]
+    pub fn to<M: Model2d>(
         self,
         value: impl Into<T>,
-    ) -> SelectionChange<T, F, impl Fn(&T) -> T + ThreadSafe>
+    ) -> motiongfx_authoring::Animation<M>
     where
         T: Clone + ThreadSafe,
     {
         let value = value.into();
         self.map_target(move |_| value.clone())
     }
-    pub fn set(
+    /// Replace the value instantly at the point where this is scheduled.
+    #[track_caller]
+    pub fn set<M: Model2d>(
         self,
         value: impl Into<T>,
-    ) -> SelectionChange<T, F, impl Fn(&T) -> T + ThreadSafe>
+    ) -> motiongfx_authoring::Animation<M>
     where
         T: Clone + ThreadSafe,
     {
         self.to(value).over(Duration::ZERO)
     }
-    pub fn offset<D: Copy + ThreadSafe>(
+    /// Animate by adding `delta` to the value at the change's start.
+    #[track_caller]
+    pub fn offset<M: Model2d, D: Copy + ThreadSafe>(
         self,
         delta: D,
-    ) -> SelectionChange<T, F, impl Fn(&T) -> T + ThreadSafe>
+    ) -> motiongfx_authoring::Animation<M>
     where
-        T: Clone + std::ops::Add<D, Output = T>,
+        T: Clone + ThreadSafe + std::ops::Add<D, Output = T>,
     {
-        self.map_target(move |previous| previous.clone() + delta)
+        self.map_target(move |previous: &T| previous.clone() + delta)
     }
-    pub fn multiply<D: Copy + ThreadSafe>(
+    /// Animate by multiplying the value at the change's start by `factor`.
+    #[track_caller]
+    pub fn multiply<M: Model2d, D: Copy + ThreadSafe>(
         self,
         factor: D,
-    ) -> SelectionChange<T, F, impl Fn(&T) -> T + ThreadSafe>
+    ) -> motiongfx_authoring::Animation<M>
     where
-        T: Clone + std::ops::Mul<D, Output = T>,
+        T: Clone + ThreadSafe + std::ops::Mul<D, Output = T>,
     {
-        self.map_target(move |previous| previous.clone() * factor)
+        self.map_target(move |previous: &T| previous.clone() * factor)
     }
 }
-#[must_use = "schedule the selection change with sequence.play"]
-pub struct SelectionChange<T, F, A> {
+
+/// A selection change. The selection resolves against the text content
+/// when the scene compiles; failures are reported with this location.
+struct SelectionStep<T, F, A> {
     property: SelectionProperty<T, F>,
     target: A,
-    duration: Option<Duration>,
-    ease: Option<motiongfx::prelude::EaseFn>,
 }
-impl<T, F, A> SelectionChange<T, F, A> {
-    pub fn spring<M>(
-        self,
-        spring: impl Into<Spring>,
-    ) -> SelectionSpringChange<T, F, A, M>
-    where
-        T: SpringValue<M>,
-    {
-        SelectionSpringChange {
-            change: self,
-            spring: spring.into(),
-            marker: PhantomData,
-        }
-    }
-    pub fn over(mut self, duration: Duration) -> Self {
-        self.duration = Some(duration);
-        self
-    }
-    pub fn ease(mut self, ease: motiongfx::prelude::EaseFn) -> Self {
-        self.ease = Some(ease);
-        self
-    }
-}
-impl<M, T, F, A> AnimationChange<World<M>, SceneContext<'_, M>>
-    for SelectionChange<T, F, A>
+impl<M, T, F, A> Step<M> for SelectionStep<T, F, A>
 where
     M: Model2d,
     T: Clone + ThreadSafe,
     F: Field<TextSelection, T>,
-    A: Fn(&T) -> T + ThreadSafe,
+    A: Fn(&T) -> T + Clone + ThreadSafe,
 {
     fn lower(
-        self,
+        &self,
         sequence: &mut Sequence<'_, World<M>, SceneContext<'_, M>>,
+        timing: &Timing,
     ) -> TrackFragment {
         match self.property.resolve(sequence.context_mut()) {
-            Ok(property) => {
-                let mut change = property.map_target(self.target);
-                if let Some(duration) = self.duration {
-                    change = change.over(duration);
-                }
-                if let Some(ease) = self.ease {
-                    change = change.ease(ease);
-                }
-                change.lower(sequence)
-            }
-            Err(error) => {
-                sequence.context_mut().reject(error);
-                TrackFragment::silent(Duration::ZERO)
-            }
-        }
-    }
-}
-
-#[must_use = "schedule the selection spring with sequence.play"]
-pub struct SelectionSpringChange<T, F, A, M> {
-    change: SelectionChange<T, F, A>,
-    spring: Spring,
-    marker: PhantomData<fn() -> M>,
-}
-impl<Model, T, F, A, M>
-    AnimationChange<World<Model>, SceneContext<'_, Model>>
-    for SelectionSpringChange<T, F, A, M>
-where
-    Model: Model2d,
-    T: SpringValue<M> + Clone + ThreadSafe,
-    F: Field<TextSelection, T>,
-    A: Fn(&T) -> T + ThreadSafe,
-{
-    fn lower(
-        self,
-        sequence: &mut Sequence<
-            '_,
-            World<Model>,
-            SceneContext<'_, Model>,
-        >,
-    ) -> TrackFragment {
-        match self.change.property.resolve(sequence.context_mut()) {
-            Ok(property) => {
-                let mut change =
-                    property.map_target(self.change.target);
-                if let Some(duration) = self.change.duration {
-                    change = change.over(duration);
-                }
-                if let Some(ease) = self.change.ease {
-                    change = change.ease(ease);
-                }
-                change.spring::<M>(self.spring).lower(sequence)
-            }
-            Err(error) => {
-                sequence.context_mut().reject(error);
+            Ok(property) => lower_change(
+                sequence,
+                property,
+                self.target.clone(),
+                timing,
+            ),
+            Err(message) => {
+                sequence.context_mut().report(AnimationError {
+                    location: timing.location(),
+                    kind: AnimationErrorKind::Target(message),
+                });
                 TrackFragment::silent(Duration::ZERO)
             }
         }

@@ -92,8 +92,9 @@ type registry in this shared layer.
 `SceneSequence` now carries a construction-only `SceneContext<M>`, which provides
 model access and memoized deferred-target registration, alongside signal
 registration. Its temporary caches are dropped before playback; they are not a
-runtime type registry. Adapter target errors propagate as `SceneError::Target`
-through `try_animate`, or panic during `animate` preparation. Standalone
+runtime type registry. Adapter target errors are reported with the animation's
+file and line as `SceneError::Animation` through `try_compile`/`try_animate`, or
+panic during `compile`/`animate` preparation. Standalone
 `Sequence::with_signals` remains available for integrations with their own worlds.
 `ObjectDefinition<T, M>` supplies reusable descriptor/property wiring; model
 crates may wrap it to expose their own inherent builders and input conversions.
@@ -102,7 +103,7 @@ provides the clamped sample time as an explicit source through `scene.time()`.
 
 `scene.try_animate(|sequence| ...)` creates the existing core registry/timeline,
 validates the binding plan, bakes relative targets, and samples time zero.
-`animate` is the panicking convenience. `Animation<M>::sample(time)` applies
+`animate` is the panicking convenience. `CompiledScene<M>::sample(time)` applies
 the core timeline, evaluates bindings, then runs direct callbacks in registration
 order. `model()` exposes a read-only sampled model; `state()` also exposes
 shared time and registered signal inspection. Renderers consume these views
@@ -129,9 +130,9 @@ See [headless shared model tests](tests/shared_scene.rs) and the
 lower to core analytical spring actions. Relative helpers such as
 `square.shift(100.0, 0.0).spring(settings)` use the same implementation, resolving
 relative targets at action start during baking. The separate spring change types
-have no `.over()` or `.ease()`. Explicit tween options set before `.spring()`
-return `PreparationError::ConflictingSpringTiming`; sequence defaults do not
-conflict and are replaced by the spring's timing. Generic `spring_to` methods
+cannot be mixed with `.over()`/`.ease()`: combining them panics at that call,
+with its file and line. Scene defaults do not conflict and are replaced by the
+spring's timing. Generic `spring_to` methods
 remain compatibility conveniences, delegating to the same spring lowering.
 
 `Spring::physical()` configures stiffness/damping/mass; `Spring::visual(duration)`
@@ -165,10 +166,10 @@ sequence.flow(ms(300), |sequence| {
 Existing core overlap/conflict
 rules apply unchanged; there is no spring-specific interruption policy.
 
-`Sequence::try_compile` returns `PreparationError` for invalid spring settings or conflicting explicit tween options; `compile` panics on it.
-`Scene::try_animate` now returns `SceneError::Binding(BindingError)` or
-`SceneError::Preparation(PreparationError)`. `animate` remains the convenience
-which panics on invalid preparation. Settings are fixed per action; no live
+`Scene::try_compile`/`try_animate` return `SceneError::Binding(BindingError)` or
+`SceneError::Animation(Vec<AnimationError>)`, the latter listing every invalid
+spring setting, discrete-property spring or unresolved target with its file and
+line. `compile`/`animate` are the conveniences which panic on invalid preparation. Settings are fixed per action; no live
 parameter changes or velocity-preserving interruption is implied.
 See [spring usage and limitations](../../docs/springs.md).
 

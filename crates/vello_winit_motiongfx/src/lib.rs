@@ -14,7 +14,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window as WinitWindow;
 
-use motiongfx_2d::Animation2dExt;
+use motiongfx_2d::CompiledScene2dExt;
 pub use vello_motiongfx::lettering as labels;
 pub mod playback;
 use playback::PlaybackControls;
@@ -66,7 +66,7 @@ impl Window {
 
     pub fn run(
         self,
-        animation: motiongfx_2d::Animation,
+        animation: motiongfx_2d::CompiledScene,
     ) -> Result<(), winit::error::EventLoopError> {
         let event_loop = winit::event_loop::EventLoop::new()?;
         let mut app = VelloWinitApp::new(AnimationDemo {
@@ -83,7 +83,7 @@ impl Window {
 
 struct AnimationDemo {
     renderer: vello_motiongfx::Renderer,
-    animation: motiongfx_2d::Animation,
+    animation: motiongfx_2d::CompiledScene,
     title: &'static str,
     canvas: Size,
     viewport: Size,

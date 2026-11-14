@@ -1,6 +1,6 @@
 //! Authoring, sampling and encoding benchmark for the 2D stack.
 //!
-//! Records a baseline before the `Anim` redesign and compares after it
+//! Records a baseline before the `Animation` redesign and compares after it
 //! (see docs/authoring-redesign.md, "Measurements"). Only [`animate`] is
 //! ported to the new API; object setup, the authored timeline and the
 //! benchmark IDs stay identical so the comparison is fair.
@@ -25,8 +25,8 @@ use criterion::{
 };
 use motiongfx::prelude::{ease, ms};
 use vello_motiongfx::{
-    Animation, Circle, CircleHandle, Color, Renderer, Scene, Signal,
-    Size, Spring, signal,
+    Circle, CircleHandle, Color, CompiledScene, Renderer, Scene,
+    Signal, Size, Spring, signal,
 };
 
 const SIZES: [usize; 2] = [1_000, 10_000];
@@ -71,8 +71,8 @@ fn objects(count: usize) -> Objects {
 
 /// The authored timeline: staggered parallel tweens, a signal tween, a
 /// parallel colour/opacity block, staggered springs and a hold. This is
-/// the only function ported to the `Anim` API.
-fn animate(objects: Objects) -> Animation {
+/// the only function ported to the `Animation` API.
+fn animate(objects: Objects) -> CompiledScene {
     let Objects {
         scene,
         circles,

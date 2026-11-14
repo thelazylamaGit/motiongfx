@@ -7,26 +7,18 @@ use motiongfx::prelude::*;
 use motiongfx::subject::SubjectId;
 use std::{any::TypeId, time::Duration};
 
-/// Checked finalization includes core action preparation and binding validation.
+/// Problems found while compiling a scene.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SceneError {
+    /// An invalid binding (cycle, missing property, conflicting writers).
     Binding(BindingError),
-    Preparation(crate::PreparationError),
-    Target(String),
+    /// Every problem found while compiling animations, each with the
+    /// source location of the animation that caused it.
+    Animation(Vec<crate::AnimationError>),
 }
 impl From<BindingError> for SceneError {
     fn from(e: BindingError) -> Self {
         Self::Binding(e)
-    }
-}
-impl From<motiongfx::spring::SpringError> for SceneError {
-    fn from(e: motiongfx::spring::SpringError) -> Self {
-        Self::Preparation(e.into())
-    }
-}
-impl From<crate::PreparationError> for SceneError {
-    fn from(error: crate::PreparationError) -> Self {
-        Self::Preparation(error)
     }
 }
 impl std::fmt::Display for SceneError {
@@ -36,8 +28,15 @@ impl std::fmt::Display for SceneError {
     ) -> std::fmt::Result {
         match self {
             Self::Binding(e) => e.fmt(f),
-            Self::Preparation(e) => e.fmt(f),
-            Self::Target(message) => f.write_str(message),
+            Self::Animation(errors) => {
+                for (index, error) in errors.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str("\n")?;
+                    }
+                    error.fmt(f)?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -45,8 +44,7 @@ impl std::error::Error for SceneError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Binding(e) => Some(e),
-            Self::Preparation(e) => Some(e),
-            Self::Target(_) => None,
+            Self::Animation(_) => None,
         }
     }
 }
@@ -102,7 +100,7 @@ pub type SceneSequence<'a, M> =
 /// The context and its memoized registration data are dropped before playback.
 pub struct SceneContext<'a, M> {
     world: &'a mut World<M>,
-    error: &'a mut Option<String>,
+    animation_errors: &'a mut Vec<crate::AnimationError>,
     caches: std::collections::HashMap<TypeId, Box<dyn std::any::Any>>,
 }
 impl<M> SceneContext<'_, M> {
@@ -120,8 +118,9 @@ impl<M> SceneContext<'_, M> {
             .downcast_mut()
             .expect("cache key and value type agree")
     }
-    pub fn reject(&mut self, error: impl Into<String>) {
-        self.error.get_or_insert_with(|| error.into());
+    /// Record a problem with one animation; `compile` reports them all.
+    pub fn report(&mut self, error: crate::AnimationError) {
+        self.animation_errors.push(error);
     }
 }
 impl<M> crate::RegisterSignals for SceneContext<'_, M> {
@@ -160,6 +159,11 @@ pub trait UpdateTargets<M>: Sized {
 }
 /// Register an object or reusable component in the shared scene and return its
 /// typed animation handles. Components may add several constituent objects.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be added to the scene",
+    label = "not a scene object",
+    note = "pass an object description such as `Circle::new(..)`, or implement `SceneObject` for a component"
+)]
 pub trait SceneObject<M> {
     type Handle;
     fn insert_into(self, scene: &mut Scene<M>) -> Self::Handle;
@@ -171,6 +175,7 @@ pub struct Scene<M> {
     bindings: BindingPlan<World<M>>,
     updates: Vec<NativeUpdate<M>>,
     preparation: Vec<(TypeId, Prepare<M>)>,
+    defaults: crate::AnimationDefaults,
 }
 impl<M: Default + 'static> Default for Scene<M> {
     fn default() -> Self {
@@ -193,7 +198,14 @@ impl<M: 'static> Scene<M> {
             bindings: BindingPlan::default(),
             updates: Vec::new(),
             preparation: Vec::new(),
+            defaults: crate::AnimationDefaults::default(),
         }
+    }
+    /// Duration and ease for every animation that does not set its own.
+    /// Read when the scene compiles, so it applies to all animations,
+    /// including ones built before this call.
+    pub fn defaults(&mut self, duration: Duration, ease: EaseFn) {
+        self.defaults = crate::AnimationDefaults { duration, ease };
     }
     pub fn model(&self) -> &M {
         self.world.model()
@@ -260,13 +272,35 @@ impl<M: 'static> Scene<M> {
             &self.world,
         ));
     }
+    /// Compile animations into a playable [`CompiledScene`]. The steps run in
+    /// order, like [`chain`](crate::chain). Panics with every problem found
+    /// (each with file and line); use [`try_compile`](Self::try_compile)
+    /// to handle them instead.
+    #[track_caller]
+    pub fn compile(
+        self,
+        steps: impl IntoIterator<Item = crate::Animation<M>>,
+    ) -> CompiledScene<M> {
+        self.try_compile(steps).unwrap_or_else(|error| {
+            panic!("invalid scene preparation:\n{error}")
+        })
+    }
+    /// Run preparation hooks, lower the animations in source order,
+    /// validate bindings, bake action targets, then sample time zero.
+    pub fn try_compile(
+        self,
+        steps: impl IntoIterator<Item = crate::Animation<M>>,
+    ) -> Result<CompiledScene<M>, SceneError> {
+        let steps = crate::chain(steps);
+        self.try_animate(|sequence| sequence.play(steps))
+    }
     /// Compile the existing core timeline and initialize time zero. Panics on
     /// invalid bindings; use `try_animate` to handle preparation errors.
     #[track_caller]
     pub fn animate(
         self,
         author: impl FnOnce(&mut SceneSequence<'_, M>),
-    ) -> Animation<M> {
+    ) -> CompiledScene<M> {
         self.try_animate(author).expect("invalid scene preparation")
     }
     /// Finalize construction hooks, validate bindings, bake action targets, then
@@ -274,28 +308,29 @@ impl<M: 'static> Scene<M> {
     pub fn try_animate(
         mut self,
         author: impl FnOnce(&mut SceneSequence<'_, M>),
-    ) -> Result<Animation<M>, SceneError> {
+    ) -> Result<CompiledScene<M>, SceneError> {
         for (_, prepare) in std::mem::take(&mut self.preparation) {
             prepare(&mut self);
         }
         let mut registry = Registry::new();
-        let mut target_error = None;
+        let mut animation_errors = Vec::new();
         let mut sequence = crate::Sequence::with_context(
             &mut registry,
             SceneContext {
                 world: &mut self.world,
-                error: &mut target_error,
+                animation_errors: &mut animation_errors,
                 caches: Default::default(),
             },
         );
+        sequence.defaults(self.defaults.duration, self.defaults.ease);
         author(&mut sequence);
-        let mut timeline = sequence.try_compile()?;
-        if let Some(error) = target_error {
-            return Err(SceneError::Target(error));
+        let mut timeline = sequence.compile();
+        if !animation_errors.is_empty() {
+            return Err(SceneError::Animation(animation_errors));
         }
         self.bindings.prepare(&self.world, &timeline)?;
         timeline.bake_actions(&registry, &self.world);
-        let mut animation = Animation {
+        let mut animation = CompiledScene {
             world: self.world,
             registry,
             timeline,
@@ -308,14 +343,14 @@ impl<M: 'static> Scene<M> {
 }
 /// One compiled core timeline, native dependency plan and sampled model.
 /// Renderers consume the read-only model; this type owns no rendering resources.
-pub struct Animation<M> {
+pub struct CompiledScene<M> {
     world: World<M>,
     registry: Registry,
     timeline: Timeline<World<M>>,
     bindings: BindingPlan<World<M>>,
     updates: Vec<NativeUpdate<M>>,
 }
-impl<M: 'static> Animation<M> {
+impl<M: 'static> CompiledScene<M> {
     pub fn state(&self) -> &World<M> {
         &self.world
     }

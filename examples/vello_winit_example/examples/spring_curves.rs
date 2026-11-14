@@ -5,7 +5,7 @@
 
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
-    Animation, BezPath, Circle, Color, Line, Path, Point, Scene,
+    BezPath, Circle, Color, CompiledScene, Line, Path, Point, Scene,
     Scene2dExt, Spring, SpringCurve, Text, TextAlign, TextStyle,
     colors::{TRANSPARENT, WHITE},
     computed, signal,
@@ -106,7 +106,7 @@ fn graph(
     return Arc::new(path);
 }
 
-fn build_animation() -> Animation {
+fn build_animation() -> CompiledScene {
     let experiments = experiments();
     let mut scene = Scene::new();
     scene.set_background(Color::from_rgb8(12, 15, 23));

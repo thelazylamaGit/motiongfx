@@ -131,14 +131,15 @@ can opt in with their existing interpolation marker type.
 ## Errors and compatibility
 
 `SpringError` covers invalid spring settings. Core track compilation is unchanged.
-Authoring `Sequence::try_compile` returns `SpringError`; `Sequence::compile` panics on failure.
-`Scene::try_animate` returns the new `SceneError` wrapper:
+`Scene::try_compile`/`try_animate` return `SceneError`:
 
 - `SceneError::Binding(BindingError)` for existing relationship diagnostics.
-- `SceneError::Preparation(SpringError)` for core spring preparation.
+- `SceneError::Animation(Vec<AnimationError>)` for invalid spring settings
+  (`AnimationErrorKind::Spring(SpringError)`) and springs on discrete
+  properties, each with the animation's file and line.
 
 Code matching the old direct `BindingError` return needs to match its wrapper.
-`Scene::animate` remains the panicking convenience. Core low-level target baking,
+`Scene::compile`/`animate` remain the panicking conveniences. Core low-level target baking,
 queueing and sampling calls are otherwise unchanged.
 
 ## Demo and future scope

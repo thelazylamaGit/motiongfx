@@ -213,15 +213,11 @@ crate::properties::fill_methods!(TextHandle, Text, TextId);
 
 impl TextHandle {
     /// Replace plain text at the scheduled time, without a tween or duration.
-    pub fn set_content(
+    #[track_caller]
+    pub fn set_content<M: crate::Model2d>(
         self,
         content: impl Into<Arc<str>>,
-    ) -> motiongfx_authoring::Change<
-        TextId,
-        Text,
-        Arc<str>,
-        impl Fn(&Arc<str>) -> Arc<str> + Send + Sync,
-    > {
+    ) -> motiongfx_authoring::Animation<M> {
         self.content().set(content)
     }
 }

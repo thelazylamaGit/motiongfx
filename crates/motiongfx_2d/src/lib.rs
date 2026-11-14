@@ -16,10 +16,10 @@
 //! ```
 pub use kurbo::{Affine, Cap, Join, Point, Rect, Size, Vec2};
 pub use motiongfx_authoring::{
-    BindingError, BindingSource, PreparationError, SampleTime,
-    SceneError, SceneObject, Signal, SignalId, Source, Spring,
-    SpringCurve, SpringError, World, animate, computed, signal,
-    smooth,
+    AnimationError, AnimationErrorKind, BindingError, BindingSource,
+    SampleTime, SceneError, SceneObject, Signal, SignalId, Source,
+    Spring, SpringCurve, SpringError, World, all, animate, chain,
+    computed, flow, signal, smooth, wait,
 };
 pub use motiongfx_text::{
     FontStyle, FontWeight, SelectionError, TextRange,
@@ -27,7 +27,12 @@ pub use motiongfx_text::{
 pub use peniko::Color;
 use peniko_motiongfx as _;
 pub type Scene = motiongfx_authoring::Scene<Graphics>;
+/// One animation in a 2D scene: a change, group or wait. Pass a list of
+/// them to `scene.compile(..)`, or combine them with `chain`/`all`/`flow`.
 pub type Animation = motiongfx_authoring::Animation<Graphics>;
+/// The result of `scene.compile(..)`: the scene with its baked timeline,
+/// ready to sample at any time.
+pub type CompiledScene = motiongfx_authoring::CompiledScene<Graphics>;
 pub type Sequence<'a> =
     motiongfx_authoring::SceneSequence<'a, Graphics>;
 pub type Computed<T, M = Graphics> =
@@ -83,22 +88,23 @@ pub use properties::Position;
 pub use style::ApplyStyle;
 pub use text::{Text, TextAlign, TextHandle, TextId, TextStyle};
 pub use text_selection::{
-    SelectionChange, SelectionProperty, SelectionSpringChange,
-    TextSelection, TextSelectionHandle, TextSelectionId,
+    SelectionProperty, TextSelection, TextSelectionHandle,
+    TextSelectionId,
 };
 pub use tips::{
     EndpointTip, LineTip, LineTipHandle, LineWithTips, NoTip,
 };
 pub use triangle::{Triangle, TriangleHandle, TriangleId};
 mod wedge;
-pub use access::{Animation2dExt, Scene2dExt};
+pub use access::{CompiledScene2dExt, Scene2dExt};
 pub use rounded_triangle::Geometry;
 pub mod prelude {
     pub use crate::{
-        Animation, Animation2dExt, Camera, Cap, Chevron, Circle,
-        Color, FontStyle, FontWeight, Join, Line, Model2d, Path,
-        Point, Rectangle, Scene, Scene2dExt, Size, Spring, Text,
-        TextAlign, TextStyle, Triangle, Vec2, computed, signal,
+        Animation, Camera, Cap, Chevron, Circle, Color,
+        CompiledScene, CompiledScene2dExt, FontStyle, FontWeight,
+        Join, Line, Model2d, Path, Point, Rectangle, Scene,
+        Scene2dExt, Size, Spring, Text, TextAlign, TextStyle,
+        Triangle, Vec2, all, chain, computed, flow, signal, wait,
     };
 }
 

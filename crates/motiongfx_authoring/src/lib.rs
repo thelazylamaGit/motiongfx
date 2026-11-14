@@ -7,8 +7,13 @@ use motiongfx::subject::SubjectId;
 use std::ops::{Add, Mul};
 use std::time::Duration;
 
+mod animation;
 pub mod bindings;
 mod input;
+pub use animation::{
+    Animation, AnimationError, AnimationErrorKind, Step, Timing, all,
+    chain, flow, lower_change, wait,
+};
 mod macros;
 mod object;
 mod scene;
@@ -16,7 +21,7 @@ pub use input::{Input, PreparedInput};
 pub use object::{ObjectDefinition, Register};
 mod values;
 pub use scene::{
-    Animation, NativeUpdate, Scene, SceneContext, SceneError,
+    CompiledScene, NativeUpdate, Scene, SceneContext, SceneError,
     SceneObject, SceneSequence, UpdateTargets, World,
 };
 pub use values::SampleTime;
@@ -26,13 +31,12 @@ mod spring;
 mod target;
 pub use bindings::{BindingError, BindingPlan, BindingSource};
 pub use signals::{
-    RegisterSignals, Signal, SignalChange, SignalId,
-    SignalTargetSpringChange, SignalValues, SignalWorld, signal,
+    RegisterSignals, Signal, SignalId, SignalValues, SignalWorld,
+    signal,
 };
 pub use source::{Computed, Source, computed};
 pub use spring::{
-    SignalSpringChange, Spring, SpringChange, SpringCurve,
-    SpringError, SpringSample, SpringTargetChange, SpringValue,
+    Spring, SpringCurve, SpringError, SpringSample, SpringValue,
 };
 pub use target::{Field, Target};
 
@@ -60,42 +64,14 @@ pub fn smooth(t: f32) -> f32 {
     ((sigmoid - error) / (1.0 - 2.0 * error)).clamp(0.0, 1.0)
 }
 
-/// Invalid action settings detected while constructing the timeline.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PreparationError {
-    Spring(SpringError),
-    ConflictingSpringTiming,
-}
-impl From<SpringError> for PreparationError {
-    fn from(error: SpringError) -> Self {
-        Self::Spring(error)
-    }
-}
-impl std::fmt::Display for PreparationError {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        match self {
-            Self::Spring(error)=>error.fmt(f),
-            Self::ConflictingSpringTiming=>f.write_str("spring changes cannot also specify .over() or .ease(); configure timing on the spring"),
-        }
-    }
-}
-impl std::error::Error for PreparationError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Spring(error) => Some(error),
-            Self::ConflictingSpringTiming => None,
-        }
-    }
-}
-
 /// A subject identity plus a statically typed field accessor.
 pub struct Property<I, S, T> {
     id: I,
     path: Path<S, T>,
     interp: InterpFn<T>,
+    /// Changes only at the end of an action (text, caps/joins), so it
+    /// cannot spring.
+    discrete: bool,
 }
 
 impl<I: Copy, S, T> Copy for Property<I, S, T> {}
@@ -114,6 +90,7 @@ impl<I: Copy, S, T> Property<I, S, T> {
             id,
             path,
             interp: T::interp,
+            discrete: false,
         }
     }
 
@@ -129,92 +106,100 @@ impl<I: Copy, S, T> Property<I, S, T> {
             interp: |a, b, progress| {
                 if progress < 1.0 { a.clone() } else { b.clone() }
             },
+            discrete: true,
         }
     }
 
-    /// A custom action target, resolved during MotionGfx baking, not each frame.
-    pub fn map_target<F>(self, target: F) -> Change<I, S, T, F>
+    /// A change whose target is calculated from the value at its start.
+    /// Runs once while baking, never per frame.
+    #[track_caller]
+    pub fn map_target<M, F>(self, target: F) -> Animation<M>
     where
-        F: Fn(&T) -> T + ThreadSafe,
-    {
-        Change {
-            property: self,
-            target,
-            duration: None,
-            ease: None,
-        }
-    }
-
-    pub fn to(
-        self,
-        value: impl Into<T>,
-    ) -> Change<I, S, T, impl Fn(&T) -> T + ThreadSafe>
-    where
+        M: 'static,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
         T: Clone + ThreadSafe,
+        F: Fn(&T) -> T + Clone + ThreadSafe,
+        World<M>: SubjectSource<I, S>,
+    {
+        animation::change(self, target)
+    }
+
+    /// Animate to `value`.
+    #[track_caller]
+    pub fn to<M>(self, value: impl Into<T>) -> Animation<M>
+    where
+        M: 'static,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
+        T: Clone + ThreadSafe,
+        World<M>: SubjectSource<I, S>,
     {
         let value = value.into();
         self.map_target(move |_| value.clone())
     }
 
-    pub fn offset<D>(
-        self,
-        delta: D,
-    ) -> Change<I, S, T, impl Fn(&T) -> T + ThreadSafe>
+    /// Animate by adding `delta` to the value at the change's start.
+    #[track_caller]
+    pub fn offset<M, D>(self, delta: D) -> Animation<M>
     where
-        T: Clone + Add<D, Output = T>,
+        M: 'static,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
+        T: Clone + ThreadSafe + Add<D, Output = T>,
         D: Copy + ThreadSafe,
+        World<M>: SubjectSource<I, S>,
     {
-        self.map_target(move |previous| previous.clone() + delta)
+        self.map_target(move |previous: &T| previous.clone() + delta)
     }
 
-    /// Describe an immediate change at the point where it is scheduled.
-    /// Use `sequence.play(property.set(value))`; this does not mutate state
-    /// merely by constructing the description.
-    pub fn set(
-        self,
-        value: impl Into<T>,
-    ) -> Change<I, S, T, impl Fn(&T) -> T + ThreadSafe>
+    /// Animate by multiplying the value at the change's start by `factor`.
+    #[track_caller]
+    pub fn multiply<M, D>(self, factor: D) -> Animation<M>
     where
+        M: 'static,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
+        T: Clone + ThreadSafe + Mul<D, Output = T>,
+        D: Copy + ThreadSafe,
+        World<M>: SubjectSource<I, S>,
+    {
+        self.map_target(move |previous: &T| previous.clone() * factor)
+    }
+
+    /// Replace the value instantly at the point where this is scheduled.
+    #[track_caller]
+    pub fn set<M>(self, value: impl Into<T>) -> Animation<M>
+    where
+        M: 'static,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
         T: Clone + ThreadSafe,
+        World<M>: SubjectSource<I, S>,
     {
         self.to(value).over(Duration::ZERO)
     }
 
-    pub fn multiply<D>(
+    /// Shorthand for `.to(value).spring(spring)`.
+    #[track_caller]
+    pub fn spring_to<M>(
         self,
-        factor: D,
-    ) -> Change<I, S, T, impl Fn(&T) -> T + ThreadSafe>
+        value: impl Into<T>,
+        spring: impl Into<Spring>,
+    ) -> Animation<M>
     where
-        T: Clone + Mul<D, Output = T>,
-        D: Copy + ThreadSafe,
+        M: 'static,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
+        T: Clone + ThreadSafe,
+        World<M>: SubjectSource<I, S>,
     {
-        self.map_target(move |previous| previous.clone() * factor)
-    }
-}
-
-/// Consumed when scheduled; does not survive as an extra runtime layer.
-#[must_use = "Schedule the change with sequence.play(...) or sequence.play_all(...)"]
-pub struct Change<I, S, T, F> {
-    property: Property<I, S, T>,
-    target: F,
-    duration: Option<Duration>,
-    ease: Option<EaseFn>,
-}
-
-impl<I, S, T, F> Change<I, S, T, F> {
-    pub fn over(mut self, duration: Duration) -> Self {
-        self.duration = Some(duration);
-        self
-    }
-    pub fn ease(mut self, ease: EaseFn) -> Self {
-        self.ease = Some(ease);
-        self
+        self.to(value).spring(spring)
     }
 }
 
 /// A thin collector for existing MotionGfx track fragments.
 pub struct Sequence<'a, W, C = ()> {
-    preparation_error: Option<PreparationError>,
     context: C,
     builder: TimelineBuilder<'a, W>,
     fragments: Vec<TrackFragment>,
@@ -245,7 +230,6 @@ impl<'a, W: 'static, C> Sequence<'a, W, C> {
         let defaults = AnimationDefaults::default();
         Self {
             context,
-            preparation_error: None,
             builder: registry.create_builder::<W>(),
             fragments: Vec::new(),
             duration: defaults.duration,
@@ -340,31 +324,10 @@ impl<'a, W: 'static, C> Sequence<'a, W, C> {
         duration
     }
 
-    /// Set a property at the current sequence time without consuming time.
-    pub fn set<I, S, T>(
-        &mut self,
-        property: impl Into<Property<I, S, T>>,
-        value: impl Into<T>,
-    ) where
-        I: SubjectId,
-        S: Clone + ThreadSafe,
-        T: Clone + ThreadSafe,
-        W: SubjectSource<I, S>,
-    {
-        self.play(property.into().set(value));
-    }
-
+    /// Problems are reported through the scene context while lowering,
+    /// so compiling the collected fragments cannot fail.
     pub fn compile(self) -> Timeline<W> {
-        self.try_compile().expect("invalid animation preparation")
-    }
-
-    pub fn try_compile(
-        self,
-    ) -> Result<Timeline<W>, PreparationError> {
-        if let Some(error) = self.preparation_error {
-            return Err(error);
-        }
-        Ok(self.builder.compile(self.fragments.ord_chain().compile()))
+        self.builder.compile(self.fragments.ord_chain().compile())
     }
 }
 
@@ -374,31 +337,6 @@ pub trait AnimationChange<W, C> {
         self,
         sequence: &mut Sequence<'_, W, C>,
     ) -> TrackFragment;
-}
-impl<W: 'static, C, I, S, T, F> AnimationChange<W, C>
-    for Change<I, S, T, F>
-where
-    I: SubjectId,
-    S: Clone + ThreadSafe,
-    T: Clone + ThreadSafe,
-    F: Fn(&T) -> T + ThreadSafe,
-    W: SubjectSource<I, S>,
-{
-    fn lower(
-        self,
-        sequence: &mut Sequence<'_, W, C>,
-    ) -> TrackFragment {
-        sequence
-            .builder
-            .act_builder(
-                self.property.id,
-                self.property.path,
-                self.target,
-            )
-            .with_interp(self.property.interp)
-            .with_ease(self.ease.unwrap_or(sequence.ease))
-            .play(self.duration.unwrap_or(sequence.duration))
-    }
 }
 impl<I, S, T> Property<I, S, T> {
     /// Describe a calculation from this sampled property.

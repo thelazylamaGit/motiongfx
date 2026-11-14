@@ -291,7 +291,7 @@ impl Renderer {
     }
     pub fn render<M: Model2d>(
         &mut self,
-        animation: &motiongfx_authoring::Animation<M>,
+        animation: &motiongfx_authoring::CompiledScene<M>,
         scene: &mut vello::Scene,
         viewport: Size,
         canvas: Size,

@@ -157,28 +157,20 @@ pub(crate) use handle_methods;
 macro_rules! fill_methods {
     ($handle:ident,$state:ty,$id:ty) => {
         impl $handle {
-            /// Animate fill using normal sequence defaults.
-            pub fn fill_to(
+            /// Animate fill using the scene defaults unless timed.
+            #[track_caller]
+            pub fn fill_to<M: crate::Model2d>(
                 self,
                 color: impl Into<crate::Color>,
-            ) -> motiongfx_authoring::Change<
-                $id,
-                $state,
-                crate::Color,
-                impl Fn(&crate::Color) -> crate::Color + Send + Sync,
-            > {
+            ) -> motiongfx_authoring::Animation<M> {
                 self.fill().to(color)
             }
             /// Replace fill at the scheduled time without consuming duration.
-            pub fn set_fill(
+            #[track_caller]
+            pub fn set_fill<M: crate::Model2d>(
                 self,
                 color: impl Into<crate::Color>,
-            ) -> motiongfx_authoring::Change<
-                $id,
-                $state,
-                crate::Color,
-                impl Fn(&crate::Color) -> crate::Color + Send + Sync,
-            > {
+            ) -> motiongfx_authoring::Animation<M> {
                 self.fill().set(color)
             }
         }
@@ -190,62 +182,42 @@ macro_rules! transform_methods {
     ($handle:ident,$state:ty,$id:ty) => {
         impl $handle {
             /// Offset position from its action-start value.
-            pub fn shift(
+            #[track_caller]
+            pub fn shift<M: crate::Model2d>(
                 self,
                 x: f64,
                 y: f64,
-            ) -> motiongfx_authoring::Change<
-                $id,
-                $state,
-                crate::Point,
-                impl Fn(&crate::Point) -> crate::Point + Send + Sync,
-            > {
+            ) -> motiongfx_authoring::Animation<M> {
                 self.position().offset((x, y))
             }
-            pub fn shift_x(
+            #[track_caller]
+            pub fn shift_x<M: crate::Model2d>(
                 self,
                 x: f64,
-            ) -> motiongfx_authoring::Change<
-                $id,
-                $state,
-                f64,
-                impl Fn(&f64) -> f64 + Send + Sync,
-            > {
+            ) -> motiongfx_authoring::Animation<M> {
                 self.position_x().offset(x)
             }
-            pub fn shift_y(
+            #[track_caller]
+            pub fn shift_y<M: crate::Model2d>(
                 self,
                 y: f64,
-            ) -> motiongfx_authoring::Change<
-                $id,
-                $state,
-                f64,
-                impl Fn(&f64) -> f64 + Send + Sync,
-            > {
+            ) -> motiongfx_authoring::Animation<M> {
                 self.position_y().offset(y)
             }
             /// Multiply scale from its action-start value.
-            pub fn scale_by(
+            #[track_caller]
+            pub fn scale_by<M: crate::Model2d>(
                 self,
                 factor: f64,
-            ) -> motiongfx_authoring::Change<
-                $id,
-                $state,
-                f64,
-                impl Fn(&f64) -> f64 + Send + Sync,
-            > {
+            ) -> motiongfx_authoring::Animation<M> {
                 self.scale().multiply(factor)
             }
             /// Offset rotation in counterclockwise radians.
-            pub fn rotate(
+            #[track_caller]
+            pub fn rotate<M: crate::Model2d>(
                 self,
                 angle: f64,
-            ) -> motiongfx_authoring::Change<
-                $id,
-                $state,
-                f64,
-                impl Fn(&f64) -> f64 + Send + Sync,
-            > {
+            ) -> motiongfx_authoring::Animation<M> {
                 self.rotation().offset(angle)
             }
         }

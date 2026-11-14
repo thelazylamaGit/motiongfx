@@ -2,10 +2,10 @@
 
 Objects, styles, geometry, attachments, and 2D camera semantics live here. This
 crate depends on Kurbo/Peniko directly, not Vello, Winit, or a GPU. The
-`Scene` and `Animation` names are convenience aliases for the shared
-`motiongfx_authoring::Scene<Graphics>` / `Animation<Graphics>` lifecycle.
+`Scene` and `CompiledScene` names are convenience aliases for the shared
+`motiongfx_authoring::Scene<Graphics>` / `CompiledScene<Graphics>` lifecycle.
 Import `motiongfx_2d::prelude::*` for objects and the 2D extension traits
-(`Scene2dExt` for camera/background setup, `Animation2dExt` for sampled reads).
+(`Scene2dExt` for camera/background setup, `CompiledScene2dExt` for sampled reads).
 The portable model makes no claim that every renderer already supports it.
 
 `Object<T, M>` and `Input<T, M>` are thin local adapters over shared authoring
@@ -39,7 +39,7 @@ that created them; do not mix handles between scenes.
 geometry. It accepts a fixed `Color`, signal, or computed color; the last call
 wins. The default remains RGB(28, 28, 46). For a fixed initial color, retain the
 returned property to animate it with ordinary sequences. When using a signal,
-animate that signal. The shared Winit host reads `Animation::background()` after
+animate that signal. The shared Winit host reads `CompiledScene::background()` after
 sampling and passes it to `RenderParams::base_color`. Other rendering hosts
 should do the same. The background fills the render target regardless of
 camera transforms; playback controls retain their own painted background.
@@ -66,7 +66,7 @@ Registering it with `Scene::add` returns its typed property handles.
 and initial state that playback will own; the callback runs once during setup.
 There is one finalizing `animate` call per scene in this draft. Compose as many
 actions or reusable Rust authoring functions as needed inside that call; they
-all contribute to the same timeline. Independently compiled `Animation`
+all contribute to the same timeline. Independently compiled `CompiledScene`
 instances do not yet have a merge/concatenation API.
 
 `Scene::add` uses the `SceneObject` trait to select registration from the
@@ -92,7 +92,7 @@ content at the current sequence time without adding duration. The equivalent
 `sequence.set(title.content(), "Sorted")` remains available. Alternatively,
 `sequence.play(title.content().to("Sorted").over(s(1)))` holds the old content
 until the change's end. These are discrete replacements, not glyph morphs.
-`Animation::text(handle)` reads sampled text state.
+`CompiledScene::text(handle)` reads sampled text state.
 
 Text position anchors the top of the block. `TextAlign::Left` (default),
 `Center`, or `Right` controls horizontal anchoring; positive scene y points up.
@@ -185,7 +185,7 @@ The target must already exist in this scene. Attachment follows its sampled
 world position, including ancestor transforms, but does not inherit its scale
 or rotation. Camera position is an offset in world axes. Resolution happens
 when rendering after timeline sampling; it has no accumulated follow state,
-so seeking works in either direction. `Animation::camera()` reads sampled
+so seeking works in either direction. `CompiledScene::camera()` reads sampled
 camera state, whose position remains the local offset when attached.
 See `camera_zoom` for a Manim-style zoom to a circle's tangent and back.
 It interpolates frame scale and position together, then derives magnification
@@ -226,7 +226,7 @@ let animation = scene.animate(|sequence| {
 ```
 
 Only used selections register; missing literals/invalid UTF-8 byte ranges produce
-`SceneError::Target` during `try_animate`, with source/query/call-site details.
+`SceneError::Animation` during `try_compile`/`try_animate`, with source/query/call-site details.
 `animate` panics before playback for the same error. `TextRange` itself remains
 a separately checked range utility returning `SelectionError`.
 Registration searches initial fixed content, never during sampling. It memoizes
@@ -285,7 +285,7 @@ leaving this mechanism in place until dynamic text effects justify revisiting
 it. See [text caching](../../docs/text-caching.md) for costs and rationale.
 
 `Scene::animate` consumes the scene, builds a MotionGfx timeline and
-bakes its targets. `Animation::sample` uses the existing MotionGfx sampler;
+bakes its targets. `CompiledScene::sample` uses the existing MotionGfx sampler;
 The separate `vello_motiongfx::Renderer` emits Vello scene commands from sampled state. Object state is stored
 once, with geometry transforms calculated when rendering. There is no
 per-frame authoring interpreter. This does not remove ordinary MotionGfx
@@ -370,7 +370,7 @@ boolean arrow flags and shared `arrow_size` have been replaced by this API.
 The returned handle retains the concrete tip types: a circle exposes `radius`,
 while triangles and chevrons expose `size` and `angle`. Triangle also exposes
 its independently animatable corner `radius`. Ordinary line fields
-remain accessible through the same handle. `Animation::line` accepts either
+remain accessible through the same handle. `CompiledScene::line` accepts either
 plain or tipped line handles; `circle`, `triangle`, and `chevron` access sampled
 tip state. Tipped lines and their shapes also work with direct updates.
 
@@ -519,7 +519,7 @@ For a shared calculation use `let orbit = curve.end.map(function)`;
 then `scene.bind(dot.position(), &orbit, |position| position)`. Its output is cached
 once per changed input for all consumers. Tuples support one to five sources.
 
-`scene.try_animate(...)` returns `Result<Animation, SceneError>` and rejects
+`scene.try_animate(...)` returns `Result<CompiledScene, SceneError>` and rejects
 cycles, overlapping binding destinations, and timeline writes to bound fields.
 `scene.animate(...)` keeps its existing return type and panics on these errors
 during construction. Both initialize the sampled animation and bindings at
@@ -527,7 +527,7 @@ time zero. Bound fields can feed other bindings; execution order is prepared
 once regardless of registration order. Ordinary property handles still must
 belong to this scene; scene identity validation is not implemented.
 
-`Animation::sample` runs MotionGfx first, then bindings, then direct updates;
+`CompiledScene::sample` runs MotionGfx first, then bindings, then direct updates;
 rendering reads
 the resulting state. Changed inputs execute native Rust closures; unchanged
 inputs skip calculation/writes. This adds source reads/comparisons and native

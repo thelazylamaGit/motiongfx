@@ -1,7 +1,7 @@
 //! Two independent model adapters share one schedule, source graph and clock.
 use motiongfx::prelude::*;
 use motiongfx_authoring::{
-    Animation, BindingPlan, BindingSource, Input, NativeUpdate,
+    BindingPlan, BindingSource, CompiledScene, Input, NativeUpdate,
     ObjectDefinition, Property, Scene, SceneObject, UpdateTargets,
     World, computed, signal,
 };
@@ -113,7 +113,7 @@ impl UpdateTargets<Models> for PointHandle {
         )
     }
 }
-fn build() -> Animation<Models> {
+fn build() -> CompiledScene<Models> {
     let progress = signal(0.0);
     let mut scene = Scene::<Models>::new();
     let point = scene.add(

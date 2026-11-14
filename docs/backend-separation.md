@@ -8,7 +8,7 @@ current APIs, rationale and future options.
 | Responsibility | Owner |
 | --- | --- |
 | Actions, timelines, interpolation, baking, sampling | Existing `motiongfx` |
-| Shared Scene/Animation lifecycle, registration/property preparation, signals/computations, native binding/update execution | `motiongfx_authoring` |
+| Shared Scene/CompiledScene lifecycle, registration/property preparation, signals/computations, native binding/update execution | `motiongfx_authoring` |
 | 2D state/storage, shape builders/handles, geometry, styles, attachments, 2D camera semantics | `motiongfx_2d` |
 | Font shaping/layout, glyph/source mappings and bounds | `motiongfx_text` |
 | Vello command recording and renderer caches/resources | `vello_motiongfx` |
@@ -21,7 +21,7 @@ model; it has not yet been adapted to these portable 2D objects.
 
 ## Shared contracts
 
-`Scene<M>` and `Animation<M>` own the one authoring/sampling implementation.
+`Scene<M>` and `CompiledScene<M>` own the one authoring/sampling implementation.
 `World<M>` contains the chosen model, scene-local signal storage and sampled
 time. Model-owned typed IDs permit adapters to implement the core
 `SubjectSource<ModelId, State> for World<M>` across crate boundaries.
@@ -38,7 +38,7 @@ Advanced adapters now target `Source<World<Graphics>>` rather than the old
 concrete `Source<Graphics>` world. The ordinary standalone `Sequence<W>` and
 `BindingPlan<W>` APIs remain available for integrations using their own worlds.
 
-The 2D `Scene` / `Animation` convenience aliases use `Graphics`. A composite
+The 2D `Scene` / `CompiledScene` convenience aliases use `Graphics`. A composite
 model implements `Model2d` and uses `motiongfx_authoring::Scene<MyModels>`.
 Its 2D objects can share signals, computed relationships and scheduled changes
 with other models. Source types usually infer the model from `scene.add`;
@@ -52,7 +52,7 @@ borrowing adapter or specific `UpdateTargets` implementation. There is no
 implicit mixed-store callback ordering or aliasing scheme.
 
 2D setup/read conveniences are extension traits, imported through
-`motiongfx_2d::prelude::*`: `Scene2dExt` and `Animation2dExt`. Ordinary lifecycle
+`motiongfx_2d::prelude::*`: `Scene2dExt` and `CompiledScene2dExt`. Ordinary lifecycle
 methods remain inherent shared methods. Handles retain the pre-existing scene
 identity limitation: do not mix handles from different scenes.
 

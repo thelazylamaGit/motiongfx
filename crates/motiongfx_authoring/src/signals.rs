@@ -1,7 +1,7 @@
 //! Immutable signal descriptions and independent scene-local playback values.
 
 use crate::source::SourceId;
-use crate::{BindingPlan, Computed, Property, Source};
+use crate::{Animation, BindingPlan, Computed, Property, Source};
 use motiongfx::prelude::*;
 use std::time::Duration;
 use std::{
@@ -36,60 +36,82 @@ impl<T: Clone + ThreadSafe> Signal<T> {
             value: initial,
         }))
     }
-    pub fn to<M>(
+    /// Animate to `value`. (`Marker` selects the interpolation impl and
+    /// is inferred.)
+    #[track_caller]
+    pub fn to<M: 'static, Marker>(
         &self,
         value: impl Into<T>,
-    ) -> SignalChange<T, impl Fn(&T) -> T + ThreadSafe>
+    ) -> Animation<M>
     where
-        T: Interpolation<M>,
+        T: Interpolation<Marker>,
     {
         let value = value.into();
-        self.change(move |_| value.clone(), T::interp)
+        self.change(move |_| value.clone(), T::interp, false)
     }
-    pub fn set(
+    /// Replace the value instantly at the point where this is scheduled.
+    #[track_caller]
+    pub fn set<M: 'static>(
         &self,
         value: impl Into<T>,
-    ) -> SignalChange<T, impl Fn(&T) -> T + ThreadSafe> {
+    ) -> Animation<M> {
         let value = value.into();
-        let mut change = self.change(
+        self.change(
             move |_| value.clone(),
             |a, b, t| if t < 1.0 { a.clone() } else { b.clone() },
-        );
-        change.duration = Some(Duration::ZERO);
-        change
+            true,
+        )
+        .over(Duration::ZERO)
     }
-    pub fn offset<D, M>(
+    /// Animate by adding `delta` to the value at the change's start.
+    #[track_caller]
+    pub fn offset<M: 'static, D, Marker>(
         &self,
         delta: D,
-    ) -> SignalChange<T, impl Fn(&T) -> T + ThreadSafe>
+    ) -> Animation<M>
     where
-        T: Interpolation<M> + Add<D, Output = T>,
+        T: Interpolation<Marker> + Add<D, Output = T>,
         D: Copy + ThreadSafe,
     {
-        self.change(move |v| v.clone() + delta, T::interp)
+        self.change(move |v: &T| v.clone() + delta, T::interp, false)
     }
-    pub fn multiply<D, M>(
+    /// Animate by multiplying the value at the change's start by `factor`.
+    #[track_caller]
+    pub fn multiply<M: 'static, D, Marker>(
         &self,
         factor: D,
-    ) -> SignalChange<T, impl Fn(&T) -> T + ThreadSafe>
+    ) -> Animation<M>
     where
-        T: Interpolation<M> + Mul<D, Output = T>,
+        T: Interpolation<Marker> + Mul<D, Output = T>,
         D: Copy + ThreadSafe,
     {
-        self.change(move |v| v.clone() * factor, T::interp)
+        self.change(move |v: &T| v.clone() * factor, T::interp, false)
     }
-    fn change<F: Fn(&T) -> T + ThreadSafe>(
+    /// Shorthand for `.to(value).spring(spring)`.
+    #[track_caller]
+    pub fn spring_to<M: 'static, Marker>(
         &self,
-        target: F,
+        value: impl Into<T>,
+        spring: impl Into<crate::Spring>,
+    ) -> Animation<M>
+    where
+        T: Interpolation<Marker>,
+    {
+        self.to(value).spring(spring)
+    }
+    #[track_caller]
+    fn change<M: 'static>(
+        &self,
+        target: impl Fn(&T) -> T + Clone + ThreadSafe,
         interp: InterpFn<T>,
-    ) -> SignalChange<T, F> {
-        SignalChange {
+        discrete: bool,
+    ) -> Animation<M> {
+        Animation::from_step(SignalStep {
             signal: self.clone(),
             target,
             interp,
-            duration: None,
-            ease: None,
-        }
+            discrete,
+        })
     }
     pub fn map<W, U, F>(&self, calculate: F) -> Computed<W, U>
     where
@@ -168,106 +190,52 @@ where
     }
 }
 
-#[must_use = "Schedule the signal change with sequence.play(...) or sequence.play_all(...)"]
-pub struct SignalChange<T, F> {
-    signal: Signal<T>,
-    target: F,
-    interp: InterpFn<T>,
-    duration: Option<Duration>,
-    ease: Option<EaseFn>,
-}
-impl<T, F> SignalChange<T, F> {
-    /// Apply the same spring timing modifier as an object-property change.
-    pub fn spring<M>(
-        self,
-        spring: impl Into<crate::Spring>,
-    ) -> SignalTargetSpringChange<T, F, M>
-    where
-        T: crate::SpringValue<M>,
-    {
-        SignalTargetSpringChange {
-            change: self,
-            spring: spring.into(),
-            marker: std::marker::PhantomData,
-        }
-    }
-    pub fn over(mut self, duration: Duration) -> Self {
-        self.duration = Some(duration);
-        self
-    }
-    pub fn ease(mut self, ease: EaseFn) -> Self {
-        self.ease = Some(ease);
-        self
-    }
-}
-
 /// A sequence capability: roots used only in timeline actions still register.
 pub trait RegisterSignals {
     fn signals(&mut self) -> &mut SignalValues;
-}
-
-#[must_use = "schedule the signal spring change with sequence.play"]
-pub struct SignalTargetSpringChange<T, F, M> {
-    change: SignalChange<T, F>,
-    spring: crate::Spring,
-    marker: std::marker::PhantomData<fn() -> M>,
-}
-impl<W: 'static, C, T, F, M> crate::AnimationChange<W, C>
-    for SignalTargetSpringChange<T, F, M>
-where
-    C: RegisterSignals,
-    T: crate::SpringValue<M> + Clone + ThreadSafe,
-    F: Fn(&T) -> T + ThreadSafe,
-    W: SubjectSource<SignalId, T>,
-{
-    fn lower(
-        self,
-        sequence: &mut crate::Sequence<'_, W, C>,
-    ) -> TrackFragment {
-        let id =
-            sequence.context.signals().register(&self.change.signal);
-        crate::Change {
-            property: Property {
-                id,
-                path: path!(T),
-                interp: self.change.interp,
-            },
-            target: self.change.target,
-            duration: self.change.duration,
-            ease: self.change.ease,
-        }
-        .spring::<M>(self.spring)
-        .lower(sequence)
-    }
 }
 impl RegisterSignals for &mut SignalValues {
     fn signals(&mut self) -> &mut SignalValues {
         self
     }
 }
-impl<W: 'static, C, T, F> crate::AnimationChange<W, C>
-    for SignalChange<T, F>
+
+/// A signal change. The signal gets its scene-local slot when lowered, so
+/// signals can be described before or without a scene.
+struct SignalStep<T, F> {
+    signal: Signal<T>,
+    target: F,
+    interp: InterpFn<T>,
+    discrete: bool,
+}
+impl<M, T, F> crate::Step<M> for SignalStep<T, F>
 where
-    C: RegisterSignals,
+    M: 'static,
     T: Clone + ThreadSafe,
-    W: SubjectSource<SignalId, T>,
-    F: Fn(&T) -> T + ThreadSafe,
+    F: Fn(&T) -> T + Clone + ThreadSafe,
 {
     fn lower(
-        self,
-        sequence: &mut crate::Sequence<'_, W, C>,
+        &self,
+        sequence: &mut crate::Sequence<
+            '_,
+            crate::World<M>,
+            crate::SceneContext<'_, M>,
+        >,
+        timing: &crate::Timing,
     ) -> TrackFragment {
-        let id = sequence.context.signals().register(&self.signal);
-        let change = crate::Change {
-            property: Property {
-                id,
-                path: path!(T),
-                interp: self.interp,
-            },
-            target: self.target,
-            duration: self.duration,
-            ease: self.ease,
+        let id =
+            sequence.context_mut().signals().register(&self.signal);
+        let property = Property {
+            id,
+            path: path!(T),
+            interp: self.interp,
+            discrete: self.discrete,
         };
-        crate::AnimationChange::lower(change, sequence)
+        crate::lower_change(
+            sequence,
+            property,
+            self.target.clone(),
+            timing,
+        )
     }
 }

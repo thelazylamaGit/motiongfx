@@ -16,7 +16,7 @@ impl<T: SceneObject<M>, M: crate::Model2d> Object<T, M> {
     ///
     /// ```
     /// use motiongfx::prelude::s;
-    /// use motiongfx_2d::{Animation2dExt,signal, Scene, Text, TextStyle};
+    /// use motiongfx_2d::{CompiledScene2dExt,signal, Scene, Text, TextStyle};
     /// let size = signal(24.0);
     /// let labels = TextStyle::new().font_size(&size);
     /// let mut scene = Scene::new();
@@ -29,7 +29,7 @@ impl<T: SceneObject<M>, M: crate::Model2d> Object<T, M> {
     /// ```
     /// Incompatible styles fail at compile time:
     /// ```compile_fail
-    /// use motiongfx_2d::{Animation2dExt,Circle, TextStyle};
+    /// use motiongfx_2d::{CompiledScene2dExt,Circle, TextStyle};
     /// let _: motiongfx_2d::Object<Circle> = Circle::new(10.0).style(&TextStyle::new());
     /// ```
     pub fn style(self, style: &impl ApplyStyle<T, M>) -> Self {

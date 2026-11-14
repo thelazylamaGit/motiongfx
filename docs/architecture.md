@@ -28,7 +28,7 @@ engine, build a complete editor, or introduce ECS.
 | --- | --- |
 | [`motiongfx`](../crates/motiongfx/README.md) | Typed actions, timelines, ordering, baking and sampling; independent of graphics/windowing. |
 | [`motiongfx_interp`](../crates/motiongfx_interp/README.md) | Interpolation support. |
-| [`motiongfx_authoring`](../crates/motiongfx_authoring/README.md) | Shared `Scene<M>`/`Animation<M>` lifecycle, registration/property preparation, sequences, signals/computations and native binding/update execution. No graphics/window dependency. |
+| [`motiongfx_authoring`](../crates/motiongfx_authoring/README.md) | Shared `Scene<M>`/`CompiledScene<M>` lifecycle, registration/property preparation, sequences, signals/computations and native binding/update execution. No graphics/window dependency. |
 | [`motiongfx_2d`](../crates/motiongfx_2d/README.md) | Portable 2D objects/storage, geometry, styles, typed handles, attachments and camera semantics. Uses Kurbo/Peniko directly, not Vello/Winit. |
 | [`peniko_motiongfx`](../crates/peniko_motiongfx/README.md) | Geometry/color interpolation and path-related integration; not a window host or complete scene renderer. |
 | [`motiongfx_text`](../crates/motiongfx_text/README.md) | Shared Parley font/layout contexts, embedded/registered fonts, positioned glyphs, UTF-8 cluster ranges and layout bounds; no scene/window/GPU. |
@@ -58,7 +58,7 @@ Implementation entry points:
 
 ## Shared model boundary
 
-Authoring owns `Scene<M>`, `Animation<M>`, and `World<M>`. World wraps an
+Authoring owns `Scene<M>`, `CompiledScene<M>`, and `World<M>`. World wraps an
 application-selected model with signal storage and sampled time. Model crates
 implement core `SubjectSource<ModelId, State> for World<M>` using their own IDs.
 Shared code never enumerates graphics/3D types or invokes a renderer.
@@ -78,7 +78,7 @@ still require a safe model adapter; provided 2D array/tuple borrowing targets
 Graphics. No ECS or general dynamic world registry is introduced.
 
 2D-only helpers are extension traits imported by `motiongfx_2d::prelude::*`:
-`Scene2dExt` for camera/background setup, `Animation2dExt` for sampled reads.
+`Scene2dExt` for camera/background setup, `CompiledScene2dExt` for sampled reads.
 The inherent lifecycle methods (`add`, `animate`, `bind`, `update`, `sample`)
 remain shared.
 
@@ -135,7 +135,7 @@ and `rotate` describe changes using action-start values. `fill_to` animates;
 `.instant()` API. Generic `.set(value)` is still available on targets.
 A shared `.spring(settings)` modifier works for absolute, relative, signal and
 selection changes. Explicit tween timing/easing conflict with spring timing;
-checked construction reports PreparationError, without adding playback checks.
+mixing them panics at the call site, without adding playback checks.
 Per-property spring helpers and explicit field-selector closures are unnecessary.
 
 ## Signals and computed values: current contract
@@ -303,8 +303,8 @@ step via `.over(spring.duration())`. `SpringValue` carries a
 its `.spring` call.
 There is no arrival-based continuation or spring-specific overlap policy.
 Track compilation and ordinary action conflict behavior remain unchanged.
-Authoring Sequence::try_compile reports invalid spring settings; Scene::try_animate
-returns SceneError, wrapping BindingError or SpringError.
+Invalid spring settings are reported by Scene::try_compile/try_animate as
+SceneError::Animation, with the animation's file and line.
 
 Rest delta/speed are normalized (0.001 and 0.01/s), deliberately independent of
 start-to-target distance so existing ordering can schedule before target baking.
@@ -377,7 +377,7 @@ nodes. `text.select("word")`, `select_nth` and `select_range` now return deferre
 descriptions; only used selections register while lowering actions. The shared
 SceneSequence carries a SceneContext with model access, signal registration and
 construction-only typed memoization. These registration maps drop before playback.
-Missing/invalid queries report SceneError::Target with query/source/call location
+Missing/invalid queries report SceneError::Animation with query/source/call location
 before baking or sampling. Equivalent resolved ranges reuse the same target;
 distinct overlaps use registration order (first scheduled use), later wins.
 Selection descriptions share one query allocation across their paint fields;

@@ -124,7 +124,7 @@ impl<M: Model2d> Object<Line, M> {
     ///
     /// ```
     /// use motiongfx::prelude::s;
-    /// use motiongfx_2d::{Animation2dExt,Circle, Line, Scene, Triangle};
+    /// use motiongfx_2d::{CompiledScene2dExt,Circle, Line, Scene, Triangle};
     /// let mut scene = Scene::new();
     /// let line = scene.add(Line::new((0.0, 0.0), (200.0, 0.0))
     ///     .start_tip(Circle::new(6.0))
@@ -138,7 +138,7 @@ impl<M: Model2d> Object<Line, M> {
     /// ```
     /// Tip-specific properties are checked at compile time:
     /// ```compile_fail
-    /// use motiongfx_2d::{Animation2dExt,Circle, Line, Scene};
+    /// use motiongfx_2d::{CompiledScene2dExt,Circle, Line, Scene};
     /// let mut scene = Scene::new();
     /// let line = scene.add(Line::new((0.0, 0.0), (200.0, 0.0))
     ///     .start_tip(Circle::new(6.0)));

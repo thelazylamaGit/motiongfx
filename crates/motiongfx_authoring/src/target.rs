@@ -1,5 +1,8 @@
 //! Compact built-in field targets. Metadata is materialized only when needed.
-use crate::{BindingPlan, BindingSource, Computed, Property, Source};
+use crate::{
+    Animation, BindingPlan, BindingSource, Computed, Property,
+    Source, World,
+};
 use motiongfx::prelude::*;
 use motiongfx::subject::SubjectId;
 use std::{
@@ -37,68 +40,97 @@ impl<I: Copy, S, T, F: Field<S, T>> Target<I, S, T, F> {
     pub fn property(self) -> Property<I, S, T> {
         F::property(self.id)
     }
-    pub fn map_target<A: Fn(&T) -> T + ThreadSafe>(
-        self,
-        target: A,
-    ) -> crate::Change<I, S, T, A> {
-        self.property().map_target(target)
-    }
-    pub fn to(
-        self,
-        value: impl Into<T>,
-    ) -> crate::Change<I, S, T, impl Fn(&T) -> T + ThreadSafe>
+    /// A change whose target is calculated from the value at its start.
+    #[track_caller]
+    pub fn map_target<M, A>(self, target: A) -> Animation<M>
     where
+        M: 'static,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
         T: Clone + ThreadSafe,
+        A: Fn(&T) -> T + Clone + ThreadSafe,
+        World<M>: SubjectSource<I, S>,
     {
-        self.property().to(value)
+        crate::animation::change(self, target)
     }
-    pub fn set(
-        self,
-        value: impl Into<T>,
-    ) -> crate::Change<I, S, T, impl Fn(&T) -> T + ThreadSafe>
+    /// Animate to `value`.
+    #[track_caller]
+    pub fn to<M>(self, value: impl Into<T>) -> Animation<M>
     where
+        M: 'static,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
         T: Clone + ThreadSafe,
+        World<M>: SubjectSource<I, S>,
     {
-        self.property().set(value)
+        let value = value.into();
+        self.map_target(move |_| value.clone())
+    }
+    /// Replace the value instantly at the point where this is scheduled.
+    #[track_caller]
+    pub fn set<M>(self, value: impl Into<T>) -> Animation<M>
+    where
+        M: 'static,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
+        T: Clone + ThreadSafe,
+        World<M>: SubjectSource<I, S>,
+    {
+        self.to(value).over(std::time::Duration::ZERO)
     }
     /// Coordinate convenience for point/vector values convertible from an xy pair.
-    pub fn to_xy(
-        self,
-        x: f64,
-        y: f64,
-    ) -> crate::Change<I, S, T, impl Fn(&T) -> T + ThreadSafe>
+    #[track_caller]
+    pub fn to_xy<M>(self, x: f64, y: f64) -> Animation<M>
     where
+        M: 'static,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
         T: From<(f64, f64)> + Clone + ThreadSafe,
+        World<M>: SubjectSource<I, S>,
     {
         self.to(T::from((x, y)))
     }
-    pub fn offset<D: Copy + ThreadSafe>(
-        self,
-        delta: D,
-    ) -> crate::Change<I, S, T, impl Fn(&T) -> T + ThreadSafe>
+    /// Animate by adding `delta` to the value at the change's start.
+    #[track_caller]
+    pub fn offset<M, D>(self, delta: D) -> Animation<M>
     where
-        T: Clone + Add<D, Output = T>,
+        M: 'static,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
+        T: Clone + ThreadSafe + Add<D, Output = T>,
+        D: Copy + ThreadSafe,
+        World<M>: SubjectSource<I, S>,
     {
-        self.property().offset(delta)
+        self.map_target(move |previous: &T| previous.clone() + delta)
     }
-    pub fn multiply<D: Copy + ThreadSafe>(
-        self,
-        factor: D,
-    ) -> crate::Change<I, S, T, impl Fn(&T) -> T + ThreadSafe>
+    /// Animate by multiplying the value at the change's start by `factor`.
+    #[track_caller]
+    pub fn multiply<M, D>(self, factor: D) -> Animation<M>
     where
-        T: Clone + Mul<D, Output = T>,
+        M: 'static,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
+        T: Clone + ThreadSafe + Mul<D, Output = T>,
+        D: Copy + ThreadSafe,
+        World<M>: SubjectSource<I, S>,
     {
-        self.property().multiply(factor)
+        self.map_target(move |previous: &T| previous.clone() * factor)
     }
+    /// Shorthand for `.to(value).spring(spring)`.
+    #[track_caller]
     pub fn spring_to<M>(
         self,
         value: impl Into<T>,
         spring: impl Into<crate::Spring>,
-    ) -> crate::SpringChange<I, S, T, M>
+    ) -> Animation<M>
     where
-        T: crate::SpringValue<M> + Clone + ThreadSafe,
+        M: 'static,
+        I: SubjectId,
+        S: Clone + ThreadSafe,
+        T: Clone + ThreadSafe,
+        World<M>: SubjectSource<I, S>,
     {
-        self.property().spring_to(value, spring)
+        self.to(value).spring(spring)
     }
     pub fn map<W: 'static, U, A>(
         &self,

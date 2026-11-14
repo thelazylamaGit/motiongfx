@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use motiongfx::prelude::{cs, ease, ms};
 use motiongfx_2d::{
-    Animation, Circle, Color, Line, Path, Point, Scene, Signal,
+    Circle, Color, CompiledScene, Line, Path, Point, Scene, Signal,
     colors::{TRANSPARENT, WHITE},
     computed, signal,
 };
@@ -84,7 +84,7 @@ fn reference_circle(
     )));
 }
 
-fn build_animation() -> (Animation, Duration) {
+fn build_animation() -> (CompiledScene, Duration) {
     let mut scene = Scene::new();
     // Each curve has a visible range: reveal its end, hold, then advance its start.
     // Separate sources let reference dots exist before their curves in draw order.

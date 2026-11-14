@@ -19,12 +19,12 @@ it as each step lands.
 
 ## Phase 1 decisions
 
-1. **One animation type, `Anim`.** Property changes, signal changes, text
-   selection changes, waits, markers and groups are all `Anim`, so arrays,
+1. **One animation type, `Animation`.** Property changes, signal changes, text
+   selection changes, waits, markers and groups are all `Animation`, so arrays,
    `Vec`s, iterators and `if`/`match` branches mix them freely.
 2. **Groups:** `chain`, `all`, `flow(interval, ..)` take any
-   `IntoIterator<Item = Anim>`. Steps: `wait(d)`, `marker("name")`.
-3. **Modifiers on any `Anim`:** `.over(d)`, `.ease(e)`, `.spring(s)`,
+   `IntoIterator<Item = Animation>`. Steps: `wait(d)`, `marker("name")`.
+3. **Modifiers on any `Animation`:** `.over(d)`, `.ease(e)`, `.spring(s)`,
    `.delay(d)`. Groups have no timing settings of their own (see Timing).
 4. **Defaults:** `scene.defaults(duration, ease)`, once per scene, then the
    library defaults (1 s, `smooth`).
@@ -52,34 +52,42 @@ let animation = scene.compile([
 ]);
 ```
 
-## 1. `Anim`
+## 1. `Animation`
 
 ```rust
-// motiongfx_authoring
-pub struct Anim<M>(Node<M>);
+// motiongfx_authoring (implemented; markers come in step 4)
+pub struct Animation<M>(Node<M>);       // 48 bytes
 
 enum Node<M> {
-    Step(Arc<dyn Step<M>>, Timing),       // one change
-    Group(Order, Vec<Anim<M>>),           // chain / all / flow
+    Step(Arc<dyn Step<M>>, Timing),     // one change
+    Group(Order, Vec<Animation<M>>),    // chain / all / flow
     Wait(Duration),
-    Marker(String, &'static Location<'static>),
 }
 enum Order { Chain, All, Flow(Duration) }
 
-struct Timing {
-    over: Option<Duration>,
-    ease: Option<EaseFn>,
-    spring: Option<Spring>,
-    delay: Duration,
+pub struct Timing {                     // 32 bytes
+    motion: Motion,
     location: &'static Location<'static>, // file and line, for errors
+}
+enum Motion {
+    Tween { over: Option<Duration>, ease: Option<EaseFn> },
+    Spring(Box<Spring>),                // boxed: most changes never spring
 }
 
 /// Adds one change to the core timeline during `compile`.
-trait Step<M>: Send + Sync {
-    fn lower(&self, cx: &mut Lowering<M>, timing: Resolved)
-        -> Result<TrackFragment, SceneError>;
+pub trait Step<M>: Send + Sync + 'static {
+    fn lower(&self, sequence: &mut Sequence<..>, timing: &Timing) -> TrackFragment;
 }
 ```
+
+Storage rule: **each case stores only what it needs.** A change stores its
+compact target (an object ID; the field is a zero-sized type) and rebuilds the
+full `Property` at compile. Spring settings (48 bytes) are boxed so changes
+without a spring don't carry them. `.delay(d)` is `chain([wait(d), self])`
+rather than a field on every animation. Groups stream child fragments into
+core's combinators at compile without a temporary `Vec`. A size check in
+`tests/animation.rs` fails if `Animation` grows past 48 bytes (it was 112
+before these rules were applied).
 
 - **One type because lists need one type.** Each current change is its own
   Rust type, so a mixed array cannot hold them. Storing each step behind a
@@ -90,44 +98,45 @@ trait Step<M>: Send + Sync {
   constructor; users never write `Box` or `.into()`.
 - **Generic over the model, hidden by an alias.** Turning a change into core
   actions needs the world type, and 2D handles work with any `Model2d`, so the
-  type is `Anim<M>`. `motiongfx_2d` exports `pub type Anim = Anim<Graphics>`,
-  the same pattern as `Scene`. User code writes `Anim`.
+  type is `Animation<M>`. `motiongfx_2d` exports `pub type Animation = Animation<Graphics>`,
+  the same pattern as `Scene`. User code writes `Animation`.
 - **`Arc` steps, `Vec` children.** `Arc` makes `.clone()` a reference-count
   increment, so reusing an animation is cheap. Children come from `collect()`;
-  `Arc<[T]>` would only add a copy. Timing is stored inline.
+  `Arc<[T]>` would only add a copy. Timing is stored inline (32 bytes).
 - **Targets resolve during `compile`.** Signals get their storage slot and
   text selections resolve against the text content when the step is lowered,
   so both can be described before or without the scene.
 - **Spring is a timing setting, not a wrapper type.** Target kinds and timing
   options add up (three `Step` implementations plus one `Timing`) instead of
-  multiplying into one type per combination. A new option such as `.delay()`
-  is one field and works for every target kind and for groups.
+  multiplying into one type per combination. A new option is added once and
+  works for every target kind.
 
-### `Anim` versus core `TrackFragment`
+### `Animation` versus core `TrackFragment`
 
-| | `Anim` | `TrackFragment` |
+| | `Animation` | `TrackFragment` |
 |---|---|---|
 | Created | anywhere, while writing the script | through a `TimelineBuilder` (`&mut Registry`) |
 | Timing | may use the scene default | fixed at creation |
 | Targets | may be unresolved (signals, selections) | concrete subject IDs |
 | Clone / reuse | yes | no (clones would share action IDs) |
 
-`compile` turns `Anim`s into `TrackFragment`s using core's own
+`compile` turns `Animation`s into `TrackFragment`s using core's own
 `chain`/`all`/`flow`/`delay`. Making core fragments lazy instead was
 considered: same speed, one set of combinator names, but core would take on
 type erasure and deferred resolution that raw core users do not need. Keep
-`Anim` in authoring; moving it into core later is mechanical if wanted.
+`Animation` in authoring; moving it into core later is mechanical if wanted.
 
 ## 2. Timing
 
 - **Duration:** the animation's own `.over()`, otherwise the scene default.
   **Ease:** its own `.ease()`, otherwise the scene default.
 - **Spring:** `.spring(s)` replaces tween timing; the spring's settle duration
-  is reserved. Combining `.spring()` with `.over()` or `.ease()` on the same
-  animation is an error from `compile`.
-- **Delay:** `.delay(d)` on any `Anim` (groups included) starts it `d` later.
-  It is `chain([wait(d), anim])`; the delay counts towards the enclosing
-  group's length.
+  is reserved. A change is either a tween or a spring, so combining
+  `.spring()` with `.over()`/`.ease()` (or with an instant `.set(..)`) panics
+  at that call, with the caller's file and line.
+- **Delay:** `.delay(d)` on any `Animation` (groups included) starts it `d`
+  later. It builds `chain([wait(d), animation])`, so the delay counts towards
+  the enclosing group's length.
 - **Instant changes:** `.set(..)`, `set_fill`, `set_content` are always zero
   duration, regardless of defaults.
 - **Groups have no timing settings.** A group's length is what its children
@@ -141,9 +150,10 @@ type erasure and deferred resolution that raw core users do not need. Keep
   ])
   ```
 
+  `.over()`/`.ease()`/`.spring()` on a group or `wait` panics at that call.
   If group timing is added later, it means only "default for children that
   have no `.over()`/`.ease()` of their own" (never a total duration), so
-  `chain([a, b, c]).over(s(1))` would take 3 s. Not built now.
+  `chain([a, b, c]).over(s(1))` would take 3 s, and the panic goes away.
 
 ## 3. Groups and steps
 
@@ -197,7 +207,7 @@ Window::new("Lissajous", CANVAS)
 - **In core.** `TrackFragment` carries `(name, time)` markers that
   `chain`/`flow`/`delay` shift exactly like clips, so marker times cannot drift
   from clip times. The compiled timeline exposes them;
-  `Animation::marker(name) -> Option<Duration>` reads them.
+  `CompiledScene::marker(name) -> Option<Duration>` reads them.
 - **Placement:** in `chain`, where the previous step ends; in `all`, at the
   group start; in `flow`, a marker does not take a slot (it marks where the
   next child starts), so it never delays anything.
@@ -229,22 +239,28 @@ Implementation notes:
 
 ## 6. Errors
 
-Still compiler errors: wrong field, wrong value type, a non-`Anim` in a list,
+Still compiler errors: wrong field, wrong value type, a non-`Animation` in a list,
 wrong argument types.
 
-Reported by `compile` (all collected, not just the first; each with the
-`#[track_caller]` file and line of the animation):
-- `.spring()` together with `.over()`/`.ease()` on one animation,
-- springing a discrete property,
-- duplicate marker names,
-- invalid spring settings, missing or invalid text selections, binding errors,
-- (planned) overlapping clips on one property.
+Mistakes visible while building panic immediately at the caller's line
+(`#[track_caller]`):
+- `.spring()` together with `.over()`/`.ease()` or an instant `.set(..)`,
+- `.over()`/`.ease()`/`.spring()` on a group or `wait`.
 
-Typestate (one type per timing state, as today) was considered: it keeps these
-as compiler errors at no runtime cost, but mixed lists need one type, so it
-would cost `.into()` or an `anims![]` macro on every mixed list. Not worth it
-for two rare mistakes. A headless test that builds every example's animation
-makes these errors appear in `cargo test` for people and agents.
+Mistakes that need the scene are reported by `compile` as
+`SceneError::Animation(Vec<AnimationError>)` (all collected, not just the
+first; each with the file and line of the animation):
+- springing a discrete property,
+- invalid spring settings, missing or invalid text selections,
+- (step 4) duplicate marker names; (planned) overlapping clips on one property.
+
+Binding errors keep their existing `SceneError` variants.
+
+Typestate (one type per timing state, as before) was considered: it keeps
+these as compiler errors at no runtime cost, but mixed lists need one type, so
+it would cost `.into()` or an `anims![]` macro on every mixed list. Not worth
+it for these rare mistakes. A headless test that builds every example's
+animation makes both kinds appear in `cargo test` for people and agents.
 
 ## 7. `scene.compile`
 
@@ -254,7 +270,7 @@ makes these errors appear in `cargo test` for people and agents.
    resolves timing),
 3. compiles the core timeline, prepares bindings, bakes, samples time zero.
 
-- **Consumes the scene:** the world moves into the `Animation` without
+- **Consumes the scene:** the world moves into the `CompiledScene` without
   cloning, and preparation hooks stay `FnOnce`. Variants come from calling a
   scene-building function again.
 - Steps are built while `scene` is still available, so objects can be created
@@ -284,10 +300,10 @@ steps.push(wait(ms(600)));
 let animation = scene.compile(steps);
 ```
 
-Reusable effects are functions returning `Anim`:
+Reusable effects are functions returning `Animation`:
 
 ```rust
-fn pulse(commit: &Commit) -> Anim {
+fn pulse(commit: &Commit) -> Animation {
     all([commit.ring.scale().to(2.4), commit.ring.opacity().to(0.0)])
 }
 let animation = scene.compile([
@@ -343,7 +359,7 @@ To migrate:
 
 0. Update this document. *(done)*
 1. **Baseline benchmark** (see Measurements) and save a Criterion baseline.
-2. **`Anim` + `compile` alongside the current API:** `Anim`, combinators,
+2. **`Animation` + `compile` alongside the current API:** `Animation`, combinators,
    `Timing`, `Step` for property/signal/selection, spring overshoot audit,
    error collection with locations. Unit tests in `motiongfx_authoring` for
    the timing rules, `.delay`, instant changes and both error cases.
@@ -401,6 +417,14 @@ sizes.
   before phase 1 work if it matters.
 - **Compare phase 1 against the `phase1-start` baseline** (saved after the
   fix), not `before`.
+- After step 2 (callback API running through `Animation`), three runs of
+  `setup/animate` against `phase1-start`: 1k +8.5% to +10%, 10k +3.7% to
+  +8.5%; about 0.1 µs per change. This is the one allocation per change that
+  storing animations as values needs (plus a boxed spring for springing
+  changes). Shrinking `Animation` from 112 to 48 bytes did not change setup
+  time; allocation count dominates. Inline small-step storage could remove
+  it, at the cost of `unsafe` code or a dependency; not planned unless setup
+  becomes a bottleneck. Playback code is unchanged.
 - Run-to-run noise on this machine is up to about 30% for unchanged code
   (playback and encoding moved that much between runs with no related
   change). Re-run when results look surprising; only trust large or
@@ -410,7 +434,7 @@ sizes.
 
 ## Phase 2: node tree in `motiongfx_2d` (proposal)
 
-After phase 1. `Anim` code does not change when handles switch to nodes.
+After phase 1. `Animation` code does not change when handles switch to nodes.
 
 **Why:** `Graphics` keeps a `Vec` per shape type plus a flat draw order.
 Position/scale/rotation are duplicated per type, and parenting is inconsistent:
@@ -466,8 +490,8 @@ Review notes to resolve during phase 2:
 - `Project` of scenes with transitions; scripting/hot reload and
   `motiongfx_scene` conversion; computed-value data graphs; curve-data clips
   (oscillation, constant velocity); built-in entrance/exit helpers;
-  instancing; an editor (would read `Anim` structure and markers).
-- Moving `Anim` into core (lazy fragments), if raw `TrackFragment` authoring is
+  instancing; an editor (would read `Animation` structure and markers).
+- Moving `Animation` into core (lazy fragments), if raw `TrackFragment` authoring is
   no longer needed.
 
 ## Objects (independent of phase 1)
@@ -482,7 +506,7 @@ Review notes to resolve during phase 2:
   implementing `SceneObject` only for widely reused composites.
 - Objects exist from time zero (backward seeking must restore any state);
   "removal" is opacity or scale. No built-in entrance/exit helpers yet;
-  reusable effects are functions returning `Anim`.
+  reusable effects are functions returning `Animation`.
 
 ## Rendering performance (separate from the redesign)
 
@@ -503,9 +527,12 @@ Review notes to resolve during phase 2:
 
 ## Naming
 
-- `Anim` (description) and `Animation` (compiled, playable result) sit side by
-  side. If that proves confusing, rename the compiled type (for example
-  `Playback`), not `Anim`. Decide during migration.
+- **`Animation`** is the description (one change, group or wait), matching
+  Manim's term. **`CompiledScene`** is the result of `scene.compile(..)`: the
+  scene with its baked timeline, sampleable at any time (`CompiledScene2dExt`
+  reads 2D objects from it). Core's `Timeline`, `Sequence` and `Action`, and
+  the host's `Playback*` types, already name other things, so those names
+  were not reused.
 - `motiongfx_authoring::Scene` and `motiongfx_scene::Scene` share a name; if
   one is renamed, rename the document type (for example `SceneDocument`).
 
@@ -521,6 +548,6 @@ Review notes to resolve during phase 2:
 - `scene.extend` (the blanket `add` covers iterators).
 - Props-struct components as the default.
 - Group `.over()` as a total duration that rescales children (too many rules).
-- Lazy core `TrackFragment`s now (see `Anim` versus `TrackFragment`).
+- Lazy core `TrackFragment`s now (see `Animation` versus `TrackFragment`).
 - Exposing `any`, `append`/`action`, `Custom` closure leaves, `duration_of`,
   data-first leaves for future scripting: unused by any example.
