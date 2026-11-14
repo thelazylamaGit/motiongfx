@@ -291,25 +291,11 @@ impl<'a, W: 'static, C> Sequence<'a, W, C> {
         self.append(fragments.ord_all());
     }
 
-    /// Start successive changes at fixed intervals, waiting for the last end.
-    /// The interval is measured between starts, not after each change finishes.
-    pub fn stagger<A: AnimationChange<W, C>>(
-        &mut self,
-        interval: Duration,
-        changes: impl IntoIterator<Item = A>,
-    ) {
-        let fragments: Vec<_> = changes
-            .into_iter()
-            .map(|change| self.action(change))
-            .collect();
-        self.append(fragments.ord_flow(interval));
-    }
-
     /// Start successive children at fixed intervals between their starts.
-    /// A child can be a change or a nested chain/parallel/staggered block.
+    /// A child can be a change or a nested chain/parallel/flow block.
     /// Lowers directly to core `ord_flow`; returns the group's reserved
     /// duration (not its absolute end time). Empty blocks return zero.
-    pub fn staggered(
+    pub fn flow(
         &mut self,
         interval: Duration,
         author: impl FnOnce(&mut Self),

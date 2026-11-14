@@ -205,6 +205,9 @@ selects a registered family. `TextStyle` shares font/layout/paint inputs just
 like explicit setters. `font_weight` accepts numeric values or `FontWeight`
 constants; `font_style` selects normal/italic/oblique. Line height is a font-size
 multiplier, letter spacing is in canvas units, and wrap width zero is unconstrained.
+`tabular_numbers(true)` requests equal-width digits (OpenType `tnum`, present in
+the embedded Fira Sans) so animated counters do not jitter; fonts without `tnum`
+keep their default figures.
 Position anchors the block's top; `TextAlign` anchors its total width horizontally.
 It does not set per-paragraph alignment or provide a general layout system.
 

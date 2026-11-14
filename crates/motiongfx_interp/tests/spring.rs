@@ -394,3 +394,23 @@ fn maximum_bounce_is_valid_and_uses_the_finite_damping_limit() {
         assert_eq!(maximum.sample(maximum.duration()).velocity, 0.0);
     }
 }
+
+#[test]
+fn duration_accessors_match_the_scheduled_curve() {
+    let timed = Spring::timed(time(0.65)).bounce(0.65);
+    assert_eq!(timed.duration(), time(0.65));
+    assert_eq!(timed.settle_duration().unwrap(), timed.duration());
+
+    let visual = Spring::visual(time(0.4)).bounce(0.5);
+    assert_eq!(visual.visual_duration(), time(0.4));
+    let settle = visual.settle_duration().unwrap();
+    assert_eq!(settle, visual.prepare().unwrap().duration());
+    assert!(settle > visual.visual_duration());
+
+    let physical = Spring::physical();
+    assert_eq!(
+        Spring::from(physical).settle_duration().unwrap(),
+        physical.prepare().unwrap().duration()
+    );
+    assert!(Spring::physical().mass(0.0).settle_duration().is_err());
+}

@@ -53,7 +53,12 @@ macro_rules! animate {
     };
 
     (@steps $sequence:ident; stagger($interval:expr, $changes:expr); $($rest:tt)*) => {
-        $sequence.stagger($interval, $changes);
+        let __changes = $changes;
+        $sequence.flow($interval, |__group| {
+            for __change in __changes {
+                __group.play(__change);
+            }
+        });
         $crate::animate!(@steps $sequence; $($rest)*);
     };
 

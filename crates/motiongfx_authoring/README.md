@@ -37,10 +37,23 @@ Its elements must have the same change type, such as many rectangle x moves.
 `play_all`, or nested blocks at the same start time, including different
 subject types. Sequence defaults set inside a block remain in effect after it.
 `Sequence::chain` builds one sequential branch inside a parallel block.
-`Sequence::stagger(interval, changes)` starts successive changes at fixed
-intervals and waits for the latest end, using the existing `ord_flow` operation.
-`Sequence::staggered(interval, |sequence| { ... })` is the scoped form:
-each authored action or nested group is one child, with fixed spacing between
+`Sequence::flow(interval, |sequence| { ... })` starts successive children at
+fixed intervals and waits for the latest end, using the existing `ord_flow`
+operation:
+
+```rust,ignore
+sequence.flow(ms(300), |sequence| {
+    sequence.play(square.shift(-80.0, 0.0));
+    sequence.play(square.fill_to(ORANGE));
+    sequence.play(square.scale_by(0.3));
+    sequence.play(square.rotate(0.4));
+});
+```
+
+These start at 0, 300, 600 and 900ms relative to the group. Unlike a `wait`
+after each `play`, spacing is between starts, so changes can overlap. The next
+sequence statement starts after the latest child finishes.
+Each authored action or nested group is one child, with fixed spacing between
 child starts. Use nested `parallel` blocks to start batches together and
 `chain` blocks to stagger whole sequential branches. It returns the group's
 reserved duration, excluding preceding actions; an empty block returns zero.
@@ -133,9 +146,23 @@ sequence.play(ball.position_x().to(200.0).spring(
 
 `SpringValue<M>` restricts springs to continuous
 values supporting overshoot; discrete strings, colors and integers do not opt in.
+Calling `.spring` on them is a compile error that suggests a tween instead.
 
 Springs reserve their full settling duration (exactly the requested time for
-timed mode). Existing core overlap/conflict
+timed mode). `TimedSpring::duration()` returns that time infallibly, so sibling
+tweens can match it; every spring setting also has a fallible
+`settle_duration()`, and `VisualSpring::visual_duration()` returns its pace:
+
+```rust,ignore
+let spring = Spring::timed(ms(650)).bounce(0.65);
+sequence.flow(ms(300), |sequence| {
+    sequence.play(square.shift(-80.0, 0.0).spring(spring));
+    // Colors cannot spring.
+    sequence.play(square.fill_to(ORANGE).over(spring.duration()));
+});
+```
+
+Existing core overlap/conflict
 rules apply unchanged; there is no spring-specific interruption policy.
 
 `Sequence::try_compile` returns `PreparationError` for invalid spring settings or conflicting explicit tween options; `compile` panics on it.
@@ -227,7 +254,8 @@ animate!(sequence, {
 ```
 
 Animation expressions become `sequence.play(...)`; `wait`, `parallel`,
-`chain`, and `stagger` use the same plain Rust builder methods. `parallel`
+`chain`, and `stagger` use the same plain Rust builder methods (`stagger`
+expands to a `flow` block that plays each change). `parallel`
 also accepts an iterator/array: `parallel(changes);` expands to `play_all`.
 Collection forms require same-type changes, just like their builder methods;
 blocks accept mixed types. Both group blocks allow an optional trailing `;`.

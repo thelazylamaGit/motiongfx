@@ -30,6 +30,8 @@ pub struct Text {
     pub font_style: FontStyle,
     pub line_height: f64,
     pub letter_spacing: f64,
+    /// Equal-width digits for counters and changing values; see `LayoutStyle`.
+    pub tabular_numbers: bool,
     pub wrap_width: f64,
     pub fill: Color,
     pub opacity: f64,
@@ -53,6 +55,7 @@ impl Text {
             font_style: FontStyle::Normal,
             line_height: 1.3,
             letter_spacing: 0.0,
+            tabular_numbers: false,
             wrap_width: 0.0,
             fill: Color::WHITE,
             opacity: 1.0,
@@ -74,7 +77,8 @@ crate::object::properties!(Text;
     style TextStyle {
         font_size: f64, fill: Color, opacity: f64, align: TextAlign,
         font_family: Arc<str>, font_weight: FontWeight, font_style: FontStyle,
-        line_height: f64, letter_spacing: f64, wrap_width: f64,
+        line_height: f64, letter_spacing: f64, tabular_numbers: bool,
+        wrap_width: f64,
     }
 );
 impl<M: crate::Model2d> crate::Object<Text, M> {
@@ -156,6 +160,7 @@ font_weight: FontWeight => new(Text.font_weight);
 font_style: FontStyle => discrete(Text.font_style);
 line_height: f64 => new(Text.line_height);
 letter_spacing: f64 => new(Text.letter_spacing);
+tabular_numbers: bool => discrete(Text.tabular_numbers);
 wrap_width: f64 => new(Text.wrap_width);
 fill: Color => new(Text.fill);
 opacity: f64 => new(Text.opacity);
@@ -190,6 +195,7 @@ font_weight: FontWeight;
 font_style: FontStyle;
 line_height: f64;
 letter_spacing: f64;
+tabular_numbers: bool;
 wrap_width: f64;
 fill: Color;
 opacity: f64;

@@ -51,7 +51,7 @@ No explicit bindings or update callbacks are needed in the example.
 The commit graph preserves the source's blue/mauve fallbacks and timing
 (3.88s total). `Path` creates the trunk and fork explicitly, with their visible
 end initially zero. A local `Commit` constructor creates a filled `Circle`
-and a stroked child ring, anchored with `relative_to(dot)`. `sequence.stagger`
+and a stroked child ring, anchored with `relative_to(dot)`. `sequence.flow`
 animates only the dots' scales; the rings inherit the appearance transform.
 The pulse uses ordinary ring scale (1 to 2.4) and opacity (1 to 0) tracks in
 parallel, equivalent to the source's linear pulse expressions. No pulse-specific
@@ -228,7 +228,7 @@ between diagonals; each draws for 1.5s, holds for 0.8s, then erases for 1.5s.
 The original 1% cutoff hides tiny curve remnants at both ends.
 
 One timeline runs the grid intro and then the staggered diagonal groups.
-Nested `sequence.staggered` blocks describe the grid pairs; parallel diagonal
+Nested `sequence.flow` blocks describe the grid pairs; parallel diagonal
 groups contain each curve's reveal/hold/erase chain. These helpers use core
 ordering without manual delay calculations or raw fragment plumbing.
 The intro block returns its reserved duration for `LoopFrom`, keeping playback

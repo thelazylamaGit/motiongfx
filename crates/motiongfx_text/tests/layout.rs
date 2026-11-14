@@ -109,3 +109,18 @@ fn invalid_animated_layout_values_produce_no_glyphs() {
         assert!(layout.runs.is_empty());
     }
 }
+
+#[test]
+fn tabular_numbers_give_digits_equal_advances() {
+    let mut fonts = FontSystem::default();
+    let mut width = |text: &str, tabular_numbers| {
+        let style = LayoutStyle {
+            tabular_numbers,
+            ..LayoutStyle::default()
+        };
+        fonts.layout(text.into(), &style).size.width
+    };
+    // Embedded Fira Sans has proportional default figures: "1" is narrow.
+    assert!(width("111", false) < width("000", false));
+    assert_eq!(width("111", true), width("000", true));
+}

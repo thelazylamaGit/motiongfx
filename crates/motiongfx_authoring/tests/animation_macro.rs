@@ -167,7 +167,7 @@ fn empty_groups_and_collections_add_no_time() {
     let mut sequence = Sequence::<World>::new(&mut registry);
     let empty: [Property<usize, Item, f64>; 0] = [];
     animate!(&mut sequence, {});
-    assert_eq!(sequence.staggered(ms(50), |_| {}), Duration::ZERO);
+    assert_eq!(sequence.flow(ms(50), |_| {}), Duration::ZERO);
     animate!(&mut sequence, {
         parallel {};
         chain {}
@@ -192,7 +192,7 @@ fn nested_stagger(
     sequence.wait(ms(50));
     if scoped {
         let mut calls = 0;
-        let duration = sequence.staggered(ms(100), |sequence| {
+        let duration = sequence.flow(ms(100), |sequence| {
             calls += 1;
             sequence.chain(|sequence| {
                 sequence.play(x(0).to(10.0).over(ms(300)));
@@ -202,7 +202,7 @@ fn nested_stagger(
                 sequence.play(x(1).to(20.0).over(ms(50)));
                 sequence.play(caption.set("ready"));
             });
-            sequence.staggered(ms(25), |sequence| {
+            sequence.flow(ms(25), |sequence| {
                 sequence.play(x(2).to(30.0));
                 sequence.play(y.to(40.0).over(ms(20)));
             });

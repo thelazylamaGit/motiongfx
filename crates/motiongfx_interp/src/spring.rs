@@ -90,6 +90,12 @@ impl Spring {
             rest: Rest::default(),
         }
     }
+    /// Total scheduled time until the spring rests: the time a spring change
+    /// reserves on the timeline. Timed springs return their exact duration.
+    /// Fails for the same invalid settings as [`Spring::prepare`].
+    pub fn settle_duration(self) -> Result<Duration, SpringError> {
+        self.prepare().map(SpringCurve::duration)
+    }
     pub fn prepare(self) -> Result<SpringCurve, SpringError> {
         let (frequency, ratio, rest) = match self {
             Self::Physical(s) => {
@@ -181,6 +187,12 @@ macro_rules! settings {
                 self.rest.speed = value;
                 self
             }
+            /// See [`Spring::settle_duration`].
+            pub fn settle_duration(
+                self,
+            ) -> Result<Duration, SpringError> {
+                Spring::from(self).settle_duration()
+            }
             pub fn prepare(self) -> Result<SpringCurve, SpringError> {
                 Spring::from(self).prepare()
             }
@@ -205,6 +217,11 @@ impl PhysicalSpring {
     }
 }
 impl VisualSpring {
+    /// The configured pace. The settling tail usually outlasts it; use
+    /// [`VisualSpring::settle_duration`] for the reserved timeline time.
+    pub fn visual_duration(self) -> Duration {
+        self.duration
+    }
     /// Negative values are overdamped, 0 critically damped; positive values
     /// are underdamped. Accepts -1 <= bounce <= 1, limiting the derived damping
     /// ratio to 0.05..=20 at the extremes, as in Motion's visual mapping.
@@ -214,6 +231,11 @@ impl VisualSpring {
     }
 }
 impl TimedSpring {
+    /// Exact total time the spring reserves, including its settling tail.
+    /// Infallible, so it can time sibling tweens: `.over(spring.duration())`.
+    pub fn duration(self) -> Duration {
+        self.duration
+    }
     /// Uses the same -1 <= bounce <= 1 damping mapping as visual springs.
     pub fn bounce(mut self, value: f64) -> Self {
         self.bounce = value;
@@ -583,6 +605,12 @@ math!(sqrt, exp, sin, cos);
 
 /// Opt-in for continuous values whose interpolation supports spring overshoot.
 /// The marker permits downstream implementations for foreign geometry types.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be animated with a spring",
+    label = "`{Self}` does not implement `SpringValue`",
+    note = "springs overshoot their target, so only continuous values that stay valid past it (scalars, points, vectors, sizes) opt in",
+    note = "use a tween instead, e.g. `.over(duration)` / `.ease(...)`"
+)]
 pub trait SpringValue<M>:
     crate::interpolation::Interpolation<M>
 {

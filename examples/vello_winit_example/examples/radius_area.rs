@@ -19,8 +19,11 @@ fn main() -> Result<(), winit::error::EventLoopError> {
     let mut scene = Scene::new();
     let radius = signal(3.0);
     let area = radius.map(|r| PI * r * r);
-    let text_style =
-        TextStyle::new().font_size(32.0).align(TextAlign::Center);
+    // Tabular figures keep changing digits from jittering their neighbours.
+    let text_style = TextStyle::new()
+        .font_size(32.0)
+        .align(TextAlign::Center)
+        .tabular_numbers(true);
 
     // Inline calculations retain their source without borrowing the scene.
     scene.add(Circle::new(radius.map(|r| r * SCALE)).fill(RED));

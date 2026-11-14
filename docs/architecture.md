@@ -254,6 +254,14 @@ ordinary cache checks, bounds/transforms, and Vello recording still take work.
 - Use ordinary timeline properties for authored changes: `.to`, `.offset`,
   `.multiply`, `.set`, `.over`, `.ease`, waits, parallel groups, and stagger.
   Constructing a change alone does not schedule it; `sequence.play` does.
+- `sequence.flow(interval, |sequence| { ... })` collects scoped/nested children
+  with fixed spacing between starts. It replaces the earlier `stagger` /
+  `staggered` method names and delegates to core `ord_flow`, reserving the
+  latest child end. A tuple/collection form was tried and removed for now: it
+  only accepted leaf changes, so nested groups, loops and waits still needed
+  the callback, leaving two overlapping spellings. `wait` remains a sequential
+  pause; it does not overlap the preceding child. The optional `animate!` macro
+  keeps its `stagger(interval, changes)` spelling and expands to a `flow` block.
 - Use reactive builder inputs for relationships between objects/values. Share
   common calculations through computed descriptions instead of repeating work.
 - `scene.bind` is advanced explicit wiring after object creation. Builder inputs
@@ -287,7 +295,12 @@ Timed mode calibrates frequency to fit conservative rest envelopes within an
 exact requested duration; the existing sampler and timeline need no new mode.
 
 Springs reserve their full settling duration (the exact requested time for timed
-mode) using existing track ordering.
+mode) using existing track ordering. `settle_duration()` exposes that reserved time
+(fallible, since it prepares the curve); `TimedSpring::duration()` is the
+infallible exact value, letting non-springable siblings such as colors tween in
+step via `.over(spring.duration())`. `SpringValue` carries a
+`#[diagnostic::on_unimplemented]` message so a non-springable value reports at
+its `.spring` call.
 There is no arrival-based continuation or spring-specific overlap policy.
 Track compilation and ordinary action conflict behavior remain unchanged.
 Authoring Sequence::try_compile reports invalid spring settings; Scene::try_animate
@@ -329,7 +342,7 @@ Useful comparison cases:
 - `radius_area`: inline `.map` inputs and computed text/geometry from one signal.
 - `lissajous`: precomputed procedural paths, per-curve range signals, reactive
   reference dots and nested diagonal timing on one sequence. Scoped
-  `sequence.staggered` groups delegate to core `ord_flow`, alongside `parallel`
+  `sequence.flow` groups delegate to core `ord_flow`, alongside `parallel`
   (`ord_all`) and `chain` (`ord_chain`), without manual delay calculations.
   The intro group returns its reserved duration to configure `LoopFrom`; no separate timeline
   or custom renderer is used for either chapter. It uses standard canvas fitting

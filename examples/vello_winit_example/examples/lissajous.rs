@@ -155,9 +155,9 @@ fn build_animation() -> (Animation, Duration) {
     let animation = scene.animate(|sequence| {
         sequence.defaults(cs(60), ease::cubic::ease_in_out);
         // Rows follow columns by 25ms; successive pairs start 50ms apart.
-        loop_start = sequence.staggered(ms(50), |sequence| {
+        loop_start = sequence.flow(ms(50), |sequence| {
             for index in 0..verticals.len().max(horizontals.len()) {
-                sequence.staggered(ms(25), |sequence| {
+                sequence.flow(ms(25), |sequence| {
                     if let Some(column) = verticals.get(index) {
                         sequence.play(column.reveal().to(1.0));
                     }
@@ -169,7 +169,7 @@ fn build_animation() -> (Animation, Duration) {
         });
 
         // Diagonals stagger; curves within a diagonal run together.
-        sequence.staggered(STAGGER, |sequence| {
+        sequence.flow(STAGGER, |sequence| {
             for diagonal in 2..=N_X + N_Y {
                 sequence.parallel(|sequence| {
                     for column in 1..=N_X {

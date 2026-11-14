@@ -68,6 +68,7 @@ impl TextLayout {
                 style: text.font_style,
                 line_height: text.line_height,
                 letter_spacing: text.letter_spacing,
+                tabular_numbers: text.tabular_numbers,
                 wrap_width: text.wrap_width,
             },
         );

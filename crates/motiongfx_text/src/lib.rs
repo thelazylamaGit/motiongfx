@@ -114,6 +114,9 @@ pub struct LayoutStyle {
     /// Baseline spacing as a multiple of font size.
     pub line_height: f64,
     pub letter_spacing: f64,
+    /// Request equal-width digits (OpenType `tnum`) so changing numbers do not
+    /// shift neighbouring glyphs. Fonts without `tnum` keep their default digits.
+    pub tabular_numbers: bool,
     /// Zero means unconstrained width.
     pub wrap_width: f64,
 }
@@ -126,6 +129,7 @@ impl Default for LayoutStyle {
             style: FontStyle::Normal,
             line_height: 1.3,
             letter_spacing: 0.0,
+            tabular_numbers: false,
             wrap_width: 0.0,
         }
     }
@@ -277,6 +281,16 @@ impl FontSystem {
         builder.push_default(StyleProperty::LetterSpacing(
             style.letter_spacing as f32,
         ));
+        if style.tabular_numbers {
+            const TABULAR: [parley::FontFeature; 1] =
+                [parley::FontFeature {
+                    tag: parley::setting::Tag::new(b"tnum"),
+                    value: 1,
+                }];
+            builder.push_default(StyleProperty::FontFeatures(
+                (&TABULAR).into(),
+            ));
+        }
         let mut layout = builder.build(&source);
         layout.break_all_lines(
             (style.wrap_width > 0.0)
