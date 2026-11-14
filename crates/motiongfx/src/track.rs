@@ -1,3 +1,4 @@
+use core::any::TypeId;
 use core::time::Duration;
 
 use alloc::boxed::Box;
@@ -6,7 +7,9 @@ use field_path::field::UntypedField;
 use hashbrown::{HashMap, HashSet};
 use nonempty::NonEmpty;
 
-use crate::action::{ActionClip, ActionId, ActionKey, paths_alias};
+use crate::action::{
+    ActionClip, ActionId, ActionKey, UntypedSubjectId, paths_alias,
+};
 use crate::sequence::Sequence;
 #[cfg(feature = "diagnostics")]
 use crate::time::Range;
@@ -357,9 +360,23 @@ type ConflictReport = Box<[FieldConflict]>;
 #[cfg(not(feature = "diagnostics"))]
 type ConflictReport = ();
 
+/// Only fields of the same subject and source type can alias, so
+/// conflicts are searched within these groups only.
+fn conflict_group(key: &ActionKey) -> (UntypedSubjectId, TypeId) {
+    (*key.subject_id(), key.field().source_id())
+}
+
 /// Drops any clip that a later-authored action on an aliasing field
 /// path of the same subject overlaps in time. The later action wins
 /// the whole clip, not just the overlapped span.
+///
+/// Two clips overlap when `a.start < b.end() && b.start < a.end()`, so
+/// touching clips and zero-length clips at another clip's start do not.
+///
+/// Sequences are grouped by subject and source type, then each group's
+/// clips are swept in start order against the clips still running.
+/// Cost grows with the number of clips plus the pairs that run at the
+/// same time within one subject, not with every pair of fields.
 fn resolve_conflicts(
     sequences: &mut Vec<(ActionKey, Sequence)>,
 ) -> ConflictReport {
@@ -367,52 +384,100 @@ fn resolve_conflicts(
     #[cfg(feature = "diagnostics")]
     let mut conflicts = Vec::new();
 
-    for (key_a, seq_a) in sequences.iter() {
-        for (key_b, seq_b) in sequences.iter() {
-            if key_a.subject_id() != key_b.subject_id()
-                || key_a.field().source_id()
-                    != key_b.field().source_id()
-                || !paths_alias(
-                    key_a.field().field_path(),
-                    key_b.field().field_path(),
-                )
-            {
-                continue;
+    let mut order = (0..sequences.len()).collect::<Vec<_>>();
+    order.sort_unstable_by_key(|&index| {
+        conflict_group(&sequences[index].0)
+    });
+
+    // Scratch buffers reused across groups: every clip of the group in
+    // start order, and the clips still running at the sweep position.
+    // Each clip is paired with the index of its sequence.
+    let mut clips = Vec::<(ActionClip, usize)>::new();
+    let mut running = Vec::<(ActionClip, usize)>::new();
+
+    for group in order.chunk_by(|&a, &b| {
+        conflict_group(&sequences[a].0)
+            == conflict_group(&sequences[b].0)
+    }) {
+        clips.clear();
+        for &index in group {
+            clips.extend(
+                sequences[index]
+                    .1
+                    .clips
+                    .iter()
+                    .map(|&clip| (clip, index)),
+            );
+        }
+        clips.sort_unstable_by_key(|(clip, _)| (clip.start, clip.id));
+
+        running.clear();
+        for &(clip, index) in &clips {
+            // A clip that ended by this start cannot overlap this clip
+            // or any later one, which all start at or after it.
+            running.retain(|(earlier, _)| earlier.end() > clip.start);
+
+            for &(earlier, earlier_index) in &running {
+                // `earlier.start <= clip.start < earlier.end()` holds
+                // here; the overlap also needs the reverse bound, which
+                // only fails for a zero-length clip at earlier's start.
+                if earlier.start >= clip.end() {
+                    continue;
+                }
+                let earlier_key = &sequences[earlier_index].0;
+                let key = &sequences[index].0;
+                if !paths_alias(
+                    earlier_key.field().field_path(),
+                    key.field().field_path(),
+                ) {
+                    continue;
+                }
+
+                // The later-authored action (higher id) wins. The
+                // winner and keys are only read by diagnostics/tracing.
+                #[cfg_attr(
+                    not(all(
+                        feature = "diagnostics",
+                        feature = "tracing"
+                    )),
+                    allow(unused_variables)
+                )]
+                let ((dropped, dropped_key), (winner, winner_key)) =
+                    if earlier.id < clip.id {
+                        ((earlier, earlier_key), (clip, key))
+                    } else {
+                        ((clip, key), (earlier, earlier_key))
+                    };
+                if !removed.insert(dropped.id) {
+                    continue;
+                }
+
+                #[cfg(feature = "diagnostics")]
+                conflicts.push(FieldConflict {
+                    dropped: dropped.id,
+                    dropped_field: *dropped_key.field(),
+                    dropped_span: Range {
+                        start: dropped.start,
+                        end: dropped.end(),
+                    },
+                    winner: winner.id,
+                    winner_field: *winner_key.field(),
+                    overlap: Range {
+                        start: dropped.start.max(winner.start),
+                        end: dropped.end().min(winner.end()),
+                    },
+                });
+                #[cfg(feature = "tracing")]
+                tracing::warn!(
+                    "dropping action on `{}` ({:?}..{:?}): a later action on `{}` overlaps it",
+                    dropped_key.field().field_path(),
+                    dropped.start,
+                    dropped.end(),
+                    winner_key.field().field_path(),
+                );
             }
 
-            for ca in seq_a.clips.iter() {
-                for cb in seq_b.clips.iter() {
-                    if cb.id > ca.id
-                        && ca.start < cb.end()
-                        && cb.start < ca.end()
-                        && removed.insert(ca.id)
-                    {
-                        #[cfg(feature = "diagnostics")]
-                        conflicts.push(FieldConflict {
-                            dropped: ca.id,
-                            dropped_field: *key_a.field(),
-                            dropped_span: Range {
-                                start: ca.start,
-                                end: ca.end(),
-                            },
-                            winner: cb.id,
-                            winner_field: *key_b.field(),
-                            overlap: Range {
-                                start: ca.start.max(cb.start),
-                                end: ca.end().min(cb.end()),
-                            },
-                        });
-                        #[cfg(feature = "tracing")]
-                        tracing::warn!(
-                            "dropping action on `{}` ({:?}..{:?}): a later action on `{}` overlaps it",
-                            key_a.field().field_path(),
-                            ca.start,
-                            ca.end(),
-                            key_b.field().field_path(),
-                        );
-                    }
-                }
-            }
+            running.push((clip, index));
         }
     }
 
@@ -1034,6 +1099,197 @@ mod tests {
                 .compile();
 
             assert_eq!(baked(&track), [id[1]]);
+        }
+
+        fn subject_key(
+            subject: u64,
+            path: &'static str,
+        ) -> ActionKey {
+            ActionKey::new(
+                UntypedSubjectId::placeholder_with_u64(subject),
+                UntypedField::placeholder_with_path(path),
+            )
+        }
+
+        #[test]
+        fn different_subjects_never_conflict() {
+            let id = ids(2);
+            let track = TrackFragment::new()
+                .upsert_sequence(
+                    subject_key(1, ".x"),
+                    seq(&[clip(id[0], 0, 100)]),
+                )
+                .upsert_sequence(
+                    subject_key(2, ".x"),
+                    seq(&[clip(id[1], 50, 100)]),
+                )
+                .compile();
+
+            assert_eq!(baked(&track), [id[0], id[1]]);
+        }
+
+        #[test]
+        fn non_aliasing_fields_never_conflict() {
+            let id = ids(2);
+            // `.x` and `.xy` share a prefix but not a path segment.
+            let track = TrackFragment::new()
+                .upsert_sequence(
+                    key(".x"),
+                    seq(&[clip(id[0], 0, 100)]),
+                )
+                .upsert_sequence(
+                    key(".xy"),
+                    seq(&[clip(id[1], 50, 100)]),
+                )
+                .compile();
+
+            assert_eq!(baked(&track), [id[0], id[1]]);
+        }
+
+        #[test]
+        fn touching_clips_do_not_conflict() {
+            let id = ids(3);
+            // Back to back, plus a zero-length set at the shared start.
+            let track = TrackFragment::new()
+                .upsert_sequence(
+                    key(".x"),
+                    seq(&[clip(id[0], 0, 100)]),
+                )
+                .upsert_sequence(
+                    key(".x"),
+                    seq(&[clip(id[1], 100, 100)]),
+                )
+                .upsert_sequence(
+                    key(".x"),
+                    seq(&[clip(id[2], 100, 0)]),
+                )
+                .compile();
+
+            assert_eq!(baked(&track), [id[0], id[1], id[2]]);
+        }
+
+        #[test]
+        fn zero_length_clip_inside_a_tween_drops_it() {
+            let id = ids(2);
+            let track = TrackFragment::new()
+                .upsert_sequence(
+                    key(".x"),
+                    seq(&[clip(id[0], 0, 100)]),
+                )
+                .upsert_sequence(
+                    key(".x"),
+                    seq(&[clip(id[1], 50, 0)]),
+                )
+                .compile();
+
+            assert_eq!(baked(&track), [id[1]]);
+        }
+
+        #[test]
+        fn later_authored_clip_wins_even_when_it_starts_earlier() {
+            let id = ids(3);
+            // id[1] (authored second, starts first) drops id[0];
+            // id[2] then drops id[1]. Every overlap is checked, even
+            // against a clip that is itself dropped.
+            let track = TrackFragment::new()
+                .upsert_sequence(
+                    key(".x"),
+                    seq(&[clip(id[0], 50, 100)]),
+                )
+                .upsert_sequence(
+                    key(".x"),
+                    seq(&[clip(id[1], 0, 100)]),
+                )
+                .upsert_sequence(
+                    key(""),
+                    seq(&[clip(id[2], 90, 100)]),
+                )
+                .compile();
+
+            assert_eq!(baked(&track), [id[2]]);
+        }
+
+        /// The previous all-pairs implementation, kept as the
+        /// reference for which clips must be dropped.
+        fn all_pairs_dropped(
+            sequences: &[(ActionKey, Sequence)],
+        ) -> HashSet<ActionId> {
+            let mut removed = HashSet::new();
+            for (key_a, seq_a) in sequences {
+                for (key_b, seq_b) in sequences {
+                    if key_a.subject_id() != key_b.subject_id()
+                        || key_a.field().source_id()
+                            != key_b.field().source_id()
+                        || !paths_alias(
+                            key_a.field().field_path(),
+                            key_b.field().field_path(),
+                        )
+                    {
+                        continue;
+                    }
+                    for ca in seq_a.clips.iter() {
+                        for cb in seq_b.clips.iter() {
+                            if cb.id > ca.id
+                                && ca.start < cb.end()
+                                && cb.start < ca.end()
+                            {
+                                removed.insert(ca.id);
+                            }
+                        }
+                    }
+                }
+            }
+            removed
+        }
+
+        #[test]
+        fn grouped_sweep_matches_all_pairs_reference() {
+            const PATHS: [&str; 5] = ["", ".x", ".y", ".x.a", ".xa"];
+            // Fixed-seed xorshift: deterministic, no extra dependency.
+            let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+            let mut next = |bound: u64| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                state % bound
+            };
+
+            for _ in 0..500 {
+                let count = 1 + next(24) as usize;
+                let id = ids(count);
+                let mut fragment = TrackFragment::new();
+                for &clip_id in &id {
+                    let key = subject_key(
+                        next(3),
+                        PATHS[next(PATHS.len() as u64) as usize],
+                    );
+                    // Durations include zero; starts collide often.
+                    let clip = clip(clip_id, next(20), next(8));
+                    fragment = fragment
+                        .upsert_sequence(key, Sequence::new(clip));
+                }
+
+                let mut sequences = fragment
+                    .sequences
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                let expected = all_pairs_dropped(&sequences);
+                resolve_conflicts(&mut sequences);
+
+                let kept = sequences
+                    .iter()
+                    .flat_map(|(_, sequence)| sequence.clips.iter())
+                    .map(|clip| clip.id)
+                    .collect::<HashSet<_>>();
+                for clip_id in &id {
+                    assert_eq!(
+                        kept.contains(clip_id),
+                        !expected.contains(clip_id),
+                        "clip {clip_id:?} kept/dropped differently \
+                         from the all-pairs reference",
+                    );
+                }
+            }
         }
 
         #[cfg(feature = "diagnostics")]

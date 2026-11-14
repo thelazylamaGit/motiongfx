@@ -390,11 +390,21 @@ sizes.
 - Release rebuild of the example crate after touching every example: 5.5 s.
 - Example binaries: 12.2–12.5 MB (authoring examples); 8.6–8.8 MB
   (`*_low_level`, `timeline_wave`).
-- `setup/animate` grows about 180x for 10x the objects, which is quadratic.
-  Most likely core's `resolve_conflicts` pairwise check over every animated
-  property (about 50k at 10k circles); not yet profiled. It dominates setup
-  and would hide the `Anim` tree's own cost at 10k, so compare phase 1 at 1k,
-  or fix the conflict check first (group by subject before comparing pairs).
+- `setup/animate` grew about 180x for 10x the objects (quadratic). Disabling
+  each candidate confirmed the cause: core's `resolve_conflicts` compared
+  every animated property with every other (about 50k at 10k circles); the
+  clip sort added no measurable cost.
+- Fixed by grouping by subject and sweeping each group's clips in start order
+  (same clips dropped; checked against the old algorithm on random tracks).
+  `setup/animate`: 1k 26.9 ms → 5.8 ms, 10k 4.86 s → 186 ms. The remaining
+  10k cost still grows faster than linearly (about 32x for 10x); profile
+  before phase 1 work if it matters.
+- **Compare phase 1 against the `phase1-start` baseline** (saved after the
+  fix), not `before`.
+- Run-to-run noise on this machine is up to about 30% for unchanged code
+  (playback and encoding moved that much between runs with no related
+  change). Re-run when results look surprising; only trust large or
+  repeated differences.
 - Per-frame CPU at 10k (sampling + encoding) is about 2 ms, well inside a
   60 fps budget; idle redraws in the host remain the practical waste.
 
