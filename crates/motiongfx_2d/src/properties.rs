@@ -26,8 +26,22 @@ macro_rules! fields {
 }
 pub(crate) use fields;
 
-// One getter per field on an object handle.
+// One getter per field on an object handle. `also impl<..> Type => path`
+// generates the same getters on a second handle type that holds the ID at
+// `self.path`, such as a line with tips.
 macro_rules! handle_methods {
+    ($handle:ident, $state:ty, $id:ty;
+        also impl<$($generic:ident),*> $other:ty => $inner:ident.id;
+        $($name:ident: $value:ty;)*) => {
+        crate::properties::handle_methods!($handle, $state, $id; $($name: $value;)*);
+        impl<$($generic),*> $other {
+            $(
+            #[doc = concat!("The line's `", stringify!($name), "`, to animate (`.to(..)`) or for other objects to follow.")]
+            pub fn $name(self) -> fields::$name::Target {
+                motiongfx_authoring::Target::new(self.$inner.id)
+            })*
+        }
+    };
     ($handle:ident, $state:ty, $id:ty; $($name:ident: $value:ty;)*) => {
         impl $handle {
             $(
@@ -36,7 +50,7 @@ macro_rules! handle_methods {
                 motiongfx_authoring::Target::new(self.id)
             })*
         }
-    }
+    };
 }
 pub(crate) use handle_methods;
 

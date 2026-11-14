@@ -155,6 +155,7 @@ end_y: f64 => new(Line.end.y);
 );
 
 crate::properties::handle_methods!(LineHandle,Line,LineId;
+also impl<S, E> crate::LineTipHandle<S, E> => line.id;
 stroke: Color;
 stroke_width: f64;
 line_cap: crate::Cap;

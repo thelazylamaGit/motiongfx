@@ -2,7 +2,6 @@
 
 use crate::*;
 use motiongfx::prelude::ThreadSafe;
-use std::ops::Deref;
 
 /// No tip at this end.
 #[derive(Clone, Copy, Debug, Default)]
@@ -134,9 +133,12 @@ impl<M: Model2d> Object<Line, M> {
     /// let mut animation = scene.compile([
     ///     line.start_tip.radius().to(10.0),
     ///     line.end_tip.angle().to(0.9),
+    ///     // The line's own getters work on the tipped handle too.
+    ///     line.reveal().to(0.5),
     /// ]);
-    /// animation.sample(s(2));
+    /// animation.sample(s(3));
     /// assert_eq!(animation.circle(line.start_tip).radius, 10.0);
+    /// assert_eq!(animation.line(line).reveal, 0.5);
     /// ```
     /// Tip-specific properties are checked at compile time:
     /// ```compile_fail
@@ -219,9 +221,9 @@ setters!(start: Point, end: Point, opacity: f64, stroke_width: f64,
     reveal: f64, line_dash: std::sync::Arc<[f64]>, dash_offset: f64,
     start_offset: f64, end_offset: f64,);
 
-/// A line with tips in a scene, returned by `scene.add`. Use it like a
-/// [`LineHandle`] (it dereferences to one), and animate the tips through
-/// `start_tip` and `end_tip`.
+/// A line with tips in a scene, returned by `scene.add`. It has the same
+/// getters as a [`LineHandle`] (`reveal()`, `stroke()`, ...), and the tips
+/// are animated through `start_tip` and `end_tip`.
 #[derive(Clone, Copy, Debug)]
 pub struct LineTipHandle<S, E> {
     pub(crate) line: LineHandle,
@@ -230,10 +232,10 @@ pub struct LineTipHandle<S, E> {
     /// The end tip's handle ([`NoTip`] if none).
     pub end_tip: E,
 }
-impl<S, E> Deref for LineTipHandle<S, E> {
-    type Target = LineHandle;
-    fn deref(&self) -> &LineHandle {
-        &self.line
+impl<S, E> LineTipHandle<S, E> {
+    /// The line's ID.
+    pub fn id(self) -> LineId {
+        self.line.id
     }
 }
 impl<S, E> From<LineTipHandle<S, E>> for LineHandle {
