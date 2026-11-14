@@ -3,7 +3,9 @@
 //! while fill, opacity, position and scale animate. Scrub backwards to test it.
 
 use motiongfx::prelude::{ms, s};
-use motiongfx_2d::{FontWeight, Scene, Text, TextAlign, colors::*};
+use motiongfx_2d::{
+    FontWeight, Scene, Text, TextAlign, all, colors::*, wait,
+};
 use vello_winit_motiongfx::Window;
 
 fn main() -> Result<(), winit::error::EventLoopError> {
@@ -18,20 +20,20 @@ fn main() -> Result<(), winit::error::EventLoopError> {
             .position((0.0, -30.0))
             .opacity(0.0),
     );
-    let animation = scene.animate(|sequence| {
-        let words = title.select("words");
-        let move_word = title.select("move");
-        sequence.parallel(|sequence| {
-            sequence.play(title.opacity().to(1.0).over(ms(600)));
-            sequence.play(title.position_y().to(30.0).over(ms(600)));
-        });
-        sequence.play(words.fill().to(ORANGE).over(ms(500)));
-        sequence.play(move_word.opacity().to(0.15).over(ms(400)));
-        sequence.play(move_word.opacity().to(1.0).over(ms(400)));
-        sequence.play(title.scale().to(1.15).over(ms(600)));
-        sequence.wait(s(1));
-        sequence.play(title.opacity().to(0.0).over(ms(600)));
-    });
+    let words = title.select("words");
+    let move_word = title.select("move");
+    let animation = scene.compile([
+        all([
+            title.opacity().to(1.0).over(ms(600)),
+            title.position_y().to(30.0).over(ms(600)),
+        ]),
+        words.fill().to(ORANGE).over(ms(500)),
+        move_word.opacity().to(0.15).over(ms(400)),
+        move_word.opacity().to(1.0).over(ms(400)),
+        title.scale().to(1.15).over(ms(600)),
+        wait(s(1)),
+        title.opacity().to(0.0).over(ms(600)),
+    ]);
 
     Window::new(
         "MotionGfx | Font text and word highlights",

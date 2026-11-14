@@ -26,7 +26,7 @@ use criterion::{
 use motiongfx::prelude::{ease, ms};
 use vello_motiongfx::{
     Circle, CircleHandle, Color, CompiledScene, Renderer, Scene,
-    Signal, Size, Spring, signal,
+    Signal, Size, Spring, all, flow, signal, wait,
 };
 
 const SIZES: [usize; 2] = [1_000, 10_000];
@@ -74,36 +74,34 @@ fn objects(count: usize) -> Objects {
 /// the only function ported to the `Animation` API.
 fn animate(objects: Objects) -> CompiledScene {
     let Objects {
-        scene,
+        mut scene,
         circles,
         progress,
     } = objects;
     let spring = Spring::timed(ms(400)).bounce(0.4);
-    scene.animate(|sequence| {
-        sequence.defaults(ms(300), ease::cubic::ease_in_out);
-        sequence.flow(ms(1), |sequence| {
-            for circle in &circles {
-                sequence.parallel(|sequence| {
-                    sequence.play(circle.position_x().offset(40.0));
-                    sequence.play(circle.scale().to(1.5));
-                });
-            }
-        });
-        sequence.play(progress.to(1.0).over(ms(500)));
-        sequence.parallel(|sequence| {
-            for circle in &circles {
-                sequence.play(circle.fill_to(ORANGE));
-                sequence.play(circle.opacity().to(0.6));
-            }
-        });
-        sequence.flow(ms(1), |sequence| {
-            for circle in &circles {
-                sequence
-                    .play(circle.shift(-40.0, 0.0).spring(spring));
-            }
-        });
-        sequence.wait(ms(200));
-    })
+    scene.defaults(ms(300), ease::cubic::ease_in_out);
+    scene.compile([
+        flow(
+            ms(1),
+            circles.iter().map(|circle| {
+                all([
+                    circle.position_x().offset(40.0),
+                    circle.scale().to(1.5),
+                ])
+            }),
+        ),
+        progress.to(1.0).over(ms(500)),
+        all(circles.iter().flat_map(|circle| {
+            [circle.fill_to(ORANGE), circle.opacity().to(0.6)]
+        })),
+        flow(
+            ms(1),
+            circles.iter().map(|circle| {
+                circle.shift(-40.0, 0.0).spring(spring)
+            }),
+        ),
+        wait(ms(200)),
+    ])
 }
 
 fn frame_times(

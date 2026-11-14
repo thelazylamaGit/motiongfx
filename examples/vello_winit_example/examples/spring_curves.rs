@@ -6,9 +6,9 @@
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
     BezPath, Circle, Color, CompiledScene, Line, Path, Point, Scene,
-    Scene2dExt, Spring, SpringCurve, Text, TextAlign, TextStyle,
+    Scene2dExt, Spring, SpringCurve, Text, TextAlign, TextStyle, all,
     colors::{TRANSPARENT, WHITE},
-    computed, signal,
+    computed, signal, wait,
 };
 use std::{sync::Arc, time::Duration};
 use vello_winit_motiongfx::Window;
@@ -242,76 +242,56 @@ fn build_animation() -> CompiledScene {
         );
     }
 
-    scene.animate(|sequence| {
-        for (index, experiment) in experiments.into_iter().enumerate()
-        {
-            let springs = [
-                experiment.physical,
-                experiment.visual,
-                experiment.timed,
-            ];
-            let duration = springs
-                .iter()
-                .map(|spring| {
-                    spring
-                        .prepare()
-                        .expect("valid experiment settings")
-                        .duration()
-                })
-                .max()
-                .expect("three springs");
+    let mut steps = Vec::new();
+    for (index, experiment) in experiments.into_iter().enumerate() {
+        let springs = [
+            experiment.physical,
+            experiment.visual,
+            experiment.timed,
+        ];
+        let duration = springs
+            .iter()
+            .map(|spring| {
+                spring
+                    .prepare()
+                    .expect("valid experiment settings")
+                    .duration()
+            })
+            .max()
+            .expect("three springs");
 
-            sequence.play(title.set(experiment.name));
-            // Signals already contain the first experiment's settings.
-            if index > 0 {
-                sequence.parallel(|sequence| {
-                    sequence.play(
-                        physical
-                            .to(experiment.physical)
-                            .over(ms(1000)),
-                    );
-                    sequence.play(
-                        visual.to(experiment.visual).over(ms(1000)),
-                    );
-                    sequence.play(
-                        timed.to(experiment.timed).over(ms(1000)),
-                    );
-                });
-            }
-            sequence.wait(ms(500));
-            sequence.parallel(|sequence| {
-                for (ball, spring) in balls.iter().zip(springs) {
-                    sequence.play(
-                        ball.position_x().to(TRAVEL).spring(spring),
-                    );
-                }
-                sequence.play(
-                    elapsed
-                        .to(duration.as_secs_f64())
-                        .over(duration)
-                        .ease(ease::linear),
-                );
-            });
-            sequence.wait(ms(100));
-            // Rewind along the current curves before morphing to new settings.
-            sequence.parallel(|sequence| {
-                sequence.play(
-                    elapsed
-                        .to(0.0)
-                        .over(ms(500))
-                        .ease(ease::cubic::ease_in_out),
-                );
-                for ball in &balls {
-                    sequence.play(
-                        ball.position_x()
-                            .to(-TRAVEL)
-                            .over(ms(500))
-                            .ease(ease::cubic::ease_in_out),
-                    );
-                }
-            });
+        steps.push(title.set(experiment.name));
+        // Signals already contain the first experiment's settings.
+        if index > 0 {
+            steps.push(all([
+                physical.to(experiment.physical).over(ms(1000)),
+                visual.to(experiment.visual).over(ms(1000)),
+                timed.to(experiment.timed).over(ms(1000)),
+            ]));
         }
-    })
+        steps.push(wait(ms(500)));
+        steps.push(all(balls
+            .iter()
+            .zip(springs)
+            .map(|(ball, spring)| {
+                ball.position_x().to(TRAVEL).spring(spring)
+            })
+            .chain([elapsed
+                .to(duration.as_secs_f64())
+                .over(duration)
+                .ease(ease::linear)])));
+        steps.push(wait(ms(100)));
+        // Rewind along the current curves before morphing to new settings.
+        let rewind = ms(500);
+        steps.push(all(balls
+            .iter()
+            .map(|ball| ball.position_x().to(-TRAVEL))
+            .chain([elapsed.to(0.0)])
+            .map(|step| {
+                step.over(rewind).ease(ease::cubic::ease_in_out)
+            })));
+    }
+    scene.compile(steps)
 }
 
 fn main() -> Result<(), winit::error::EventLoopError> {

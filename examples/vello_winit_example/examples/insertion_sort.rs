@@ -3,7 +3,7 @@
 
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
-    Rectangle, Scene, Text, TextAlign, colors::PASTEL_BLUE,
+    Rectangle, Scene, Text, TextAlign, all, colors::PASTEL_BLUE, wait,
 };
 use vello_winit_motiongfx::Window;
 
@@ -68,28 +68,28 @@ fn main() -> Result<(), winit::error::EventLoopError> {
         })
         .collect();
 
-    let animation = scene.animate(|sequence| {
-        sequence.defaults(ms(400), ease::cubic::ease_in_out);
-        for i in 1..order.len() {
-            let mut j = i;
-            while j > 0 && order[j - 1].0 > order[j].0 {
-                order.swap(j - 1, j);
-                j -= 1;
-            }
-            sequence.play(status.set_content(format!(
-                "INSERTION PASS {i} / {}",
-                order.len() - 1
-            )));
-            // All bars move together; their labels follow automatically.
-            sequence.play_all(order.iter().enumerate().map(
-                |(index, (_, bar))| {
-                    bar.position_x().to(slot(index, order.len()))
-                },
-            ));
+    scene.defaults(ms(400), ease::cubic::ease_in_out);
+    let mut steps = Vec::new();
+    for i in 1..order.len() {
+        let mut j = i;
+        while j > 0 && order[j - 1].0 > order[j].0 {
+            order.swap(j - 1, j);
+            j -= 1;
         }
-        sequence.play(status.set_content("SORTED / HOLD"));
-        sequence.wait(ms(600));
-    });
+        steps.push(status.set_content(format!(
+            "INSERTION PASS {i} / {}",
+            order.len() - 1
+        )));
+        // All bars move together; their labels follow automatically.
+        steps.push(all(order.iter().enumerate().map(
+            |(index, (_, bar))| {
+                bar.position_x().to(slot(index, order.len()))
+            },
+        )));
+    }
+    steps.push(status.set_content("SORTED / HOLD"));
+    steps.push(wait(ms(600)));
+    let animation = scene.compile(steps);
 
     Window::new("MotionGfx | Insertion sort", (900.0, 600.0))
         .run(animation)

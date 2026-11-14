@@ -7,7 +7,7 @@ use std::f64::consts::PI;
 use motiongfx::prelude::{ease, ms, s};
 use motiongfx_2d::{
     Circle, Color, Line, Scene, Text, TextAlign, TextStyle, Triangle,
-    signal,
+    signal, wait,
 };
 use vello_winit_motiongfx::Window;
 
@@ -54,14 +54,14 @@ fn main() -> Result<(), winit::error::EventLoopError> {
             .fill(RED),
     );
 
-    let animation = scene.animate(|sequence| {
-        // Motion Canvas's default signal tween easing is cubic in/out.
-        sequence.defaults(s(2), ease::cubic::ease_in_out);
-        sequence.play(radius.to(4.0));
-        sequence.wait(ms(100));
-        sequence.play(radius.to(3.0));
-        sequence.wait(s(1));
-    });
+    // Motion Canvas's default signal tween easing is cubic in/out.
+    scene.defaults(s(2), ease::cubic::ease_in_out);
+    let animation = scene.compile([
+        radius.to(4.0),
+        wait(ms(100)),
+        radius.to(3.0),
+        wait(s(1)),
+    ]);
 
     Window::new(
         "MotionGfx | Radius and area signals",

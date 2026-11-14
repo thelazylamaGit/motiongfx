@@ -9,7 +9,7 @@ use motiongfx::prelude::{ease, ms, s};
 use motiongfx_2d::{
     Circle, Color, Line, Path, Point, Scene, Text,
     colors::{BLUE, TRANSPARENT, WHITE},
-    computed, signal,
+    computed, signal, wait,
 };
 use vello_winit_motiongfx::Window;
 
@@ -81,12 +81,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Shared calculations run when inputs change, including backward seeks.
-    // `try_animate` reports binding cycles/writer conflicts before playback.
-    let animation = scene.try_animate(|sequence| {
-        sequence
-            .play(progress.to(1.0).over(ms(8500)).ease(ease::linear));
-        sequence.wait(s(1));
-    })?;
+    // `try_compile` reports binding cycles/writer conflicts before playback.
+    let animation = scene.try_compile([
+        progress.to(1.0).over(ms(8500)).ease(ease::linear),
+        wait(s(1)),
+    ])?;
 
     Window::new(
         "MotionGfx | Unit circle and sine curve",

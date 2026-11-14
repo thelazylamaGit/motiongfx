@@ -358,12 +358,12 @@ To migrate:
 ## 10. Implementation plan
 
 0. Update this document. *(done)*
-1. **Baseline benchmark** (see Measurements) and save a Criterion baseline.
-2. **`Animation` + `compile` alongside the current API:** `Animation`, combinators,
+1. **Baseline benchmark** (see Measurements) and save a Criterion baseline. *(done)*
+2. **`Animation` + `compile` alongside the current API** *(done)*: `Animation`, combinators,
    `Timing`, `Step` for property/signal/selection, spring overshoot audit,
    error collection with locations. Unit tests in `motiongfx_authoring` for
    the timing rules, `.delay`, instant changes and both error cases.
-3. **Migrate the examples** one at a time (no per-example parity tests; core
+3. **Migrate the examples** *(done except `lissajous` and `bezier_explainer`, which need markers)* one at a time (no per-example parity tests; core
    is unchanged and the lowering rules are unit-tested). Existing example
    tests (`lissajous`, `spring_curves`) keep running.
 4. **Markers in core**, then migrate `lissajous` and `bezier_explainer`.
@@ -425,6 +425,10 @@ sizes.
   time; allocation count dominates. Inline small-step storage could remove
   it, at the cost of `unsafe` code or a dependency; not planned unless setup
   becomes a bottleneck. Playback code is unchanged.
+- After step 3 (benchmark ported to `scene.compile`), `setup/animate` against
+  `phase1-start`: 1k +3.9%, 10k +2.2%. The `compile` path is cheaper than the
+  callback API running through `Animation`: no per-group `Vec`s, and fragments
+  stream into core's combinators.
 - Run-to-run noise on this machine is up to about 30% for unchanged code
   (playback and encoding moved that much between runs with no related
   change). Re-run when results look surprising; only trust large or

@@ -3,8 +3,9 @@
 
 use motiongfx::prelude::{ease, ms, s};
 use motiongfx_2d::{
-    Circle, CircleHandle, Color, Path, Scene,
+    Animation, Circle, CircleHandle, Color, Path, Scene, all,
     colors::{MAUVE, PASTEL_BLUE, TRANSPARENT},
+    flow, wait,
 };
 use vello_winit_motiongfx::Window;
 
@@ -33,6 +34,21 @@ impl Commit {
         );
         Self { dot, ring }
     }
+
+    /// Grow the dot in; its child ring follows the dot's transform.
+    fn appear(&self) -> Animation {
+        self.dot
+            .scale()
+            .to(1.0)
+            .over(ms(400))
+            .ease(ease::back::ease_out)
+    }
+
+    /// Same pulse as scale = 1 + pulse*1.4 and opacity = 1 - pulse,
+    /// expressed directly as two ordinary ring property animations.
+    fn pulse(&self) -> Animation {
+        all([self.ring.scale().to(2.4), self.ring.opacity().to(0.0)])
+    }
 }
 
 fn main() -> Result<(), winit::error::EventLoopError> {
@@ -56,34 +72,14 @@ fn main() -> Result<(), winit::error::EventLoopError> {
         Commit::new(&mut scene, (240.0, 60.0), MAUVE),
     ];
 
-    let animation = scene.animate(|sequence| {
-        sequence.defaults(s(1), ease::linear);
-        sequence.play(trunk.end().to(1.0).over(ms(800)));
-        // The child ring inherits the dot's appearance animation automatically.
-        sequence.flow(ms(120), |sequence| {
-            for commit in &commits {
-                sequence.play(
-                    commit
-                        .dot
-                        .scale()
-                        .to(1.0)
-                        .over(ms(400))
-                        .ease(ease::back::ease_out),
-                );
-            }
-        });
-        sequence.play(fork.end().to(1.0).over(ms(800)));
-        // Same pulse as scale = 1 + pulse*1.4 and opacity = 1 - pulse,
-        // expressed directly as two ordinary ring property animations.
-        sequence.parallel(|sequence| {
-            for commit in &commits {
-                sequence.play(commit.ring.scale().to(2.4));
-                sequence.play(commit.ring.opacity().to(0.0));
-            }
-        });
-
-        sequence.wait(ms(400));
-    });
+    scene.defaults(s(1), ease::linear);
+    let animation = scene.compile([
+        trunk.end().to(1.0).over(ms(800)),
+        flow(ms(120), commits.iter().map(Commit::appear)),
+        fork.end().to(1.0).over(ms(800)),
+        all(commits.iter().map(Commit::pulse)),
+        wait(ms(400)),
+    ]);
 
     Window::new("MotionGfx | Commit graph", (960.0, 540.0))
         .run(animation)

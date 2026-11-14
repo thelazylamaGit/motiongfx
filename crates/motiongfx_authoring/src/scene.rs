@@ -291,8 +291,14 @@ impl<M: 'static> Scene<M> {
         self,
         steps: impl IntoIterator<Item = crate::Animation<M>>,
     ) -> Result<CompiledScene<M>, SceneError> {
-        let steps = crate::chain(steps);
-        self.try_animate(|sequence| sequence.play(steps))
+        // Lower each step as it is read; the list is never copied.
+        self.try_animate(|sequence| {
+            let fragment = steps
+                .into_iter()
+                .map(|step| step.lower(sequence))
+                .ord_chain();
+            sequence.append(fragment);
+        })
     }
     /// Compile the existing core timeline and initialize time zero. Panics on
     /// invalid bindings; use `try_animate` to handle preparation errors.
