@@ -5,7 +5,8 @@
 use motiongfx::prelude::*;
 use motiongfx_authoring::{
     Animation, AnimationError, AnimationErrorKind, Property, Scene,
-    SceneError, Spring, World, all, chain, flow, signal, wait,
+    SceneError, Spring, World, all, chain, flow, marker, signal,
+    wait,
 };
 use std::time::Duration;
 
@@ -239,13 +240,13 @@ fn every_problem_is_reported_with_its_location() {
 }
 
 #[test]
-#[should_panic(expected = "groups and waits have no timing")]
+#[should_panic(expected = "have no timing of")]
 fn timing_on_a_group_panics_where_it_is_written() {
     let _ = all::<Items>([x(1).to(1.0)]).over(ms(10));
 }
 
 #[test]
-#[should_panic(expected = "groups and waits have no timing")]
+#[should_panic(expected = "have no timing of")]
 fn timing_on_a_wait_panics_where_it_is_written() {
     let _ = wait::<Items>(ms(10)).ease(ease::linear);
 }
@@ -294,4 +295,98 @@ fn animations_stay_small() {
 fn empty_compiles_to_zero_length() {
     let animation = scene().compile(Vec::<Animation<Items>>::new());
     assert_eq!(animation.duration(), Duration::ZERO);
+}
+
+#[test]
+fn markers_name_times_in_chains_groups_and_flows() {
+    let animation = scene().compile([
+        marker("start"),
+        x(0).to(1.0),                       // 0..100
+        marker("after_x"),                  // 100
+        all([y(0).to(1.0), marker("all")]), // group start: 100
+        flow(
+            ms(50),
+            [
+                marker("first_slot"),  // next child starts at 200
+                x(1).to(1.0),          // 200..300
+                marker("second_slot"), // next child starts at 250
+                x(2).to(1.0),          // 250..350
+                marker("flow_end"), // no child follows: group end, 350
+            ],
+        ),
+        chain([marker("delayed")]).delay(ms(25)), // 375
+    ]);
+    let times = |name| animation.marker(name).unwrap();
+    assert_eq!(times("start"), ms(0));
+    assert_eq!(times("after_x"), ms(100));
+    assert_eq!(times("all"), ms(100));
+    assert_eq!(times("first_slot"), ms(200));
+    assert_eq!(times("second_slot"), ms(250));
+    assert_eq!(times("flow_end"), ms(350));
+    assert_eq!(times("delayed"), ms(375));
+    assert_eq!(animation.marker("missing"), None);
+    assert_eq!(animation.duration(), ms(375));
+    // Sorted by time, ties in authoring order.
+    let names = animation
+        .markers()
+        .iter()
+        .map(|(name, _)| name.as_ref())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        [
+            "start",
+            "after_x",
+            "all",
+            "first_slot",
+            "second_slot",
+            "flow_end",
+            "delayed"
+        ]
+    );
+}
+
+#[test]
+fn markers_take_no_time_or_slot() {
+    let with = scene().compile([flow(
+        ms(50),
+        [x(0).to(1.0), marker("between"), x(1).to(1.0)],
+    )]);
+    let without =
+        scene().compile([flow(ms(50), [x(0).to(1.0), x(1).to(1.0)])]);
+    assert_eq!(with.duration(), without.duration());
+    assert_eq!(with.marker("between"), Some(ms(50)));
+}
+
+#[test]
+fn duplicate_marker_names_report_both_locations() {
+    let line = line!();
+    let repeated: Animation<Items> = marker("loop");
+    let result = scene().try_compile([
+        marker("loop"),
+        x(0).to(1.0),
+        repeated.clone(),
+        repeated,
+    ]);
+    let Err(SceneError::Animation(errors)) = result else {
+        panic!("expected duplicate marker errors");
+    };
+    assert_eq!(errors.len(), 2);
+    for error in &errors {
+        let AnimationErrorKind::DuplicateMarker { name, first } =
+            &error.kind
+        else {
+            panic!("expected a duplicate marker, got {error}");
+        };
+        assert_eq!(name, "loop");
+        assert_eq!(first.line(), line + 3);
+        assert_eq!(error.location.line(), line + 1);
+    }
+    assert!(errors[0].to_string().contains("already used at"));
+}
+
+#[test]
+#[should_panic(expected = "have no timing of")]
+fn timing_on_a_marker_panics() {
+    let _ = marker::<Items>("loop").over(ms(10));
 }

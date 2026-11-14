@@ -19,11 +19,13 @@ use crate::{
 };
 use motiongfx::prelude::*;
 use motiongfx::subject::SubjectId;
+use motiongfx::track::MarkerName;
 use std::{panic::Location, sync::Arc, time::Duration};
 
 /// One animation: a property, signal or text-selection change, a group,
-/// or a wait. Build them with property methods (`square.shift(..)`,
-/// `signal.to(..)`), [`chain`], [`all`], [`flow`] and [`wait`].
+/// a wait or a marker. Build them with property methods
+/// (`square.shift(..)`, `signal.to(..)`), [`chain`], [`all`], [`flow`],
+/// [`wait`] and [`marker`].
 ///
 /// `M` is the scene's model. `motiongfx_2d` exports `Animation` with its
 /// 2D model filled in, so 2D code writes plain `Animation`.
@@ -34,6 +36,7 @@ enum Node<M> {
     Step(Arc<dyn Step<M>>, Timing),
     Group(Order, Vec<Animation<M>>),
     Wait(Duration),
+    Marker(MarkerName, &'static Location<'static>),
 }
 
 #[derive(Clone, Copy)]
@@ -54,6 +57,9 @@ impl<M> Clone for Animation<M> {
                 Node::Group(*order, children.clone())
             }
             Node::Wait(duration) => Node::Wait(*duration),
+            Node::Marker(name, location) => {
+                Node::Marker(name.clone(), location)
+            }
         })
     }
 }
@@ -96,8 +102,8 @@ pub trait Step<M>: Send + Sync + 'static {
     ) -> TrackFragment;
 }
 
-const GROUP_TIMING: &str = "groups and waits have no timing of their own; \
-     set .over()/.ease()/.spring() on each animation inside";
+const GROUP_TIMING: &str = "groups, waits and markers have no timing of \
+     their own; set .over()/.ease()/.spring() on each animation inside";
 const SPRING_TIMING: &str = "a spring sets its own timing, so it cannot be \
      combined with .over()/.ease() or an instant .set(..)";
 
@@ -117,13 +123,13 @@ impl<M: 'static> Animation<M> {
         ))
     }
 
-    /// The timing of a single change. Groups and waits have none (yet),
-    /// so timing modifiers on them panic at the caller's line.
+    /// The timing of a single change. Groups, waits and markers have none
+    /// (yet), so timing modifiers on them panic at the caller's line.
     #[track_caller]
     fn motion(&mut self) -> &mut Motion {
         match &mut self.0 {
             Node::Step(_, timing) => &mut timing.motion,
-            Node::Group(..) | Node::Wait(_) => {
+            Node::Group(..) | Node::Wait(_) | Node::Marker(..) => {
                 panic!("{GROUP_TIMING}")
             }
         }
@@ -178,21 +184,76 @@ impl<M: 'static> Animation<M> {
     ) -> TrackFragment {
         match &self.0 {
             Node::Step(step, timing) => step.lower(sequence, timing),
+            Node::Group(Order::Flow(interval), children) => {
+                lower_flow(*interval, children, sequence)
+            }
             Node::Group(order, children) => {
                 let fragments = children
                     .iter()
                     .map(|child| child.lower(sequence));
                 match order {
                     Order::Chain => fragments.ord_chain(),
-                    Order::All => fragments.ord_all(),
-                    Order::Flow(interval) => {
-                        fragments.ord_flow(*interval)
-                    }
+                    _ => fragments.ord_all(),
                 }
             }
             Node::Wait(duration) => TrackFragment::silent(*duration),
+            Node::Marker(name, location) => {
+                if sequence
+                    .context_mut()
+                    .register_marker(name, location)
+                {
+                    TrackFragment::marker(name.clone())
+                } else {
+                    TrackFragment::new()
+                }
+            }
         }
     }
+}
+
+/// `flow` gives each child a slot `interval` apart, but a marker takes no
+/// slot: it names where the next child starts, or the group's end if no
+/// child follows it.
+fn lower_flow<M: 'static>(
+    interval: Duration,
+    children: &[Animation<M>],
+    sequence: &mut Sequence<'_, World<M>, SceneContext<'_, M>>,
+) -> TrackFragment {
+    let last_slot = children
+        .iter()
+        .rposition(|child| !matches!(child.0, Node::Marker(..)));
+    let mut slots = 0;
+    // Each marker's slot start, or `None` for the group's end.
+    let mut markers = Vec::new();
+    let mut fragment = children
+        .iter()
+        .enumerate()
+        .filter_map(|(index, child)| match &child.0 {
+            Node::Marker(name, location) => {
+                if sequence
+                    .context_mut()
+                    .register_marker(name, location)
+                {
+                    let follows =
+                        last_slot.is_some_and(|last| index < last);
+                    markers.push((
+                        name,
+                        follows.then(|| interval * slots),
+                    ));
+                }
+                None
+            }
+            _ => {
+                slots += 1;
+                Some(child.lower(sequence))
+            }
+        })
+        .ord_flow(interval);
+    for (name, time) in markers {
+        let time = time.unwrap_or(fragment.duration());
+        fragment.add_marker(name.clone(), time);
+    }
+    fragment
 }
 
 /// Lets an `Animation` be played by the callback API during migration.
@@ -240,6 +301,18 @@ pub fn flow<M: 'static>(
 /// together; use `.delay(..)` for that.
 pub fn wait<M: 'static>(duration: Duration) -> Animation<M> {
     Animation(Node::Wait(duration))
+}
+
+/// A named point in time, read after compiling with
+/// [`CompiledScene::marker`](crate::CompiledScene::marker). In a [`chain`]
+/// it is where the previous step ends; in [`all`], the group start; in
+/// [`flow`], where the next child starts (it takes no slot). Names must be
+/// unique; `compile` reports duplicates with both locations.
+#[track_caller]
+pub fn marker<M: 'static>(
+    name: impl Into<MarkerName>,
+) -> Animation<M> {
+    Animation(Node::Marker(name.into(), Location::caller()))
 }
 
 /// Identifies a property compactly and rebuilds its full description when
@@ -403,6 +476,11 @@ pub enum AnimationErrorKind {
     /// A target that could not be resolved (for example a missing text
     /// selection).
     Target(String),
+    /// A marker name used twice; `first` is where it was first used.
+    DuplicateMarker {
+        name: MarkerName,
+        first: &'static Location<'static>,
+    },
 }
 
 impl std::fmt::Display for AnimationError {
@@ -417,6 +495,10 @@ impl std::fmt::Display for AnimationError {
             ),
             AnimationErrorKind::Spring(error) => error.fmt(f),
             AnimationErrorKind::Target(message) => f.write_str(message),
+            AnimationErrorKind::DuplicateMarker { name, first } => write!(
+                f,
+                "marker \"{name}\" is already used at {first}; marker names must be unique"
+            ),
         }
     }
 }

@@ -8,8 +8,9 @@ use std::time::Duration;
 use motiongfx::prelude::{cs, ease, ms};
 use motiongfx_2d::{
     Circle, Color, CompiledScene, Line, Path, Point, Scene, Signal,
+    all, chain,
     colors::{TRANSPARENT, WHITE},
-    computed, signal,
+    computed, flow, marker, signal, wait,
 };
 use vello_winit_motiongfx::{PlaybackMode, Window};
 
@@ -84,7 +85,7 @@ fn reference_circle(
     )));
 }
 
-fn build_animation() -> (CompiledScene, Duration) {
+fn build_animation() -> CompiledScene {
     let mut scene = Scene::new();
     // Each curve has a visible range: reveal its end, hold, then advance its start.
     // Separate sources let reference dots exist before their curves in draw order.
@@ -151,53 +152,47 @@ fn build_animation() -> (CompiledScene, Duration) {
         }
     }
 
-    let mut loop_start = Duration::ZERO;
-    let animation = scene.animate(|sequence| {
-        sequence.defaults(cs(60), ease::cubic::ease_in_out);
-        // Rows follow columns by 25ms; successive pairs start 50ms apart.
-        loop_start = sequence.flow(ms(50), |sequence| {
-            for index in 0..verticals.len().max(horizontals.len()) {
-                sequence.flow(ms(25), |sequence| {
-                    if let Some(column) = verticals.get(index) {
-                        sequence.play(column.reveal().to(1.0));
-                    }
-                    if let Some(row) = horizontals.get(index) {
-                        sequence.play(row.reveal().to(1.0));
-                    }
-                });
-            }
-        });
+    scene.defaults(cs(60), ease::cubic::ease_in_out);
+    // Rows follow columns by 25ms; successive pairs start 50ms apart.
+    let grid = flow(
+        ms(50),
+        (0..verticals.len().max(horizontals.len())).map(|index| {
+            let lines = verticals.get(index).into_iter();
+            flow(
+                ms(25),
+                lines
+                    .chain(horizontals.get(index))
+                    .map(|line| line.reveal().to(1.0)),
+            )
+        }),
+    );
 
-        // Diagonals stagger; curves within a diagonal run together.
-        sequence.flow(STAGGER, |sequence| {
-            for diagonal in 2..=N_X + N_Y {
-                sequence.parallel(|sequence| {
-                    for column in 1..=N_X {
-                        let Some(row) = diagonal.checked_sub(column)
-                        else {
-                            continue;
-                        };
-                        if !(1..=N_Y).contains(&row) {
-                            continue;
-                        }
-                        let (start, end) =
-                            &ranges[curve_id(column, row)];
-                        sequence.chain(|sequence| {
-                            sequence.play(end.to(1.0).over(DRAW_DUR));
-                            sequence.wait(HOLD_DUR);
-                            sequence
-                                .play(start.to(1.0).over(DRAW_DUR));
-                        });
-                    }
-                });
-            }
-        });
-    });
-    (animation, loop_start)
+    // Diagonals stagger; curves within a diagonal run together.
+    let waves = flow(
+        STAGGER,
+        (2..=N_X + N_Y).map(|diagonal| {
+            all((1..=N_X).filter_map(|column| {
+                let row = diagonal.checked_sub(column)?;
+                if !(1..=N_Y).contains(&row) {
+                    return None;
+                }
+                let (start, end) = &ranges[curve_id(column, row)];
+                Some(chain([
+                    end.to(1.0).over(DRAW_DUR),
+                    wait(HOLD_DUR),
+                    start.to(1.0).over(DRAW_DUR),
+                ]))
+            }))
+        }),
+    );
+
+    // The grid plays once; playback loops from the marker.
+    scene.compile([grid, marker("loop"), waves])
 }
 
 fn main() -> Result<(), winit::error::EventLoopError> {
-    let (animation, loop_start) = build_animation();
+    let animation = build_animation();
+    let loop_start = animation.marker("loop").expect("loop marker");
     Window::new("MotionGfx | Lissajous table", CANVAS)
         .playback_mode(PlaybackMode::LoopFrom(loop_start))
         .run(animation)

@@ -101,6 +101,11 @@ pub type SceneSequence<'a, M> =
 pub struct SceneContext<'a, M> {
     world: &'a mut World<M>,
     animation_errors: &'a mut Vec<crate::AnimationError>,
+    /// Marker names seen so far, with where each was first used.
+    markers: std::collections::HashMap<
+        motiongfx::track::MarkerName,
+        &'static std::panic::Location<'static>,
+    >,
     caches: std::collections::HashMap<TypeId, Box<dyn std::any::Any>>,
 }
 impl<M> SceneContext<'_, M> {
@@ -121,6 +126,26 @@ impl<M> SceneContext<'_, M> {
     /// Record a problem with one animation; `compile` reports them all.
     pub fn report(&mut self, error: crate::AnimationError) {
         self.animation_errors.push(error);
+    }
+    /// Claim a marker name. Returns `false` (and reports the duplicate)
+    /// if the name was already used.
+    pub(crate) fn register_marker(
+        &mut self,
+        name: &motiongfx::track::MarkerName,
+        location: &'static std::panic::Location<'static>,
+    ) -> bool {
+        if let Some(&first) = self.markers.get(name) {
+            self.report(crate::AnimationError {
+                location,
+                kind: crate::AnimationErrorKind::DuplicateMarker {
+                    name: name.clone(),
+                    first,
+                },
+            });
+            return false;
+        }
+        self.markers.insert(name.clone(), location);
+        true
     }
 }
 impl<M> crate::RegisterSignals for SceneContext<'_, M> {
@@ -325,6 +350,7 @@ impl<M: 'static> Scene<M> {
             SceneContext {
                 world: &mut self.world,
                 animation_errors: &mut animation_errors,
+                markers: Default::default(),
                 caches: Default::default(),
             },
         );
@@ -365,6 +391,16 @@ impl<M: 'static> CompiledScene<M> {
     }
     pub fn duration(&self) -> Duration {
         self.timeline.tracks()[0].duration()
+    }
+    /// The time of the marker called `name`, if the animation has one.
+    pub fn marker(&self, name: &str) -> Option<Duration> {
+        self.timeline.tracks()[0].marker(name)
+    }
+    /// Every marker with its time, sorted by time.
+    pub fn markers(
+        &self,
+    ) -> &[(motiongfx::track::MarkerName, Duration)] {
+        self.timeline.tracks()[0].markers()
     }
     /// Reconstruct the core timeline at clamped absolute time, evaluate cached
     /// bindings, then run native callbacks. Baking does not precompute frames.

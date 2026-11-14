@@ -207,11 +207,17 @@ Window::new("Lissajous", CANVAS)
 - **In core.** `TrackFragment` carries `(name, time)` markers that
   `chain`/`flow`/`delay` shift exactly like clips, so marker times cannot drift
   from clip times. The compiled timeline exposes them;
-  `CompiledScene::marker(name) -> Option<Duration>` reads them.
+  `CompiledScene::marker(name) -> Option<Duration>` reads one;
+  `CompiledScene::markers()` lists all, sorted by time. Names are
+  `Cow<'static, str>`, so literal names are not allocated. *(implemented)*
 - **Placement:** in `chain`, where the previous step ends; in `all`, at the
   group start; in `flow`, a marker does not take a slot (it marks where the
-  next child starts), so it never delays anything.
-- Names are strings. A duplicate name is a `compile` error with file and line.
+  next child starts, or the group's end if no child follows), so it never
+  delays anything. A marker adds no time and makes no allocation in fragments
+  without markers.
+- A duplicate name (including from a cloned animation) is a `compile` error
+  that names both locations. `.over()`/`.ease()`/`.spring()` on a marker
+  panics, as on groups and waits.
 - Infinite repetition stays a host playback mode (`LoopFrom`); the animation
   only names times.
 
@@ -363,10 +369,11 @@ To migrate:
    `Timing`, `Step` for property/signal/selection, spring overshoot audit,
    error collection with locations. Unit tests in `motiongfx_authoring` for
    the timing rules, `.delay`, instant changes and both error cases.
-3. **Migrate the examples** *(done except `lissajous` and `bezier_explainer`, which need markers)* one at a time (no per-example parity tests; core
+3. **Migrate the examples** *(done)* one at a time (no per-example parity tests; core
    is unchanged and the lowering rules are unit-tested). Existing example
    tests (`lissajous`, `spring_curves`) keep running.
-4. **Markers in core**, then migrate `lissajous` and `bezier_explainer`.
+4. **Markers in core**, then migrate `lissajous` *(done; `bezier_explainer`
+   uses `PingPong`, needed no marker, and was migrated with the others)*.
 5. **Headless test that builds every example's animation.**
 6. **Remove the old API** and migrate remaining tests and doc examples.
 7. **Docs and after-measurements**; one visual pass over the examples.

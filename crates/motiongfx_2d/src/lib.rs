@@ -19,7 +19,7 @@ pub use motiongfx_authoring::{
     AnimationError, AnimationErrorKind, BindingError, BindingSource,
     SampleTime, SceneError, SceneObject, Signal, SignalId, Source,
     Spring, SpringCurve, SpringError, World, all, animate, chain,
-    computed, flow, signal, smooth, wait,
+    computed, flow, marker, signal, smooth, wait,
 };
 pub use motiongfx_text::{
     FontStyle, FontWeight, SelectionError, TextRange,
@@ -104,7 +104,8 @@ pub mod prelude {
         CompiledScene, CompiledScene2dExt, FontStyle, FontWeight,
         Join, Line, Model2d, Path, Point, Rectangle, Scene,
         Scene2dExt, Size, Spring, Text, TextAlign, TextStyle,
-        Triangle, Vec2, all, chain, computed, flow, signal, wait,
+        Triangle, Vec2, all, chain, computed, flow, marker, signal,
+        wait,
     };
 }
 

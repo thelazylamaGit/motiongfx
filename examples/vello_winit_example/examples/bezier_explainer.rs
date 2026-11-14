@@ -6,7 +6,7 @@
 use motiongfx::prelude::{ease, ms, s};
 use motiongfx_2d::{
     Circle, Color, Input, Line, LineHandle, Path, Point, Rectangle,
-    Scene, Text, computed, signal,
+    Scene, Text, all, chain, computed, signal, wait,
 };
 use vello::kurbo::Rect;
 use vello_winit_motiongfx::{PlaybackMode, Window};
@@ -208,46 +208,29 @@ fn main() -> Result<(), winit::error::EventLoopError> {
     );
 
     // Chapter changes are timeline events, not a second set of time thresholds.
-    let animation = scene.animate(|sequence| {
-        sequence.defaults(s(1), ease::linear);
-        sequence.play_all(grid_lines.iter().map(|line| {
+    scene.defaults(s(1), ease::linear);
+    let animation = scene.compile([
+        all(grid_lines.iter().map(|line| {
             line.reveal()
                 .to(1.0)
                 .over(ms(900))
                 .ease(ease::cubic::ease_in_out)
-        }));
-        sequence.play(guides.to(1.0).over(ms(600)));
-        sequence.play(
-            chapter
-                .set_content("02  SLIDE TWO POINTS - TRACE A CURVE"),
-        );
-        sequence.parallel(|sequence| {
-            sequence.play(t.to(1.0).over(s(4)));
-            sequence.play(curve.end().to(1.0).over(s(4)));
-        });
-        sequence.play(t.to(0.5).ease(ease::cubic::ease_in_out));
-        sequence.play(
-            chapter.set_content(
-                "03  MOVE P1 - THE WHOLE CURVE RESPONDS",
-            ),
-        );
-        for offset in [200.0, -240.0, 40.0] {
-            sequence.play(
-                bend.offset(offset)
-                    .over(ms(1800))
-                    .ease(ease::cubic::ease_in_out),
-            );
-        }
-        sequence.play(
-            chapter.set_content(
-                "04  SAME MATH AT EVERY TIMELINE POSITION",
-            ),
-        );
-        sequence.play(
-            t.to(1.0).over(ms(1500)).ease(ease::cubic::ease_in_out),
-        );
-        sequence.wait(s(1));
-    });
+        })),
+        guides.to(1.0).over(ms(600)),
+        chapter.set_content("02  SLIDE TWO POINTS - TRACE A CURVE"),
+        all([t.to(1.0).over(s(4)), curve.end().to(1.0).over(s(4))]),
+        t.to(0.5).ease(ease::cubic::ease_in_out),
+        chapter.set_content("03  MOVE P1 - THE WHOLE CURVE RESPONDS"),
+        chain([200.0, -240.0, 40.0].map(|offset| {
+            bend.offset(offset)
+                .over(ms(1800))
+                .ease(ease::cubic::ease_in_out)
+        })),
+        chapter
+            .set_content("04  SAME MATH AT EVERY TIMELINE POSITION"),
+        t.to(1.0).over(ms(1500)).ease(ease::cubic::ease_in_out),
+        wait(s(1)),
+    ]);
 
     Window::new(
         "MotionGfx | A curve from three points",

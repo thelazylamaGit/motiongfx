@@ -12,7 +12,7 @@ pub mod bindings;
 mod input;
 pub use animation::{
     Animation, AnimationError, AnimationErrorKind, Step, Timing, all,
-    chain, flow, lower_change, wait,
+    chain, flow, lower_change, marker, wait,
 };
 mod macros;
 mod object;

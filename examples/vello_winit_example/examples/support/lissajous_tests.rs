@@ -53,7 +53,8 @@ fn frame(
 #[test]
 fn chapter_timing_matches_the_original_and_seek_order_does_not_change_the_picture()
  {
-    let (mut animation, loop_start) = build_animation();
+    let mut animation = build_animation();
+    let loop_start = animation.marker("loop").unwrap();
     let (original_intro, original_end) = original_timing();
     assert_eq!(loop_start, original_intro);
     assert_eq!(animation.duration(), original_end);
@@ -79,7 +80,7 @@ fn chapter_timing_matches_the_original_and_seek_order_does_not_change_the_pictur
         loop_start,
     ] {
         let actual = frame(&mut animation, time);
-        let (mut fresh, _) = build_animation();
+        let mut fresh = build_animation();
         let expected = frame(&mut fresh, time);
         assert_eq!(
             actual.encoding().path_data,
