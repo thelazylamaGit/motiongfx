@@ -101,13 +101,16 @@ Prepared coefficients are private and validated.
 ## Authoring and scheduling
 
 ```rust
-sequence.play(ball.position_x().to(200.0).spring(physical));
-sequence.play(ball.position_x().to(-200.0).spring(visual));
-sequence.play(progress.to(1.0).spring(physical));
-sequence.play(ball.position_x().to(200.0).spring(timed));
+scene.compile([
+    ball.position_x().to(200.0).spring(physical),
+    ball.position_x().to(-200.0).spring(visual),
+    progress.to(1.0).spring(physical),
+    ball.position_x().to(200.0).spring(timed),
+]);
 ```
 
-Spring changes expose neither `.over()` nor `.ease()`. They lower to the same
+A spring cannot be combined with `.over()` or `.ease()` (that panics at the
+call). Springs lower to the same
 core primitive available through `builder.spring(id, path, target_fn, settings)`
 or `builder.act_builder(...).with_spring(settings)`. Core builders expose
 `.play()` and checked `.try_play()` without an explicit duration argument.
@@ -139,7 +142,7 @@ colour space suited to overshoot.
 ## Errors and compatibility
 
 `SpringError` covers invalid spring settings. Core track compilation is unchanged.
-`Scene::try_compile`/`try_animate` return `SceneError`:
+`Scene::try_compile` returns `SceneError`:
 
 - `SceneError::Binding(BindingError)` for existing relationship diagnostics.
 - `SceneError::Animation(Vec<AnimationError>)` for invalid spring settings
@@ -147,7 +150,7 @@ colour space suited to overshoot.
   properties, each with the animation's file and line.
 
 Code matching the old direct `BindingError` return needs to match its wrapper.
-`Scene::compile`/`animate` remain the panicking conveniences. Core low-level target baking,
+`Scene::compile` is the panicking convenience. Core low-level target baking,
 queueing and sampling calls are otherwise unchanged.
 
 ## Demo and future scope

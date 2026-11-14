@@ -1,7 +1,9 @@
 //! Immutable signal descriptions and independent scene-local playback values.
 
 use crate::source::SourceId;
-use crate::{Animation, BindingPlan, Computed, Property, Source};
+use crate::{
+    Animation, BindingPlan, Computed, Interp, Property, Source,
+};
 use motiongfx::prelude::*;
 use std::time::Duration;
 use std::{
@@ -23,6 +25,15 @@ struct Initial<T> {
 /// A standalone writable animation input. Clones share the description,
 /// not mutable playback state. Methods borrow the handle rather than consume it.
 pub struct Signal<T>(Arc<Initial<T>>);
+/// Shows the signal's initial value.
+impl<T: std::fmt::Debug> std::fmt::Debug for Signal<T> {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        f.debug_tuple("Signal").field(&self.0.value).finish()
+    }
+}
 impl<T> Clone for Signal<T> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
@@ -47,7 +58,7 @@ impl<T: Clone + ThreadSafe> Signal<T> {
         T: Interpolation<Marker>,
     {
         let value = value.into();
-        self.change(move |_| value.clone(), T::interp, false)
+        self.change(move |_| value.clone(), Interp::Smooth(T::interp))
     }
     /// Replace the value instantly at the point where this is scheduled.
     #[track_caller]
@@ -56,12 +67,8 @@ impl<T: Clone + ThreadSafe> Signal<T> {
         value: impl Into<T>,
     ) -> Animation<M> {
         let value = value.into();
-        self.change(
-            move |_| value.clone(),
-            |a, b, t| if t < 1.0 { a.clone() } else { b.clone() },
-            true,
-        )
-        .over(Duration::ZERO)
+        self.change(move |_| value.clone(), Interp::Discrete)
+            .over(Duration::ZERO)
     }
     /// Animate by adding `delta` to the value at the change's start.
     #[track_caller]
@@ -73,7 +80,10 @@ impl<T: Clone + ThreadSafe> Signal<T> {
         T: Interpolation<Marker> + Add<D, Output = T>,
         D: Copy + ThreadSafe,
     {
-        self.change(move |v: &T| v.clone() + delta, T::interp, false)
+        self.change(
+            move |v: &T| v.clone() + delta,
+            Interp::Smooth(T::interp),
+        )
     }
     /// Animate by multiplying the value at the change's start by `factor`.
     #[track_caller]
@@ -85,32 +95,21 @@ impl<T: Clone + ThreadSafe> Signal<T> {
         T: Interpolation<Marker> + Mul<D, Output = T>,
         D: Copy + ThreadSafe,
     {
-        self.change(move |v: &T| v.clone() * factor, T::interp, false)
-    }
-    /// Shorthand for `.to(value).spring(spring)`.
-    #[track_caller]
-    pub fn spring_to<M: 'static, Marker>(
-        &self,
-        value: impl Into<T>,
-        spring: impl Into<crate::Spring>,
-    ) -> Animation<M>
-    where
-        T: Interpolation<Marker>,
-    {
-        self.to(value).spring(spring)
+        self.change(
+            move |v: &T| v.clone() * factor,
+            Interp::Smooth(T::interp),
+        )
     }
     #[track_caller]
     fn change<M: 'static>(
         &self,
         target: impl Fn(&T) -> T + Clone + ThreadSafe,
-        interp: InterpFn<T>,
-        discrete: bool,
+        interp: Interp<T>,
     ) -> Animation<M> {
         Animation::from_step(SignalStep {
             signal: self.clone(),
             target,
             interp,
-            discrete,
         })
     }
     pub fn map<W, U, F>(&self, calculate: F) -> Computed<W, U>
@@ -190,23 +189,12 @@ where
     }
 }
 
-/// A sequence capability: roots used only in timeline actions still register.
-pub trait RegisterSignals {
-    fn signals(&mut self) -> &mut SignalValues;
-}
-impl RegisterSignals for &mut SignalValues {
-    fn signals(&mut self) -> &mut SignalValues {
-        self
-    }
-}
-
 /// A signal change. The signal gets its scene-local slot when lowered, so
 /// signals can be described before or without a scene.
 struct SignalStep<T, F> {
     signal: Signal<T>,
     target: F,
-    interp: InterpFn<T>,
-    discrete: bool,
+    interp: Interp<T>,
 }
 impl<M, T, F> crate::Step<M> for SignalStep<T, F>
 where
@@ -216,23 +204,17 @@ where
 {
     fn lower(
         &self,
-        sequence: &mut crate::Sequence<
-            '_,
-            crate::World<M>,
-            crate::SceneContext<'_, M>,
-        >,
+        context: &mut crate::SceneContext<'_, M>,
         timing: &crate::Timing,
     ) -> TrackFragment {
-        let id =
-            sequence.context_mut().signals().register(&self.signal);
+        let id = context.signals().register(&self.signal);
         let property = Property {
             id,
             path: path!(T),
             interp: self.interp,
-            discrete: self.discrete,
         };
         crate::lower_change(
-            sequence,
+            context,
             property,
             self.target.clone(),
             timing,

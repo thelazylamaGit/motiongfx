@@ -4,6 +4,8 @@ use motiongfx::prelude::{Path, SubjectSource, ThreadSafe};
 use motiongfx::subject::SubjectId;
 use motiongfx_authoring::{ObjectDefinition, Property};
 use std::ops::{Deref, DerefMut};
+/// An object description being built, such as `Circle::new(10.0).fill(..)`.
+#[must_use = "an object is only drawn after it is passed to `scene.add(..)`"]
 pub struct Object<T: SceneObject<M>, M: Model2d = Graphics>(
     ObjectDefinition<T, M>,
 );

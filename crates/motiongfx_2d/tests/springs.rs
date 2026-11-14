@@ -1,8 +1,8 @@
 use motiongfx::prelude::{ms, s};
 use motiongfx_2d::{
     Animation, AnimationError, AnimationErrorKind, Circle, Color,
-    CompiledScene2dExt, Point, Scene, SceneError, Spring, Text,
-    signal,
+    CompiledScene2dExt, Point, Scene, SceneError, Spring, Text, all,
+    signal, wait,
 };
 
 #[test]
@@ -18,17 +18,13 @@ fn properties_positions_and_signals_use_core_spring_sampling() {
         let a = scene.add(Circle::new(&root));
         let b = scene.add(Circle::new(3.0));
         let mut animation = scene
-            .try_animate(|sequence| {
-                sequence.parallel(|sequence| {
-                    sequence.play(root.to(12.0).spring(settings));
-                    sequence.play(
-                        b.position()
-                            .to_xy(100.0, 50.0)
-                            .spring(settings),
-                    );
-                });
-                sequence.wait(s(1));
-            })
+            .try_compile([
+                all([
+                    root.to(12.0).spring(settings),
+                    b.position().to_xy(100.0, 50.0).spring(settings),
+                ]),
+                wait(s(1)),
+            ])
             .unwrap();
         assert_eq!(animation.duration(), curve.duration() + s(1));
         for time in [ms(250), curve.duration(), ms(100), ms(0)] {
@@ -52,14 +48,10 @@ fn properties_positions_and_signals_use_core_spring_sampling() {
 fn checked_preparation_reports_invalid_spring_options() {
     let mut scene = Scene::new();
     let dot = scene.add(Circle::new(2.0));
-    let Err(SceneError::Animation(errors)) =
-        scene.try_animate(|sequence| {
-            sequence.play(
-                dot.position_x()
-                    .to(100.0)
-                    .spring(Spring::physical().mass(-1.0)),
-            );
-        })
+    let Err(SceneError::Animation(errors)) = scene.try_compile([dot
+        .position_x()
+        .to(100.0)
+        .spring(Spring::physical().mass(-1.0))])
     else {
         panic!("invalid spring settings must be reported");
     };
@@ -85,13 +77,11 @@ fn relative_helpers_use_spring_timing_and_preserve_action_start_values()
             .scale(2.0)
             .rotation(0.2),
     );
-    let mut animation = scene.animate(|sequence| {
-        sequence.parallel(|sequence| {
-            sequence.play(dot.shift(100.0, 50.0).spring(settings));
-            sequence.play(dot.scale_by(0.5).spring(settings));
-            sequence.play(dot.rotate(0.4).spring(settings));
-        });
-    });
+    let mut animation = scene.compile([all([
+        dot.shift(100.0, 50.0).spring(settings),
+        dot.scale_by(0.5).spring(settings),
+        dot.rotate(0.4).spring(settings),
+    ])]);
     assert_eq!(animation.duration(), curve.duration());
     for time in [ms(0), ms(250), ms(500), ms(100), ms(0)] {
         animation.sample(time);

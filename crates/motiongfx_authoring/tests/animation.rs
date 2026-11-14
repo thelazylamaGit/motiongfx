@@ -68,6 +68,21 @@ fn close(actual: f64, expected: f64) {
 }
 
 #[test]
+fn debug_shows_the_tree_and_where_each_change_was_written() {
+    let progress = signal(0.0);
+    let line = line!() + 2;
+    let animation: Animation<Items> =
+        chain([progress.to(1.0), wait(s(1)), marker("end")]);
+    let debug = format!("{animation:?}");
+    let step = format!("Chain([Step({}:{line}:", file!());
+    assert!(debug.starts_with(&step), "{debug}");
+    assert!(
+        debug.ends_with("), Wait(1s), Marker(\"end\")])"),
+        "{debug}"
+    );
+}
+
+#[test]
 fn groups_follow_core_ordering_forwards_and_backwards() {
     let animation = scene().compile([
         caption().set("Start"),

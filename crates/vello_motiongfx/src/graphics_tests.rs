@@ -16,14 +16,11 @@ fn revealed_path_is_seekable_and_movement_does_not_rebuild_geometry()
         ])
         .end(0.0),
     );
-    let mut animation = scene.animate(|sequence| {
-        sequence.defaults(s(1), ease::linear);
-        sequence.parallel(|sequence| {
-            sequence.play(path.end().to(1.0));
-            sequence.play(path.position_x().to(20.0));
-        });
-        sequence.play(path.shift_x(20.0));
-    });
+    scene.defaults(s(1), ease::linear);
+    let mut animation = scene.compile([
+        all([path.end().to(1.0), path.position_x().to(20.0)]),
+        path.shift_x(20.0),
+    ]);
     let mut rendered = vello::Scene::new();
     let size = Size::new(100.0, 100.0);
     for (time, expected_end, rebuilds) in [
@@ -109,19 +106,11 @@ fn circle_ring_rendering_matches_parent_scale_and_derived_pulse_math()
             .fill(colors::TRANSPARENT)
             .stroke(color, 3.0),
     );
-    let mut animation = scene.animate(|sequence| {
-        sequence.defaults(s(1), ease::linear);
-        sequence.play(
-            dot.scale()
-                .to(1.0)
-                .over(ms(400))
-                .ease(ease::back::ease_out),
-        );
-        sequence.parallel(|sequence| {
-            sequence.play(ring.scale().to(2.4));
-            sequence.play(ring.opacity().to(0.0));
-        });
-    });
+    scene.defaults(s(1), ease::linear);
+    let mut animation = scene.compile([
+        dot.scale().to(1.0).over(ms(400)).ease(ease::back::ease_out),
+        all([ring.scale().to(2.4), ring.opacity().to(0.0)]),
+    ]);
     let size = Size::new(200.0, 200.0);
     let shape = CircleShape::new(Point::ZERO, 18.0);
     for time in [0, 100, 200, 400, 900, 1400, 900, 0] {

@@ -1,6 +1,7 @@
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
-    Circle, CircleHandle, CompiledScene2dExt, Scene, TextHandle,
+    Circle, CircleHandle, CompiledScene2dExt, Scene, TextHandle, all,
+    wait,
 };
 use std::mem::{needs_drop, size_of};
 
@@ -47,12 +48,12 @@ fn immediate_helpers_preserve_timeline_time_and_backward_seeks() {
     use motiongfx_2d::{Text, colors};
     let mut scene = Scene::new();
     let label = scene.add(Text::new("Start"));
-    let mut animation = scene.animate(|sequence| {
-        sequence.wait(ms(100));
-        sequence.play(label.set_content("Done"));
-        sequence.play(label.set_fill(colors::ORANGE));
-        sequence.wait(ms(100));
-    });
+    let mut animation = scene.compile([
+        wait(ms(100)),
+        label.set_content("Done"),
+        label.set_fill(colors::ORANGE),
+        wait(ms(100)),
+    ]);
     assert_eq!(animation.duration(), ms(200));
     for (time, content, fill) in [
         (0, "Start", colors::WHITE),
@@ -65,9 +66,7 @@ fn immediate_helpers_preserve_timeline_time_and_backward_seeks() {
     }
     let mut scene = Scene::new();
     let dot = scene.add(Circle::new(1.0));
-    let animation = scene.animate(|sequence| {
-        sequence.play(dot.fill_to(colors::ORANGE));
-    });
+    let animation = scene.compile([dot.fill_to(colors::ORANGE)]);
     assert_eq!(animation.duration(), motiongfx::prelude::s(1));
 }
 
@@ -76,13 +75,11 @@ fn compact_fields_remain_sources_and_general_property_targets() {
     let mut scene = Scene::new();
     let a = scene.add(Circle::new(10.0));
     let b = scene.add(Circle::new(a.radius()).position(a.position()));
-    let mut animation = scene.animate(|sequence| {
-        sequence.defaults(ms(1000), ease::linear);
-        sequence.parallel(|sequence| {
-            sequence.play(a.radius().to(20.0));
-            sequence.play(a.position_x().to(100.0));
-        });
-    });
+    scene.defaults(ms(1000), ease::linear);
+    let mut animation = scene.compile([all([
+        a.radius().to(20.0),
+        a.position_x().to(100.0),
+    ])]);
     for (time, radius, x) in
         [(500, 15.0, 50.0), (1000, 20.0, 100.0), (0, 10.0, 0.0)]
     {

@@ -7,9 +7,7 @@
 //! let mut scene = Scene::new();
 //! let circle = scene.add(Circle::new(&radius)
 //!     .position(radius.map(|r| (r * 2.0, 0.0))));
-//! let mut animation = scene.animate(|sequence| {
-//!     sequence.play(radius.to(20.0).ease(ease::linear));
-//! });
+//! let mut animation = scene.compile([radius.to(20.0).ease(ease::linear)]);
 //! animation.sample(ms(500));
 //! assert_eq!(animation.circle(circle).radius, 15.0);
 //! assert_eq!(animation.circle(circle).position, Point::new(30.0, 0.0));
@@ -18,8 +16,8 @@ pub use kurbo::{Affine, Cap, Join, Point, Rect, Size, Vec2};
 pub use motiongfx_authoring::{
     AnimationError, AnimationErrorKind, BindingError, BindingSource,
     SampleTime, SceneError, SceneObject, Signal, SignalId, Source,
-    Spring, SpringCurve, SpringError, World, all, animate, chain,
-    computed, flow, marker, signal, smooth, wait,
+    Spring, SpringCurve, SpringError, World, all, chain, computed,
+    flow, marker, signal, smooth, wait,
 };
 pub use motiongfx_text::{
     FontStyle, FontWeight, SelectionError, TextRange,
@@ -33,8 +31,6 @@ pub type Animation = motiongfx_authoring::Animation<Graphics>;
 /// The result of `scene.compile(..)`: the scene with its baked timeline,
 /// ready to sample at any time.
 pub type CompiledScene = motiongfx_authoring::CompiledScene<Graphics>;
-pub type Sequence<'a> =
-    motiongfx_authoring::SceneSequence<'a, Graphics>;
 pub type Computed<T, M = Graphics> =
     motiongfx_authoring::Computed<World<M>, T>;
 
@@ -84,12 +80,11 @@ pub use line_layout::{LineLayout, TipPlacement};
 pub use object::Object;
 pub use parent::Parent;
 pub use path::{BezPath, Path, PathHandle, PathId};
-pub use properties::Position;
 pub use style::ApplyStyle;
 pub use text::{Text, TextAlign, TextHandle, TextId, TextStyle};
 pub use text_selection::{
-    SelectionProperty, TextSelection, TextSelectionHandle,
-    TextSelectionId,
+    SelectionProperty, SelectionTargetError, TextSelection,
+    TextSelectionHandle, TextSelectionId,
 };
 pub use tips::{
     EndpointTip, LineTip, LineTipHandle, LineWithTips, NoTip,

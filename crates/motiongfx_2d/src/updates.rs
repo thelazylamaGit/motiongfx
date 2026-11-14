@@ -16,6 +16,7 @@ pub struct ObjectSpec {
 // sorted specs let split_at_mut obtain disjoint references within each Vec.
 pub struct Layout<const N: usize>([ObjectSpec; N]);
 impl<const N: usize> Layout<N> {
+    #[track_caller]
     fn new(mut specs: [ObjectSpec; N], world: &Graphics) -> Self {
         specs.sort_unstable();
         for (i, spec) in specs.iter().enumerate() {
@@ -112,6 +113,7 @@ macro_rules! update_handle {
         }
         impl UpdateTargets<Graphics> for $handle {
             type Objects<'a> = &'a mut $object;
+            #[track_caller]
             fn callback<S, F>(
                 self,
                 source: S,
@@ -184,6 +186,7 @@ impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe>
     UpdateTargets<Graphics> for LineTipHandle<S, E>
 {
     type Objects<'a> = &'a mut Line;
+    #[track_caller]
     fn callback<I, F>(
         self,
         source: I,
@@ -205,6 +208,7 @@ impl UpdateStorage for Graphics {
     type Spec = ObjectSpec;
     type Layout<const N: usize> = Layout<N>;
     type Batch<'a, const N: usize> = ObjectBatch<'a, N>;
+    #[track_caller]
     fn layout<const N: usize>(
         &self,
         specs: [ObjectSpec; N],

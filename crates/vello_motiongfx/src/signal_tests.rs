@@ -15,9 +15,7 @@ fn background_sources_sample_without_geometry_and_last_configuration_wins()
     let mut scene = Scene::new();
     let color = signal(colors::BLUE);
     scene.set_background(&color);
-    let mut animation = scene.animate(|sequence| {
-        sequence.play(color.to(colors::ORANGE));
-    });
+    let mut animation = scene.compile([color.to(colors::ORANGE)]);
     animation.sample(s(1));
     for (actual, expected) in animation
         .background()
@@ -40,11 +38,8 @@ fn background_sources_sample_without_geometry_and_last_configuration_wins()
     // A later fixed setting must remove obsolete source wiring, otherwise
     // directly animating this property would be rejected as a writer conflict.
     let background = scene.set_background(colors::WHITE);
-    let mut animation = scene
-        .try_animate(|sequence| {
-            sequence.play(background.to(colors::BLACK));
-        })
-        .unwrap();
+    let mut animation =
+        scene.try_compile([background.to(colors::BLACK)]).unwrap();
     animation.sample(s(1));
     assert_eq!(animation.background(), colors::BLACK);
     animation.sample(ms(0));
@@ -77,14 +72,14 @@ fn shared_computed_sources_drive_builders_and_skip_unchanged_inputs()
             .stroke(&fill, 2.0)
             .opacity(&opacity),
     );
-    let mut animation = scene.animate(|sequence| {
-        sequence.parallel(|sequence| {
-            sequence.play(progress.to(1.0).ease(ease::linear));
-            sequence.play(radius.to(20.0).ease(ease::linear));
-            sequence.play(fill.to(colors::ORANGE).ease(ease::linear));
-        });
-        sequence.wait(s(1));
-    });
+    let mut animation = scene.compile([
+        all([
+            progress.to(1.0).ease(ease::linear),
+            radius.to(20.0).ease(ease::linear),
+            fill.to(colors::ORANGE).ease(ease::linear),
+        ]),
+        wait(s(1)),
+    ]);
     assert_eq!(calls.load(Ordering::Relaxed), 1);
     for (time, p, r, expected_calls) in [
         (0, 0.0, 10.0, 1),
@@ -129,17 +124,12 @@ fn point_signals_discrete_arrays_text_and_camera_use_the_same_source_model()
     let size = computed(&center, |p| Size::new(10.0 + p.x, 20.0));
     let rect = scene.add(Rectangle::new(10.0, 20.0).size(size));
     scene.set_camera(Camera::new().position(&center));
-    let mut animation = scene.animate(|sequence| {
-        sequence.play(center.to((100.0, 50.0)).ease(ease::linear));
-        sequence.play(visible.set(true));
-        sequence.play(
-            points.set([
-                Point::new(50.0, 60.0),
-                Point::new(70.0, 80.0),
-            ]),
-        );
-        sequence.wait(s(1));
-    });
+    let mut animation = scene.compile([
+        center.to((100.0, 50.0)).ease(ease::linear),
+        visible.set(true),
+        points.set([Point::new(50.0, 60.0), Point::new(70.0, 80.0)]),
+        wait(s(1)),
+    ]);
     for (time, x, point_x, alpha) in [
         (0, 0.0, 30.0, 0.0),
         (500, 50.0, 30.0, 0.0),
@@ -175,12 +165,13 @@ fn source_driven_quadratic_matches_math_and_preserves_render_caches()
     });
     let curve = scene.add(Path::quadratic(start, control, end));
     let dot = scene.add(Circle::new(6.0).position(&position));
-    let mut animation = scene.animate(|sequence| {
-        sequence.play(t.to(0.5).ease(ease::linear));
-        for offset in [200.0, -240.0, 40.0] {
-            sequence.play(bend.offset(offset).ease(ease::linear));
-        }
-    });
+    let mut animation = scene.compile([
+        t.to(0.5).ease(ease::linear),
+        chain(
+            [200.0, -240.0, 40.0]
+                .map(|offset| bend.offset(offset).ease(ease::linear)),
+        ),
+    ]);
     let initial = animation.path(curve).geometry.clone();
     let mut rendered = vello::Scene::new();
     for (time, bend) in [
@@ -236,9 +227,7 @@ fn repeated_setters_replace_wiring_and_source_aware_fields_reject_timeline_write
     // Last setter wins; obsolete wiring must not survive a fixed override.
     let dot = scene.add(Circle::new(&radius).radius(5.0));
     let mut animation = scene
-        .try_animate(|sequence| {
-            sequence.play(dot.radius().to(20.0).ease(ease::linear));
-        })
+        .try_compile([dot.radius().to(20.0).ease(ease::linear)])
         .unwrap();
     animation.sample(ms(500));
     assert_eq!(animation.circle(dot).radius, 12.5);
@@ -247,9 +236,7 @@ fn repeated_setters_replace_wiring_and_source_aware_fields_reject_timeline_write
     let radius = signal(10.0);
     let dot = scene.add(Circle::new(&radius));
     assert!(matches!(
-        scene.try_animate(|sequence| {
-            sequence.play(dot.radius().to(20.0));
-        }),
+        scene.try_compile([dot.radius().to(20.0),]),
         Err(SceneError::Binding(BindingError::AnimatedDestination(
             _
         )))
@@ -259,7 +246,7 @@ fn repeated_setters_replace_wiring_and_source_aware_fields_reject_timeline_write
     let standalone = computed(source, |v| (v, v));
     let mut second = Scene::new();
     let dot = second.add(Circle::new(1.0).position(standalone));
-    let animation = second.try_animate(|_| {}).unwrap();
+    let animation = second.try_compile([]).unwrap();
     assert_eq!(animation.circle(dot).position, Point::ZERO);
 }
 
@@ -273,9 +260,8 @@ fn line_reveal_uses_interpolated_endpoint_without_a_path_buffer() {
             .stroke(colors::BLUE, 2.0)
             .reveal(&reveal),
     );
-    let mut animation = scene.animate(|sequence| {
-        sequence.play(reveal.to(1.0).ease(ease::linear));
-    });
+    let mut animation =
+        scene.compile([reveal.to(1.0).ease(ease::linear)]);
     let size = Size::new(200.0, 200.0);
     for (time, end) in [
         (0, None),
@@ -337,17 +323,15 @@ fn standalone_helpers_macro_and_shared_descriptions_have_independent_playback()
     let c = first.add(Circle::new(b.radius().map(|r| {
         return r * 2.0;
     })));
-    let mut first = first.animate(|sequence| {
-        sequence.play(progress.to(1.0).ease(ease::linear));
-    });
+    let mut first =
+        first.compile([progress.to(1.0).ease(ease::linear)]);
     assert_eq!(calls.load(Ordering::Relaxed), 1);
 
     let mut second = Scene::new();
     let other = second.add(descriptor);
     second.add(Circle::new(3.0).position(&shared));
-    let mut second = second.animate(|sequence| {
-        sequence.play(progress.to(2.0).ease(ease::linear));
-    });
+    let mut second =
+        second.compile([progress.to(2.0).ease(ease::linear)]);
     assert_eq!(calls.load(Ordering::Relaxed), 2);
     first.sample(ms(500));
     assert_eq!(first.circle(a).position, Point::new(5.0, 10.0));
@@ -371,10 +355,10 @@ fn roots_used_only_by_actions_register_and_unused_computations_do_not_run()
         counter.fetch_add(1, Ordering::Relaxed);
         return x;
     });
-    let mut animation = Scene::new().animate(|sequence| {
-        sequence.play(input.to(4.0).ease(ease::linear));
-        sequence.play(input.offset(2.0).ease(ease::linear));
-    });
+    let mut animation = Scene::new().compile([
+        input.to(4.0).ease(ease::linear),
+        input.offset(2.0).ease(ease::linear),
+    ]);
     for (time, expected) in [(500, 3.0), (1500, 5.0), (0, 2.0)] {
         animation.sample(ms(time));
 

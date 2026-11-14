@@ -171,21 +171,6 @@ position: Point => new(Text.position);
 position_x: f64 => new(Text.position.x);
 position_y: f64 => new(Text.position.y);
 );
-#[allow(non_camel_case_types)]
-pub type text_position = crate::Position<
-    TextId,
-    Text,
-    fields::position::Target,
-    fields::position_x::Target,
-    fields::position_y::Target,
->;
-pub fn text_position_axes(id: TextId) -> text_position {
-    crate::Position::from_targets(
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-    )
-}
 
 crate::properties::handle_methods!(TextHandle,Text,TextId;
 content: Arc<str>;

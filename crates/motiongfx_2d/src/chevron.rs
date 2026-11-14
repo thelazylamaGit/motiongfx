@@ -15,7 +15,7 @@ crate::wedge::wedge!(
 
 impl Chevron {
     pub fn geometry(&self) -> Geometry {
-        Geometry::sharp(self.vertices(), false)
+        Geometry::sharp_chevron(self.vertices())
     }
     pub fn extent(&self) -> f64 {
         self.geometry().extent(

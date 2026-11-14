@@ -3,7 +3,7 @@ use motiongfx::prelude::*;
 use motiongfx_authoring::{
     BindingPlan, BindingSource, CompiledScene, Input, NativeUpdate,
     ObjectDefinition, Property, Scene, SceneObject, UpdateTargets,
-    World, computed, signal,
+    World, all, computed, signal, wait,
 };
 
 #[derive(Clone, Default)]
@@ -127,13 +127,13 @@ fn build() -> CompiledScene<Models> {
     let shared = computed!((progress) => progress * 3.0);
     scene.bind(z, (point.x, &shared), |(x, shared)| x + shared);
     scene.update(point, z, |point, z| point.y = z * 2.0);
-    scene.animate(|sequence| {
-        sequence.parallel(|sequence| {
-            sequence.play(progress.to(10.0).ease(ease::linear));
-            sequence.play(alpha.to(1.0).ease(ease::linear));
-        });
-        sequence.wait(s(1));
-    })
+    scene.compile([
+        all([
+            progress.to(10.0).ease(ease::linear),
+            alpha.to(1.0).ease(ease::linear),
+        ]),
+        wait(s(1)),
+    ])
 }
 #[test]
 fn mixed_models_sample_shared_dependencies_updates_holds_and_backward_seeks()
@@ -155,7 +155,7 @@ fn shared_lifecycle_rejects_model_binding_conflicts() {
     let point = scene.add(PointModel::default());
     scene.bind(point.x, point.x, |x| x + 1.0);
     assert!(matches!(
-        scene.try_animate(|_| {}),
+        scene.try_compile([]),
         Err(motiongfx_authoring::SceneError::Binding(
             motiongfx_authoring::BindingError::Cycle
         ))

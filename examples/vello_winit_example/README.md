@@ -2,9 +2,8 @@
 
 `moving_square`, `insertion_sort`, `commit_graph`, `camera_zoom`, `sine_unit_circle`, `lissajous`
 and `bezier_explainer` / `radius_area` use the plain native
-authoring API.
-The optional `animate!` macro remains available, but these examples do not
-use it. The other comparison scenes retain the low-level MotionGfx API.
+authoring API: each builds a list of animations and passes it to
+`scene.compile`. The other comparison scenes retain the low-level MotionGfx API.
 `procedural_wave_low_level` is a custom `VelloDemo` host-extension reference
 using direct Vello drawing with no MotionGfx timeline or authoring API.
 All share the same play/pause and
@@ -51,8 +50,9 @@ No explicit bindings or update callbacks are needed in the example.
 The commit graph preserves the source's blue/mauve fallbacks and timing
 (3.88s total). `Path` creates the trunk and fork explicitly, with their visible
 end initially zero. A local `Commit` constructor creates a filled `Circle`
-and a stroked child ring, anchored with `relative_to(dot)`. `sequence.flow`
-animates only the dots' scales; the rings inherit the appearance transform.
+and a stroked child ring, anchored with `relative_to(dot)`; its `appear` and
+`pulse` methods return animations. `flow` staggers only the dots' scales; the
+rings inherit the appearance transform.
 The pulse uses ordinary ring scale (1 to 2.4) and opacity (1 to 0) tracks in
 parallel, equivalent to the source's linear pulse expressions. No pulse-specific
 library binding or general signal evaluator is introduced. Coordinates are
@@ -70,13 +70,13 @@ the connector's curve endpoint. Object builders connect these inputs. Bindings
 are ordered/validated during construction and skip calculations for unchanged
 inputs. The same relationships reconstruct when seeking backwards. There are
 no manual registry, world, sampler, geometry cache, or window implementations
-in this example. `try_animate` reports binding errors before opening the window.
+in this example. `try_compile` reports binding errors before opening the window.
 Its four `MathTex` labels are represented by ASCII `PI` labels; no new
 typesetting dependency is introduced for these baseline comparisons.
 
 The square creates a `Rectangle` once and schedules `position.offset`,
 `fill.to`, `scale.multiply`, and `rotation.offset` on its returned handle.
-`Scene::animate` executes once to build and bake an ordinary MotionGfx
+`Scene::compile` runs once to build and bake an ordinary MotionGfx
 timeline. The host samples it and renders the stored rectangle each frame.
 Coordinates are centered logical canvas units with positive y upward;
 rotation is counterclockwise radians. There is no scripting or expression
@@ -84,7 +84,7 @@ graph evaluator. The low-level-equivalence and seek tests now live in
 `crates/vello_motiongfx/src/tests.rs`.
 
 The **insertion sort** example recreates the supplied Canvas Commons scene
-using typed rectangle/text handles and `Sequence::play_all`:
+using typed rectangle/text handles and `all`:
 
 ```sh
 cargo run -p vello_winit_example --example insertion_sort
@@ -108,8 +108,9 @@ The title, dynamic input caption, per-bar value labels, and pass caption are
 is animated; labels inherit the movement automatically. The sorting order
 stores `(value, rectangle_handle)` pairs, without a separate component wrapper
 or label animation tracks. The pass caption uses
-`sequence.play(status.set_content(...))`, so seeking also restores its text.
-The ordinary Rust sorting loop schedules all bar moves together with `play_all`.
+`status.set_content(...)`, so seeking also restores its text.
+The ordinary Rust sorting loop pushes one `all([..])` of bar moves per pass
+onto a list of steps, which is then compiled.
 The example contains only scene creation and choreography; reusable-crate tests
 cover nested properties, anchoring, text changes, rendering caches and seeking.
 Authored Text uses cached real-font shaping. The original annotated low-level
@@ -228,11 +229,11 @@ between diagonals; each draws for 1.5s, holds for 0.8s, then erases for 1.5s.
 The original 1% cutoff hides tiny curve remnants at both ends.
 
 One timeline runs the grid intro and then the staggered diagonal groups.
-Nested `sequence.flow` blocks describe the grid pairs; parallel diagonal
-groups contain each curve's reveal/hold/erase chain. These helpers use core
+Nested `flow` groups describe the grid pairs; `all` diagonal groups contain
+each curve's reveal/hold/erase `chain`. These helpers use core
 ordering without manual delay calculations or raw fragment plumbing.
-The intro block returns its reserved duration for `LoopFrom`, keeping playback
-timing derived from the authored actions. At the default 12x6 size,
+A `marker("loop")` between the intro and the waves gives `LoopFrom` its
+start, keeping playback timing derived from the authored actions. At the default 12x6 size,
 the intro is 1.25s and the curve chapter is 5.08s. Drawing uses centred y-up
 coordinates and the standard host's canvas fitting on resize. There is no
 custom world, subject registration, timeline sampling, or Vello draw loop in

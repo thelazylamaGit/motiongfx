@@ -202,21 +202,6 @@ position: Point => new(Path.position);
 position_x: f64 => new(Path.position.x);
 position_y: f64 => new(Path.position.y);
 );
-#[allow(non_camel_case_types)]
-pub type path_position = crate::Position<
-    PathId,
-    Path,
-    fields::position::Target,
-    fields::position_x::Target,
-    fields::position_y::Target,
->;
-pub fn path_position_axes(id: PathId) -> path_position {
-    crate::Position::from_targets(
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-    )
-}
 
 crate::properties::handle_methods!(PathHandle,Path,PathId;
 stroke: Color;

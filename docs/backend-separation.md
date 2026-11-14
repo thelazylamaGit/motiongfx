@@ -35,8 +35,8 @@ types to provide inherent shape setters and geometry conversions legally under
 Rust's coherence/orphan rules. There is one binding evaluator and timeline.
 
 Advanced adapters now target `Source<World<Graphics>>` rather than the old
-concrete `Source<Graphics>` world. The ordinary standalone `Sequence<W>` and
-`BindingPlan<W>` APIs remain available for integrations using their own worlds.
+concrete `Source<Graphics>` world. The standalone
+`BindingPlan<W>` API remains available for integrations using their own worlds.
 
 The 2D `Scene` / `CompiledScene` convenience aliases use `Graphics`. A composite
 model implements `Model2d` and uses `motiongfx_authoring::Scene<MyModels>`.

@@ -44,12 +44,17 @@ macro_rules! wedge {
                 Affine::translate((self.position.x, -self.position.y))
                     * Affine::rotate(-self.rotation) * Affine::scale(self.scale)
             }
-            pub(crate) fn insert<M:crate::Model2d>(self, scene: &mut motiongfx_authoring::Scene<M>, draw: bool) -> $handle {
-                let id = $id(scene.model_mut().graphics_mut().$storage.len());
-                scene.model_mut().graphics_mut().$storage.push(self);
-
-                if draw { scene.model_mut().graphics_mut().order.push(DrawObject::$shape(id)); }
-                $handle { id }
+            /// Add the shape and draw it in insertion order.
+            pub(crate) fn insert<M:crate::Model2d>(self, scene: &mut motiongfx_authoring::Scene<M>) -> $handle {
+                let handle = self.insert_tip(scene);
+                scene.model_mut().graphics_mut().order.push(DrawObject::$shape(handle.id));
+                handle
+            }
+            /// Add the shape without drawing it; its line draws it as a tip.
+            pub(crate) fn insert_tip<M:crate::Model2d>(self, scene: &mut motiongfx_authoring::Scene<M>) -> $handle {
+                let storage = &mut scene.model_mut().graphics_mut().$storage;
+                storage.push(self);
+                $handle { id: $id(storage.len() - 1) }
             }
         }
         crate::object::properties!($shape; size: f64, angle: f64, position: Point,
@@ -64,7 +69,7 @@ macro_rules! wedge {
         impl $handle {pub fn id(self)->$id {self.id}}
         impl<M:crate::Model2d> SceneObject<M> for $shape {
             type Handle = $handle;
-            fn insert_into(self, scene: &mut motiongfx_authoring::Scene<M>) -> $handle { self.insert(scene, true) }
+            fn insert_into(self, scene: &mut motiongfx_authoring::Scene<M>) -> $handle { self.insert(scene) }
         }
         impl<M:crate::Model2d> SubjectSource<$id, $shape> for World<M> {
             fn get_source(&self, id: $id) -> Option<&$shape> { self.model().graphics().$storage.get(id.0) }

@@ -14,8 +14,8 @@
 //! a spring mixed with `.over()`/`.ease()`) panic at the caller's line.
 
 use crate::{
-    AnimationChange, Field, Property, SceneContext, Sequence, Spring,
-    SpringError, Target, World,
+    Field, Interp, Property, SceneContext, Spring, SpringError,
+    Target, World,
 };
 use motiongfx::prelude::*;
 use motiongfx::subject::SubjectId;
@@ -64,6 +64,39 @@ impl<M> Clone for Animation<M> {
     }
 }
 
+/// Shows the tree's shape and where each change was written, for
+/// example `Chain([Step(src/main.rs:10:5), Wait(1s)])`.
+impl<M> std::fmt::Debug for Animation<M> {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match &self.0 {
+            Node::Step(_, timing) => f
+                .debug_tuple("Step")
+                .field(&format_args!("{}", timing.location))
+                .finish(),
+            Node::Group(Order::Chain, children) => {
+                f.debug_tuple("Chain").field(children).finish()
+            }
+            Node::Group(Order::All, children) => {
+                f.debug_tuple("All").field(children).finish()
+            }
+            Node::Group(Order::Flow(interval), children) => f
+                .debug_tuple("Flow")
+                .field(interval)
+                .field(children)
+                .finish(),
+            Node::Wait(duration) => {
+                f.debug_tuple("Wait").field(duration).finish()
+            }
+            Node::Marker(name, _) => {
+                f.debug_tuple("Marker").field(name).finish()
+            }
+        }
+    }
+}
+
 /// Timing of a single change: a tween or a spring, plus where the change
 /// was written (for errors). Unset tween values fall back to the scene
 /// defaults when the animation is compiled.
@@ -97,7 +130,7 @@ impl Timing {
 pub trait Step<M>: Send + Sync + 'static {
     fn lower(
         &self,
-        sequence: &mut Sequence<'_, World<M>, SceneContext<'_, M>>,
+        context: &mut SceneContext<'_, M>,
         timing: &Timing,
     ) -> TrackFragment;
 }
@@ -180,17 +213,16 @@ impl<M: 'static> Animation<M> {
     /// fragments stream straight into core's combinators.
     pub(crate) fn lower(
         &self,
-        sequence: &mut Sequence<'_, World<M>, SceneContext<'_, M>>,
+        context: &mut SceneContext<'_, M>,
     ) -> TrackFragment {
         match &self.0 {
-            Node::Step(step, timing) => step.lower(sequence, timing),
+            Node::Step(step, timing) => step.lower(context, timing),
             Node::Group(Order::Flow(interval), children) => {
-                lower_flow(*interval, children, sequence)
+                lower_flow(*interval, children, context)
             }
             Node::Group(order, children) => {
-                let fragments = children
-                    .iter()
-                    .map(|child| child.lower(sequence));
+                let fragments =
+                    children.iter().map(|child| child.lower(context));
                 match order {
                     Order::Chain => fragments.ord_chain(),
                     _ => fragments.ord_all(),
@@ -198,10 +230,7 @@ impl<M: 'static> Animation<M> {
             }
             Node::Wait(duration) => TrackFragment::silent(*duration),
             Node::Marker(name, location) => {
-                if sequence
-                    .context_mut()
-                    .register_marker(name, location)
-                {
+                if context.register_marker(name, location) {
                     TrackFragment::marker(name.clone())
                 } else {
                     TrackFragment::new()
@@ -217,7 +246,7 @@ impl<M: 'static> Animation<M> {
 fn lower_flow<M: 'static>(
     interval: Duration,
     children: &[Animation<M>],
-    sequence: &mut Sequence<'_, World<M>, SceneContext<'_, M>>,
+    context: &mut SceneContext<'_, M>,
 ) -> TrackFragment {
     let last_slot = children
         .iter()
@@ -230,10 +259,7 @@ fn lower_flow<M: 'static>(
         .enumerate()
         .filter_map(|(index, child)| match &child.0 {
             Node::Marker(name, location) => {
-                if sequence
-                    .context_mut()
-                    .register_marker(name, location)
-                {
+                if context.register_marker(name, location) {
                     let follows =
                         last_slot.is_some_and(|last| index < last);
                     markers.push((
@@ -245,7 +271,7 @@ fn lower_flow<M: 'static>(
             }
             _ => {
                 slots += 1;
-                Some(child.lower(sequence))
+                Some(child.lower(context))
             }
         })
         .ord_flow(interval);
@@ -254,18 +280,6 @@ fn lower_flow<M: 'static>(
         fragment.add_marker(name.clone(), time);
     }
     fragment
-}
-
-/// Lets an `Animation` be played by the callback API during migration.
-impl<M: 'static> AnimationChange<World<M>, SceneContext<'_, M>>
-    for Animation<M>
-{
-    fn lower(
-        self,
-        sequence: &mut Sequence<'_, World<M>, SceneContext<'_, M>>,
-    ) -> TrackFragment {
-        Animation::lower(&self, sequence)
-    }
 }
 
 fn group<M: 'static>(
@@ -373,11 +387,11 @@ where
 {
     fn lower(
         &self,
-        sequence: &mut Sequence<'_, World<M>, SceneContext<'_, M>>,
+        context: &mut SceneContext<'_, M>,
         timing: &Timing,
     ) -> TrackFragment {
         let property = self.source.property();
-        lower_change(sequence, property, self.target.clone(), timing)
+        lower_change(context, property, self.target.clone(), timing)
     }
 }
 
@@ -399,7 +413,7 @@ where
 /// falling back to the scene defaults. Problems are reported with the
 /// change's location.
 pub fn lower_change<M, I, S, T>(
-    sequence: &mut Sequence<'_, World<M>, SceneContext<'_, M>>,
+    context: &mut SceneContext<'_, M>,
     property: Property<I, S, T>,
     target: impl Action<T>,
     timing: &Timing,
@@ -412,33 +426,37 @@ where
     World<M>: SubjectSource<I, S>,
 {
     match &timing.motion {
-        Motion::Spring(_) if property.discrete => report(
-            sequence,
-            timing,
-            AnimationErrorKind::DiscreteSpring,
-        ),
+        Motion::Spring(_)
+            if matches!(property.interp, Interp::Discrete) =>
+        {
+            report(
+                context,
+                timing,
+                AnimationErrorKind::DiscreteSpring,
+            )
+        }
         Motion::Spring(spring) => {
-            let result = sequence
+            let result = context
                 .builder
                 .act_builder(property.id, property.path, target)
-                .with_interp(property.interp)
+                .with_interp(property.interp.function())
                 .with_spring(**spring)
                 .try_play();
             result.unwrap_or_else(|error| {
                 report(
-                    sequence,
+                    context,
                     timing,
                     AnimationErrorKind::Spring(error),
                 )
             })
         }
         Motion::Tween { over, ease } => {
-            let duration = over.unwrap_or(sequence.duration);
-            let ease = ease.unwrap_or(sequence.ease);
-            sequence
+            let duration = over.unwrap_or(context.defaults.duration);
+            let ease = ease.unwrap_or(context.defaults.ease);
+            context
                 .builder
                 .act_builder(property.id, property.path, target)
-                .with_interp(property.interp)
+                .with_interp(property.interp.function())
                 .with_ease(ease)
                 .play(duration)
         }
@@ -447,11 +465,11 @@ where
 
 /// Record a problem with one change; it adds no time to the timeline.
 fn report<M: 'static>(
-    sequence: &mut Sequence<'_, World<M>, SceneContext<'_, M>>,
+    context: &mut SceneContext<'_, M>,
     timing: &Timing,
     kind: AnimationErrorKind,
 ) -> TrackFragment {
-    sequence.context_mut().report(AnimationError {
+    context.report(AnimationError {
         location: timing.location,
         kind,
     });
@@ -460,13 +478,14 @@ fn report<M: 'static>(
 
 /// A problem found while compiling animations, with the source location
 /// of the animation that caused it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct AnimationError {
     pub location: &'static Location<'static>,
     pub kind: AnimationErrorKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum AnimationErrorKind {
     /// `.spring()` on a property that changes instantly (text content,
     /// caps/joins).
@@ -474,8 +493,8 @@ pub enum AnimationErrorKind {
     /// Invalid spring settings.
     Spring(SpringError),
     /// A target that could not be resolved (for example a missing text
-    /// selection).
-    Target(String),
+    /// selection). Downcast it to inspect the concrete error.
+    Target(Arc<dyn std::error::Error + Send + Sync>),
     /// A marker name used twice; `first` is where it was first used.
     DuplicateMarker {
         name: MarkerName,
@@ -494,7 +513,7 @@ impl std::fmt::Display for AnimationError {
                 "this property changes instantly and cannot spring; use .over(..) instead",
             ),
             AnimationErrorKind::Spring(error) => error.fmt(f),
-            AnimationErrorKind::Target(message) => f.write_str(message),
+            AnimationErrorKind::Target(error) => error.fmt(f),
             AnimationErrorKind::DuplicateMarker { name, first } => write!(
                 f,
                 "marker \"{name}\" is already used at {first}; marker names must be unique"
@@ -503,4 +522,6 @@ impl std::fmt::Display for AnimationError {
     }
 }
 
+/// The message already includes the underlying error, so `source()` is
+/// empty; match on [`kind`](Self::kind) to inspect it.
 impl std::error::Error for AnimationError {}

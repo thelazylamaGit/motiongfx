@@ -86,26 +86,30 @@ impl<M: crate::Model2d> SceneObject<M> for Circle {
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
     ) -> Self::Handle {
-        self.insert(scene, true)
+        self.insert(scene)
     }
 }
 impl Circle {
+    /// Add the circle and draw it in insertion order.
     pub(crate) fn insert<M: crate::Model2d>(
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
-        draw: bool,
     ) -> CircleHandle {
-        let id =
-            CircleId(scene.model_mut().graphics_mut().circles.len());
-        scene.model_mut().graphics_mut().circles.push(self);
-        if draw {
-            scene
-                .model_mut()
-                .graphics_mut()
-                .order
-                .push(DrawObject::Circle(id));
+        let handle = self.insert_tip(scene);
+        let graphics = scene.model_mut().graphics_mut();
+        graphics.order.push(DrawObject::Circle(handle.id));
+        handle
+    }
+    /// Add the circle without drawing it; its line draws it as a tip.
+    pub(crate) fn insert_tip<M: crate::Model2d>(
+        self,
+        scene: &mut motiongfx_authoring::Scene<M>,
+    ) -> CircleHandle {
+        let circles = &mut scene.model_mut().graphics_mut().circles;
+        circles.push(self);
+        CircleHandle {
+            id: CircleId(circles.len() - 1),
         }
-        CircleHandle { id }
     }
 }
 
@@ -138,21 +142,6 @@ position: Point => new(Circle.position);
 position_x: f64 => new(Circle.position.x);
 position_y: f64 => new(Circle.position.y);
 );
-#[allow(non_camel_case_types)]
-pub type circle_position = crate::Position<
-    CircleId,
-    Circle,
-    fields::position::Target,
-    fields::position_x::Target,
-    fields::position_y::Target,
->;
-pub fn circle_position_axes(id: CircleId) -> circle_position {
-    crate::Position::from_targets(
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-    )
-}
 
 crate::properties::handle_methods!(CircleHandle,Circle,CircleId;
 radius: f64;

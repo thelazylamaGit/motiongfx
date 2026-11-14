@@ -125,21 +125,6 @@ position: Point => new(Camera.position);
 position_x: f64 => new(Camera.position.x);
 position_y: f64 => new(Camera.position.y);
 );
-#[allow(non_camel_case_types)]
-pub type camera_position = crate::Position<
-    CameraId,
-    Camera,
-    fields::position::Target,
-    fields::position_x::Target,
-    fields::position_y::Target,
->;
-pub fn camera_position_axes(id: CameraId) -> camera_position {
-    crate::Position::from_targets(
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-    )
-}
 
 crate::properties::handle_methods!(CameraHandle,Camera,CameraId;
 scale: f64;

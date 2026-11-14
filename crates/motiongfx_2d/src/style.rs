@@ -21,9 +21,7 @@ impl<T: SceneObject<M>, M: crate::Model2d> Object<T, M> {
     /// let labels = TextStyle::new().font_size(&size);
     /// let mut scene = Scene::new();
     /// let title = scene.add(Text::new("Title").style(&labels));
-    /// let mut animation = scene.animate(|sequence| {
-    ///     sequence.play(size.to(48.0));
-    /// });
+    /// let mut animation = scene.compile([size.to(48.0)]);
     /// animation.sample(s(1));
     /// assert_eq!(animation.text(title).font_size, 48.0);
     /// ```

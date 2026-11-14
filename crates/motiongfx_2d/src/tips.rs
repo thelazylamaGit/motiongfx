@@ -53,7 +53,7 @@ impl<M: Model2d> LineTip<M> for Object<Circle, M> {
             "a line tip uses its endpoint frame; remove relative_to"
         );
         let handle = self.insert_with(scene, |shape, scene| {
-            shape.insert(scene, false)
+            shape.insert_tip(scene)
         });
         (handle, Some(EndpointTip::Circle(handle.id)))
     }
@@ -68,7 +68,7 @@ macro_rules! attach {
             ) -> ($handle, Option<EndpointTip>) {
                 let handle = self
                     .insert_with(scene, |shape, scene| {
-                        shape.insert(scene, false)
+                        shape.insert_tip(scene)
                     });
                 (handle, Some(EndpointTip::$shape(handle.id)))
             }
@@ -129,10 +129,10 @@ impl<M: Model2d> Object<Line, M> {
     /// let line = scene.add(Line::new((0.0, 0.0), (200.0, 0.0))
     ///     .start_tip(Circle::new(6.0))
     ///     .end_tip(Triangle::new().size(24.0).angle(0.6)));
-    /// let mut animation = scene.animate(|sequence| {
-    ///     sequence.play(line.start_tip.radius().to(10.0));
-    ///     sequence.play(line.end_tip.angle().to(0.9));
-    /// });
+    /// let mut animation = scene.compile([
+    ///     line.start_tip.radius().to(10.0),
+    ///     line.end_tip.angle().to(0.9),
+    /// ]);
     /// animation.sample(s(2));
     /// assert_eq!(animation.circle(line.start_tip).radius, 10.0);
     /// ```

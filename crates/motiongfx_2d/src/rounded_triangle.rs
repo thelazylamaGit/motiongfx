@@ -20,14 +20,18 @@ impl Geometry {
         self.elements[self.len] = element;
         self.len += 1;
     }
-    pub fn sharp([tip, a, b]: [Point; 3], closed: bool) -> Self {
+    /// A closed triangle with sharp corners.
+    pub fn sharp_triangle(vertices: [Point; 3]) -> Self {
+        let mut path = Self::sharp_chevron(vertices);
+        path.push(PathEl::ClosePath);
+        path
+    }
+    /// The two sides meeting at the tip, left open.
+    pub fn sharp_chevron([tip, a, b]: [Point; 3]) -> Self {
         let mut path = Self::new();
         path.push(PathEl::MoveTo(a));
         path.push(PathEl::LineTo(tip));
         path.push(PathEl::LineTo(b));
-        if closed {
-            path.push(PathEl::ClosePath);
-        }
         path
     }
     pub fn elements(&self) -> &[PathEl] {
@@ -79,7 +83,7 @@ pub fn rounded(vertices: [Point; 3], radius: f64) -> Geometry {
     let twice_area = (a - tip).cross(b - tip).abs();
     let perimeter = side_a + side_b + side_c;
     if radius <= 0.0 || twice_area == 0.0 || perimeter == 0.0 {
-        return Geometry::sharp(vertices, true);
+        return Geometry::sharp_triangle(vertices);
     }
     let radius = radius.min(twice_area / perimeter);
     // Match the sharp outline's winding and starting corner.
@@ -186,7 +190,7 @@ mod tests {
                 );
             }
         }
-        let original = Geometry::sharp(vertices, true);
+        let original = Geometry::sharp_triangle(vertices);
         assert!(
             geometry.elements().area().abs()
                 < original.elements().area().abs()
@@ -203,7 +207,7 @@ mod tests {
         ];
         assert_eq!(
             rounded(vertices, 0.0).elements(),
-            Geometry::sharp(vertices, true).elements()
+            Geometry::sharp_triangle(vertices).elements()
         );
         assert_eq!(
             rounded(vertices, -2.0).elements(),
@@ -227,7 +231,7 @@ mod tests {
         let zero = rounded([Point::ZERO; 3], 100.0);
         assert_eq!(
             zero.elements(),
-            Geometry::sharp([Point::ZERO; 3], true).elements()
+            Geometry::sharp_triangle([Point::ZERO; 3]).elements()
         );
     }
 }

@@ -145,23 +145,6 @@ position: Point => new(Rectangle.position);
 position_x: f64 => new(Rectangle.position.x);
 position_y: f64 => new(Rectangle.position.y);
 );
-#[allow(non_camel_case_types)]
-pub type rectangle_position = crate::Position<
-    RectangleId,
-    Rectangle,
-    fields::position::Target,
-    fields::position_x::Target,
-    fields::position_y::Target,
->;
-pub fn rectangle_position_axes(
-    id: RectangleId,
-) -> rectangle_position {
-    crate::Position::from_targets(
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-    )
-}
 
 crate::properties::handle_methods!(RectangleHandle,Rectangle,RectangleId;
 fill: Color;

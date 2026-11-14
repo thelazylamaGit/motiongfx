@@ -91,18 +91,6 @@ impl<T: Clone + PartialEq + ThreadSafe, M: Model2d> Source<World<M>>
         self.0.register(world, plan)
     }
 }
-impl<M: Model2d, I, S, P, X, Y> From<crate::Position<I, S, P, X, Y>>
-    for Input<Point, M>
-where
-    I: SubjectId,
-    S: 'static,
-    World<M>: SubjectSource<I, S>,
-    P: Source<World<M>, Value = Point>,
-{
-    fn from(value: crate::Position<I, S, P, X, Y>) -> Self {
-        Self::mapped(value, std::convert::identity)
-    }
-}
 impl<M: Model2d> From<(f64, f64)> for Input<Point, M> {
     fn from(value: (f64, f64)) -> Self {
         Self::fixed(value.into())

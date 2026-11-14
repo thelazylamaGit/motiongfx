@@ -1,8 +1,8 @@
 //! A portable 2D store and a second model share the actual authoring lifecycle.
 use motiongfx::prelude::*;
 use motiongfx_2d::{
-    Circle, CompiledScene2dExt, Graphics, Model2d, Point, computed,
-    signal,
+    Circle, CompiledScene2dExt, Graphics, Model2d, Point, all,
+    computed, signal, wait,
 };
 use motiongfx_authoring::{Property, Scene, SceneObject, World};
 
@@ -68,13 +68,13 @@ fn portable_objects_and_other_models_share_sources_schedule_and_backward_seeking
     scene.bind(z, &shared, |v| v * 2.0);
     let follower =
         scene.add(Circle::new(3.0).position(z.map(|z| (0.0, z))));
-    let mut animation = scene.animate(|sequence| {
-        sequence.parallel(|sequence| {
-            sequence.play(progress.to(1.0).ease(ease::linear));
-            sequence.play(opacity.to(1.0).ease(ease::linear));
-        });
-        sequence.wait(s(1));
-    });
+    let mut animation = scene.compile([
+        all([
+            progress.to(1.0).ease(ease::linear),
+            opacity.to(1.0).ease(ease::linear),
+        ]),
+        wait(s(1)),
+    ]);
     assert_eq!(animation.duration(), s(2));
     for time in [ms(500), s(2), ms(250), ms(0)] {
         animation.sample(time);

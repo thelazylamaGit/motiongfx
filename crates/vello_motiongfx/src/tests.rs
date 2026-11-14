@@ -35,12 +35,12 @@ fn authored_square_matches_direct_motiongfx_at_arbitrary_times() {
         .stroke(blue, 4.0);
     let mut scene = Scene::new();
     let square = scene.add(initial.clone());
-    let mut authored = scene.animate(|sequence| {
-        sequence.play(square.shift(-80.0, 0.0));
-        sequence.play(square.fill().to(orange));
-        sequence.play(square.scale_by(0.3));
-        sequence.play(square.rotate(0.4));
-    });
+    let mut authored = scene.compile([
+        square.shift(-80.0, 0.0),
+        square.fill().to(orange),
+        square.scale_by(0.3),
+        square.rotate(0.4),
+    ]);
 
     // Independent baseline: the original low-level builder, not the
     // convenience methods under test. Both use the same initial graphics.
@@ -101,20 +101,16 @@ fn relative_targets_waits_overrides_and_multiple_objects() {
     let mut scene = Scene::new();
     let left = scene.add(Rectangle::default());
     let right = scene.add(Rectangle::default());
-    let mut animation = scene.animate(|sequence| {
-        sequence.defaults(s(1), ease::linear);
-        sequence.play(left.shift(10.0, 0.0).over(ms(200)));
-        sequence.wait(ms(300));
-        sequence.play(
-            left.shift(5.0, 0.0)
-                .over(ms(500))
-                .ease(ease::quad::ease_in),
-        );
-        sequence.play_all([
+    scene.defaults(s(1), ease::linear);
+    let mut animation = scene.compile([
+        left.shift(10.0, 0.0).over(ms(200)),
+        wait(ms(300)),
+        left.shift(5.0, 0.0).over(ms(500)).ease(ease::quad::ease_in),
+        all([
             left.scale().to(2.0).over(ms(400)),
             right.scale().to(3.0).over(ms(800)),
-        ]);
-    });
+        ]),
+    ]);
     assert_eq!(animation.duration(), ms(1800));
     animation.sample(ms(400));
     assert_eq!(animation.rectangle(left).position.x, 10.0);
@@ -138,12 +134,11 @@ fn custom_target_runs_during_baking_not_playback() {
     let square = scene.add(Rectangle::default());
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
-    let mut animation = scene.animate(|sequence| {
-        sequence.play(square.scale().map_target(move |scale| {
+    let mut animation =
+        scene.compile([square.scale().to_with(move |scale| {
             counter.fetch_add(1, Ordering::Relaxed);
             scale * 2.0
-        }));
-    });
+        })]);
     let baked_calls = calls.load(Ordering::Relaxed);
     assert!(baked_calls > 0);
     for time in [ms(0), ms(500), ms(1000), ms(250), ms(0)] {
@@ -158,15 +153,15 @@ fn nested_axes_and_whole_position_operations_share_the_same_state() {
     let shape =
         scene.add(Rectangle::new(10.0, 10.0).position((10.0, 20.0)));
     let title = scene.add(Text::new("Title").position((-3.0, 4.0)));
-    let mut animation = scene.animate(|sequence| {
-        sequence.defaults(s(1), ease::linear);
-        sequence.parallel(|sequence| {
-            sequence.play(shape.position_x().to(30.0));
-            sequence.play(shape.shift_y(10.0));
-            sequence.play(title.position().to_xy(100.0, 50.0));
-        });
-        sequence.play(shape.shift(5.0, -10.0));
-    });
+    scene.defaults(s(1), ease::linear);
+    let mut animation = scene.compile([
+        all([
+            shape.position_x().to(30.0),
+            shape.shift_y(10.0),
+            title.position().to_xy(100.0, 50.0),
+        ]),
+        shape.shift(5.0, -10.0),
+    ]);
     animation.sample(ms(500));
     assert_eq!(
         animation.rectangle(shape).position,
@@ -198,21 +193,21 @@ fn text_style_animation_and_content_changes_are_seekable() {
     let mut scene = Scene::new();
     let title = scene.add(Text::new("First").font_size(14.0));
     let orange = colors::ORANGE;
-    let mut animation = scene.animate(|sequence| {
-        sequence.defaults(s(1), ease::linear);
-        sequence.parallel(|sequence| {
-            sequence.play(title.position_x().to(100.0));
-            sequence.play(title.font_size().to(28.0));
-            sequence.play(title.opacity().to(0.5));
-            sequence.play(title.scale().to(2.0));
-            sequence.play(title.rotation().to(0.4));
-            sequence.play(title.fill().to(orange));
-            sequence.play(title.content().to("Second"));
-        });
-        sequence.wait(ms(500));
-        sequence.play(title.set_content("Third"));
-        sequence.wait(ms(500));
-    });
+    scene.defaults(s(1), ease::linear);
+    let mut animation = scene.compile([
+        all([
+            title.position_x().to(100.0),
+            title.font_size().to(28.0),
+            title.opacity().to(0.5),
+            title.scale().to(2.0),
+            title.rotation().to(0.4),
+            title.fill().to(orange),
+            title.content().to("Second"),
+        ]),
+        wait(ms(500)),
+        title.set_content("Third"),
+        wait(ms(500)),
+    ]);
     assert_eq!(animation.duration(), s(2));
     for (time, content) in [
         (0, "First"),
@@ -253,7 +248,7 @@ fn mixed_text_and_rectangle_objects_render_in_insertion_order() {
     scene.add(Rectangle::new(10.0, 10.0).fill(colors::RED));
     scene.add(Text::new("A").font_size(7.0));
     scene.add(Rectangle::new(20.0, 20.0).fill(colors::BLUE));
-    let animation = scene.animate(|sequence| sequence.wait(s(1)));
+    let animation = scene.compile([wait(s(1))]);
     let mut actual = vello::Scene::new();
     let size = Size::new(100.0, 100.0);
     renderer.render(&animation, &mut actual, size, size, 1.0);
@@ -321,17 +316,16 @@ fn anchored_text_inherits_parent_motion_and_keeps_independent_local_animation()
             .position((0.0, -10.0))
             .font_size(7.0),
     );
-    let mut animation = scene.animate(|sequence| {
-        sequence.defaults(s(1), ease::linear);
+    scene.defaults(s(1), ease::linear);
+    let mut animation = scene.compile([
         // No animation is registered on the child during this first second.
-        sequence.parallel(|sequence| {
-            sequence.play(bar.position_x().to(30.0));
-            sequence
-                .play(bar.rotation().to(std::f64::consts::FRAC_PI_2));
-            sequence.play(bar.scale().to(2.0));
-        });
-        sequence.play(label.position_x().to(5.0));
-    });
+        all([
+            bar.position_x().to(30.0),
+            bar.rotation().to(std::f64::consts::FRAC_PI_2),
+            bar.scale().to(2.0),
+        ]),
+        label.position_x().to(5.0),
+    ]);
     let mut rendered = vello::Scene::new();
     for (time, expected) in [
         (0, Point::new(10.0, -10.0)),

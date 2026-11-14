@@ -3,7 +3,7 @@ use crate::*;
 use motiongfx::prelude::{SubjectSource, ThreadSafe, TrackFragment};
 use motiongfx_authoring::{
     AnimationError, AnimationErrorKind, Field, Property,
-    SceneContext, Sequence, Step, Timing, lower_change,
+    SceneContext, Step, Timing, lower_change,
 };
 use std::{
     collections::HashMap, marker::PhantomData, ops::Range,
@@ -136,8 +136,10 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
     fn resolve<M: Model2d>(
         &self,
         context: &mut SceneContext<'_, M>,
-    ) -> Result<Property<TextSelectionId, TextSelection, T>, String>
-    {
+    ) -> Result<
+        Property<TextSelectionId, TextSelection, T>,
+        SelectionTargetError,
+    > {
         if let Some(id) =
             context.cache::<Selections>().0.get(&self.query).copied()
         {
@@ -145,7 +147,10 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
         }
         let graphics = context.model().graphics();
         let text = graphics.texts.get(self.query.text.index()).ok_or_else(|| {
-            format!("text selection {:?}: text object does not exist ({})", self.query, self.location)
+            SelectionTargetError {
+                description: format!("text selection {:?}: text object does not exist ({})", self.query, self.location),
+                cause: None,
+            }
         })?;
         let result = match &self.query.selector {
             Selector::Literal { needle, occurrence } => {
@@ -159,14 +164,15 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
                 TextRange::new(text.content.clone(), range.clone())
             }
         };
-        let range = result.map_err(|error| {
-            format!(
+        let range = result.map_err(|error| SelectionTargetError {
+            description: format!(
                 "text selection {:?} in {:?}: {} ({})",
                 self.query.selector,
                 text.content,
                 error,
                 self.location
-            )
+            ),
+            cause: Some(error),
         })?;
         // Different queries that resolve to the same source range share one target.
         let existing = text.selections.iter().copied().find(|id| {
@@ -193,9 +199,9 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
             .insert(self.query.clone(), id);
         Ok(F::property(id))
     }
-    /// A change whose target is calculated from the value at its start.
+    /// Animate to a target calculated from the value at the change's start.
     #[track_caller]
-    pub fn map_target<M, A>(
+    pub fn to_with<M, A>(
         &self,
         target: A,
     ) -> motiongfx_authoring::Animation<M>
@@ -219,7 +225,7 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
         T: Clone + ThreadSafe,
     {
         let value = value.into();
-        self.map_target(move |_| value.clone())
+        self.to_with(move |_| value.clone())
     }
     /// Replace the value instantly at the point where this is scheduled.
     #[track_caller]
@@ -241,7 +247,7 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
     where
         T: Clone + ThreadSafe + std::ops::Add<D, Output = T>,
     {
-        self.map_target(move |previous: &T| previous.clone() + delta)
+        self.to_with(move |previous: &T| previous.clone() + delta)
     }
     /// Animate by multiplying the value at the change's start by `factor`.
     #[track_caller]
@@ -252,9 +258,34 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
     where
         T: Clone + ThreadSafe + std::ops::Mul<D, Output = T>,
     {
-        self.map_target(move |previous: &T| previous.clone() * factor)
+        self.to_with(move |previous: &T| previous.clone() * factor)
     }
 }
+
+/// A text selection that could not be resolved when the scene compiled.
+/// The message includes the [`SelectionError`], which [`Self::cause`]
+/// returns for inspection.
+#[derive(Debug)]
+pub struct SelectionTargetError {
+    description: String,
+    cause: Option<SelectionError>,
+}
+impl SelectionTargetError {
+    /// Why the selection didn't match, or `None` if its text object is
+    /// not in this scene.
+    pub fn cause(&self) -> Option<&SelectionError> {
+        self.cause.as_ref()
+    }
+}
+impl std::fmt::Display for SelectionTargetError {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        f.write_str(&self.description)
+    }
+}
+impl std::error::Error for SelectionTargetError {}
 
 /// A selection change. The selection resolves against the text content
 /// when the scene compiles; failures are reported with this location.
@@ -271,20 +302,20 @@ where
 {
     fn lower(
         &self,
-        sequence: &mut Sequence<'_, World<M>, SceneContext<'_, M>>,
+        context: &mut SceneContext<'_, M>,
         timing: &Timing,
     ) -> TrackFragment {
-        match self.property.resolve(sequence.context_mut()) {
+        match self.property.resolve(context) {
             Ok(property) => lower_change(
-                sequence,
+                context,
                 property,
                 self.target.clone(),
                 timing,
             ),
-            Err(message) => {
-                sequence.context_mut().report(AnimationError {
+            Err(error) => {
+                context.report(AnimationError {
                     location: timing.location(),
-                    kind: AnimationErrorKind::Target(message),
+                    kind: AnimationErrorKind::Target(Arc::new(error)),
                 });
                 TrackFragment::silent(Duration::ZERO)
             }

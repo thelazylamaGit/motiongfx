@@ -48,14 +48,14 @@ fn word_paint_seeks_and_source_changes_do_not_use_stale_ranges() {
     let mut scene = Scene::new();
     let text = scene.add(Text::new("hello world"));
     let word = text.select("world");
-    let mut animation = scene.animate(|sequence| {
-        sequence.parallel(|sequence| {
-            sequence.play(word.fill().to(colors::RED).over(s(1)));
-            sequence.play(word.opacity().to(0.5).over(s(1)));
-        });
-        sequence.play(text.set_content("different"));
-        sequence.wait(s(1));
-    });
+    let mut animation = scene.compile([
+        all([
+            word.fill().to(colors::RED).over(s(1)),
+            word.opacity().to(0.5).over(s(1)),
+        ]),
+        text.set_content("different"),
+        wait(s(1)),
+    ]);
     let mut renderer = Renderer::default();
     let mut frame = vello::Scene::new();
     let size = Size::new(400.0, 200.0);
@@ -81,14 +81,11 @@ fn word_paint_seeks_and_source_changes_do_not_use_stale_ranges() {
     // Weight is a typed, continuously animatable numeric value.
     let mut scene = Scene::new();
     let text = scene.add(Text::new("weight").font_weight(400.0));
-    let mut animation = scene.animate(|sequence| {
-        sequence.play(
-            text.font_weight()
-                .to(700.0)
-                .over(s(1))
-                .ease(ease::linear),
-        );
-    });
+    let mut animation = scene.compile([text
+        .font_weight()
+        .to(700.0)
+        .over(s(1))
+        .ease(ease::linear)]);
     animation.sample(ms(500));
     assert_eq!(animation.text(text).font_weight.value(), 550.0);
 }
@@ -102,11 +99,10 @@ fn a_reused_renderer_remaps_selection_ranges_without_reshaping() {
     {
         let mut scene = Scene::new();
         let title = scene.add(Text::new("hello world"));
-        let animation = scene.animate(|sequence| {
-            sequence
-                .play(title.select(needle).fill().set(colors::RED));
-            sequence.wait(s(1));
-        });
+        let animation = scene.compile([
+            title.select(needle).fill().set(colors::RED),
+            wait(s(1)),
+        ]);
         let mut frame = vello::Scene::new();
         renderer.render(&animation, &mut frame, size, size, 1.0);
         assert_eq!(renderer.text_layouts[0].fonts.builds(), 1);

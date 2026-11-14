@@ -24,7 +24,7 @@ fn partial_styles_layer_without_resetting_unspecified_properties_or_retaining_th
     let a = scene.add(descriptor);
     let b =
         scene.add(Text::new("Other").style(&base).style(&emphasis));
-    let animation = scene.animate(|sequence| sequence.wait(s(1)));
+    let animation = scene.compile([wait(s(1))]);
     let a = animation.text(a);
     assert_eq!(a.content.as_ref(), "Label");
     assert_eq!(a.position, Point::new(10.0, 20.0));
@@ -59,11 +59,11 @@ fn style_signals_and_computations_share_existing_caches_and_rewind() {
             scene.add(Text::new("B").style(&labels)),
         )
     };
-    let mut animation = scene.animate(|sequence| {
-        sequence.play(size.to(48.0).ease(ease::linear));
-        sequence.play(alignment.set(TextAlign::Center));
-        sequence.wait(s(1));
-    });
+    let mut animation = scene.compile([
+        size.to(48.0).ease(ease::linear),
+        alignment.set(TextAlign::Center),
+        wait(s(1)),
+    ]);
     for (time, size, align, calls_expected) in [
         (0, 24.0, TextAlign::Left, 1),
         (500, 36.0, TextAlign::Left, 2),
@@ -92,14 +92,10 @@ fn later_style_or_direct_setter_removes_obsolete_reactive_wiring() {
     let b = scene.add(Text::new("B").style(&dynamic).font_size(30.0));
     // Residual bindings would reject these animations as conflicting writers.
     let mut animation = scene
-        .try_animate(|sequence| {
-            sequence.parallel(|sequence| {
-                sequence
-                    .play(a.font_size().to(40.0).ease(ease::linear));
-                sequence
-                    .play(b.font_size().to(40.0).ease(ease::linear));
-            });
-        })
+        .try_compile([all([
+            a.font_size().to(40.0).ease(ease::linear),
+            b.font_size().to(40.0).ease(ease::linear),
+        ])])
         .unwrap();
     for (time, size) in [(500, 35.0), (1000, 40.0), (0, 30.0)] {
         animation.sample(ms(time));

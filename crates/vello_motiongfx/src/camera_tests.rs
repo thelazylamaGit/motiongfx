@@ -12,17 +12,15 @@ fn camera_pan_zoom_rotation_render_and_reverse_seek() {
     let mut scene = Scene::new();
     let dot = scene.add(Circle::new(10.0));
     let camera = scene.camera();
-    let mut animation = scene.animate(|sequence| {
-        sequence.defaults(s(1), ease::linear);
-        sequence.parallel(|sequence| {
-            sequence.play(camera.position().to_xy(100.0, 50.0));
-            sequence.play(camera.scale().to(3.0));
-            sequence.play(
-                camera.rotation().to(std::f64::consts::FRAC_PI_2),
-            );
-        });
-        sequence.wait(s(1));
-    });
+    scene.defaults(s(1), ease::linear);
+    let mut animation = scene.compile([
+        all([
+            camera.position().to_xy(100.0, 50.0),
+            camera.scale().to(3.0),
+            camera.rotation().to(std::f64::consts::FRAC_PI_2),
+        ]),
+        wait(s(1)),
+    ]);
     for time in [1000, 500, 2000, 0, 750] {
         animation.sample(ms(time));
         let t = (time as f64 / 1000.0).min(1.0);
@@ -72,17 +70,17 @@ fn camera_pan_zoom_rotation_render_and_reverse_seek() {
 fn scale_pan_approaches_target_monotonically_and_retraces_on_seek() {
     let scene = Scene::new();
     let camera = scene.camera();
-    let mut animation = scene.animate(|sequence| {
-        sequence.parallel(|sequence| {
-            sequence.play(camera.scale().to(0.25).over(s(2)));
-            sequence.play(camera.position_y().to(300.0).over(s(2)));
-        });
-        sequence.wait(s(1));
-        sequence.parallel(|sequence| {
-            sequence.play(camera.scale().to(1.0).over(s(2)));
-            sequence.play(camera.position_y().to(0.0).over(s(2)));
-        });
-    });
+    let mut animation = scene.compile([
+        all([
+            camera.scale().to(0.25).over(s(2)),
+            camera.position_y().to(300.0).over(s(2)),
+        ]),
+        wait(s(1)),
+        all([
+            camera.scale().to(1.0).over(s(2)),
+            camera.position_y().to(0.0).over(s(2)),
+        ]),
+    ]);
     let tangent = Point::new(0.0, -300.0);
     let mut previous_distance = 300.0;
     for time in (0..=2000).step_by(50) {
@@ -135,16 +133,14 @@ fn follow_uses_nested_world_position_but_not_target_scale_or_rotation()
     let camera = scene.set_camera(
         Camera::new().relative_to(target).position((5.0, 6.0)),
     );
-    let mut animation = scene.animate(|sequence| {
-        sequence.defaults(s(1), ease::linear);
-        sequence.parallel(|sequence| {
-            sequence.play(parent.shift_x(100.0));
-            sequence.play(target.position_x().to(20.0));
-            sequence.play(target.scale().to(0.0));
-            sequence.play(target.rotation().to(2.0));
-            sequence.play(camera.position_x().to(15.0));
-        });
-    });
+    scene.defaults(s(1), ease::linear);
+    let mut animation = scene.compile([all([
+        parent.shift_x(100.0),
+        target.position_x().to(20.0),
+        target.scale().to(0.0),
+        target.rotation().to(2.0),
+        camera.position_x().to(15.0),
+    ])]);
     for time in [0, 1000, 500, 0] {
         animation.sample(ms(time));
         let t = time as f64 / 1000.0;

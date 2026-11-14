@@ -201,11 +201,9 @@ impl<'s, D: VelloDemo> VelloWinitApp<'s, D> {
 
     fn render(&mut self) {
         self.tick_playback();
-        let (surface, window) = match &mut self.state {
-            RenderState::Active { surface, window } => {
-                (surface, window)
-            }
-            _ => return,
+        let RenderState::Active { surface, window } = &mut self.state
+        else {
+            return;
         };
 
         self.scene.reset();
@@ -270,7 +268,7 @@ impl<'s, D: VelloDemo> VelloWinitApp<'s, D> {
 
         self.renderer
             .as_mut()
-            .unwrap()
+            .expect("the renderer is created when the window resumes")
             .render_to_texture(
                 &dev.device,
                 &dev.queue,
@@ -283,7 +281,9 @@ impl<'s, D: VelloDemo> VelloWinitApp<'s, D> {
                     antialiasing_method: AaConfig::Area,
                 },
             )
-            .unwrap();
+            .unwrap_or_else(|error| {
+                panic!("rendering failed: {error}")
+            });
 
         let mut enc = dev.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor { label: None },
@@ -333,7 +333,11 @@ impl<D: VelloDemo> ApplicationHandler for VelloWinitApp<'_, D> {
                     h + PlaybackControls::HEIGHT,
                 ))
                 .with_title(self.demo.window_title());
-            Arc::new(event_loop.create_window(attr).unwrap())
+            Arc::new(event_loop.create_window(attr).unwrap_or_else(
+                |error| {
+                    panic!("could not create the window: {error}")
+                },
+            ))
         });
 
         self.handle_resize(
@@ -348,8 +352,10 @@ impl<D: VelloDemo> ApplicationHandler for VelloWinitApp<'_, D> {
             size.height,
             wgpu::PresentMode::AutoVsync,
         );
-        let surface =
-            pollster::block_on(surface_future).expect("surface");
+        let surface = pollster::block_on(surface_future)
+            .unwrap_or_else(|error| {
+                panic!("could not create a GPU surface: {error}")
+            });
 
         let device_handle = &self.context.devices[surface.dev_id];
         surface
@@ -368,7 +374,11 @@ impl<D: VelloDemo> ApplicationHandler for VelloWinitApp<'_, D> {
                         pipeline_cache: None,
                     },
                 )
-                .unwrap(),
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "could not create the Vello renderer: {error}"
+                    )
+                }),
             );
         }
 
@@ -412,12 +422,11 @@ impl<D: VelloDemo> ApplicationHandler for VelloWinitApp<'_, D> {
         match event {
             WindowEvent::CloseRequested => el.exit(),
             WindowEvent::Resized(size) => {
-                let scale_factor = match &self.state {
-                    RenderState::Active { window, .. } => {
-                        window.scale_factor()
-                    }
-                    _ => return,
+                let RenderState::Active { window, .. } = &self.state
+                else {
+                    return;
                 };
+                let scale_factor = window.scale_factor();
                 self.handle_resize(scale_factor, size);
                 self.render();
             }

@@ -38,7 +38,7 @@ that created them; do not mix handles between scenes.
 `scene.set_background(color)` sets the renderer's clear/base color, without creating
 geometry. It accepts a fixed `Color`, signal, or computed color; the last call
 wins. The default remains RGB(28, 28, 46). For a fixed initial color, retain the
-returned property to animate it with ordinary sequences. When using a signal,
+returned property to animate it with ordinary changes. When using a signal,
 animate that signal. The shared Winit host reads `CompiledScene::background()` after
 sampling and passes it to `RenderParams::base_color`. Other rendering hosts
 should do the same. The background fills the render target regardless of
@@ -62,12 +62,12 @@ the same object at the same time; they write to overlapping fields.
 `Scene` owns the objects and gives them identities for MotionGfx targeting;
 it is not a renderer or window. A standalone rectangle is just initial state.
 Registering it with `Scene::add` returns its typed property handles.
-`Scene::animate` consumes that collection so baking sees the same objects
-and initial state that playback will own; the callback runs once during setup.
-There is one finalizing `animate` call per scene in this draft. Compose as many
-actions or reusable Rust authoring functions as needed inside that call; they
-all contribute to the same timeline. Independently compiled `CompiledScene`
-instances do not yet have a merge/concatenation API.
+`scene.compile([..])` consumes the scene so baking sees the same objects
+and initial state that playback will own. There is one `compile` call per
+scene. Animations are values, so build them anywhere (helper functions,
+loops, methods on your own components) and pass them in; they all contribute
+to the same timeline. Independently compiled `CompiledScene` instances do not
+yet have a merge/concatenation API.
 
 `Scene::add` uses the `SceneObject` trait to select registration from the
 argument's type at compile time. Additional built-in shapes can implement this
@@ -87,11 +87,10 @@ let title = scene.add(
 ```
 
 `Text` exposes `position`, `font_size`, `fill`, `opacity`, `scale`, `rotation`
-and `content` targets. `sequence.play(title.set_content("Sorted"))` replaces
-content at the current sequence time without adding duration. The equivalent
-`sequence.set(title.content(), "Sorted")` remains available. Alternatively,
-`sequence.play(title.content().to("Sorted").over(s(1)))` holds the old content
-until the change's end. These are discrete replacements, not glyph morphs.
+and `content` targets. `title.set_content("Sorted")` replaces content at its
+point in the timeline without adding duration. Alternatively,
+`title.content().to("Sorted").over(s(1))` holds the old content until the
+change's end. These are discrete replacements, not glyph morphs.
 `CompiledScene::text(handle)` reads sampled text state.
 
 Text position anchors the top of the block. `TextAlign::Left` (default),
@@ -108,8 +107,8 @@ let labels = TextStyle::new()
 
 scene.add(Text::new("Radius").style(&labels).fill(INK));
 scene.add(Text::new("Area").style(&labels).fill(RED));
-// Within the timeline:
-sequence.play(size.to(72.0));
+// One of the animations passed to `scene.compile`:
+size.to(72.0)
 ```
 
 `TextStyle` is a typed partial preset with optional `font_size`, `align`, `fill`,
@@ -146,8 +145,9 @@ in the same scene. Only transforms are inherited; color and opacity remain
 independent. This is not a layout engine.
 
 `Circle::new(radius)` creates a filled circle. Use `.fill(TRANSPARENT)` and
-`.stroke(color, width)` for a ring. Its handle exposes nested position axes,
-radius, fill/stroke, stroke width, opacity, scale and rotation. Circle scale
+`.stroke(color, width)` for a ring. Its handle exposes `position` (and
+`position_x`/`position_y`), radius, fill/stroke, stroke width, opacity, scale
+and rotation. Circle scale
 transforms the stroke as well as the geometry, including anchored children.
 Text can anchor to a circle using the same `relative_to` method.
 
@@ -164,16 +164,16 @@ sampled state, and rebuilt only when the source or visible range changes.
 Moving, fading or changing the stroke style of a path reuses its geometry.
 
 Every scene has one camera, initially centered with frame scale 1 and rotation 0.
-`scene.camera()` returns its typed `position` (including `.x`/`.y`), `scale`
-and `rotation` targets. Schedule them with ordinary `sequence.play` and
-`sequence.parallel` calls. Frame scale 0.25 shows a quarter of the normal
+`scene.camera()` returns its typed `position` (and `position_x`/`position_y`),
+`scale` and `rotation` targets. Animate them like any other property, for
+example together inside `all([..])`. Frame scale 0.25 shows a quarter of the normal
 width/height, giving four times the magnification. Positive
 camera rotation is counterclockwise, so the world rotates clockwise.
 Frame scale must remain finite and positive, and position/rotation must be finite.
 The shared view transform leaves geometry caches unchanged; all scene objects
 receive it, while the host's playback controls remain in screen space.
 
-For an attached view, configure initial state before `animate`:
+For an attached view, configure initial state before `compile`:
 
 ```rust
 let camera = scene.set_camera(
@@ -193,12 +193,6 @@ as `1 / scale` during rendering. This matches the reference's frame-size
 interpolation. There is one scale value, rather than independent zoom and
 frame-scale properties that could conflict.
 
-The optional `animate!` macro is re-exported here for native authoring. It
-removes repeated `sequence.play(...)` calls and supports sequential changes,
-waits, parallel blocks/collections, chained branches, and staggered collections.
-It expands to the same builder API and does not change playback or rendering.
-See `crates/motiongfx_authoring/README.md` for its syntax and scope.
-
 Text uses real font shaping through [motiongfx_text](../motiongfx_text/README.md)
 and Vello glyph runs. Fira Sans is embedded by default; `.font_family("...")`
 selects a registered family. `TextStyle` shares font/layout/paint inputs just
@@ -212,22 +206,21 @@ Position anchors the block's top; `TextAlign` anchors its total width horizontal
 It does not set per-paragraph alignment or provide a general layout system.
 
 `text.select("word")`, `select_nth("word", occurrence)` and `select_range(bytes)`
-describe deferred fill/opacity animation targets. They work inside or outside
-`scene.animate` without borrowing the scene. Schedule their changes normally:
+describe deferred fill/opacity animation targets. They don't borrow the scene
+and resolve when it compiles. Animate them like any other property:
 
 ```rust
 use motiongfx_2d::{Scene, Text, colors::ORANGE};
 let mut scene = Scene::new();
 let title = scene.add(Text::new("Shoes & Cats & Dogs"));
-let animation = scene.animate(|sequence| {
-    let second = title.select_nth("&", 1); // zero-based occurrence
-    sequence.play(second.fill().to(ORANGE));
-});
+let second = title.select_nth("&", 1); // zero-based occurrence
+let animation = scene.compile([second.fill().to(ORANGE)]);
 ```
 
 Only used selections register; missing literals/invalid UTF-8 byte ranges produce
-`SceneError::Animation` during `try_compile`/`try_animate`, with source/query/call-site details.
-`animate` panics before playback for the same error. `TextRange` itself remains
+`SceneError::Animation` from `try_compile`, with source/query/call-site details
+(the error's `Target` kind downcasts to `SelectionTargetError`, whose `cause()`
+is the `SelectionError`). `compile` panics before playback for the same error. `TextRange` itself remains
 a separately checked range utility returning `SelectionError`.
 Registration searches initial fixed content, never during sampling. It memoizes
 queries during preparation; identical resolved ranges in the same text reuse one
@@ -284,7 +277,7 @@ repeat substring searches or reshape text for color/transform animation. We are
 leaving this mechanism in place until dynamic text effects justify revisiting
 it. See [text caching](../../docs/text-caching.md) for costs and rationale.
 
-`Scene::animate` consumes the scene, builds a MotionGfx timeline and
+`Scene::compile` consumes the scene, builds a MotionGfx timeline and
 bakes its targets. `CompiledScene::sample` uses the existing MotionGfx sampler;
 The separate `vello_motiongfx::Renderer` emits Vello scene commands from sampled state. Object state is stored
 once, with geometry transforms calculated when rendering. There is no
@@ -297,7 +290,7 @@ Fill and stroke colors are independent. `smooth` reproduces Manim's default
 normalized sigmoid easing for comparisons.
 
 `Line::new(start, end)` stores endpoints without allocating a path buffer.
-Its handle exposes `start`/`end` (including `.x`/`.y`), stroke, stroke width,
+Its handle exposes `start`/`end` (and `start_x`, `end_y`, ...), stroke, stroke width,
 opacity and `reveal`. Endpoints use positive-y-up coordinates and receive the camera
 transform like all other objects.
 
@@ -333,8 +326,10 @@ Like other properties, these accept signals/computed inputs. Handle changes are
 discrete, not smoothly interpolated:
 
 ```rust
-sequence.play(line.line_cap().set(Cap::Square));
-sequence.play(line.end_tip.line_join().set(Join::Round));
+all([
+    line.line_cap().set(Cap::Square),
+    line.end_tip.line_join().set(Join::Round),
+])
 ```
 
 Round caps/joins derive their rounding from stroke width. They are not a numeric
@@ -359,9 +354,11 @@ let line = scene.add(
         )
         .stroke(INK, 4.0),
 );
-sequence.play(line.start_tip.radius().to(10.0));
-sequence.play(line.end_tip.angle().to(0.9));
-sequence.play(line.end_tip.fill().to(ORANGE));
+let animation = scene.compile([
+    line.start_tip.radius().to(10.0),
+    line.end_tip.angle().to(0.9),
+    line.end_tip.fill().to(ORANGE),
+]);
 ```
 
 `start_tip` / `end_tip` accept ordinary `Object<Circle>`, `Object<Triangle>` or
@@ -389,7 +386,7 @@ stroke:
 ```rust
 Triangle::new().size(24.0).angle(0.6).radius(2.0).fill(INK)
 // On a registered triangle tip:
-sequence.play(line.end_tip.radius().to(4.0));
+line.end_tip.radius().to(4.0)
 ```
 
 Radius defaults to zero (the original sharp triangle), accepts reactive inputs,
@@ -463,8 +460,8 @@ Both explicit `return` and Rust's final-expression return work. Position builder
 accept either a `Point` or a computed coordinate tuple.
 
 The old scene-owned constructors have been replaced, not retained as aliases.
-Schedule signal changes with the same `sequence.play`,
-`.to`, `.offset`, `.multiply`, `.over`, and `.ease` APIs as object properties.
+Signal changes use the same `.to`, `.offset`, `.multiply`, `.over`, `.ease`
+and `.spring` methods as object properties.
 `signal.set(value)` describes a zero-duration action, not an immediate write.
 
 Storage requires `Clone + Send + Sync + 'static`; comparison-based sources
@@ -511,7 +508,7 @@ scene.bind(connector.end(), (curve.end(), dot.position_y()), move |(reveal, y)| 
 ```
 
 Closures that capture local constants/configuration use `move` to own those
-captures. They are stored, not executed during the author callback. A source
+captures. They are stored and run when sampling, not while building. A source
 supplies its current sampled value, not an implicit progress parameter.
 Properties, `Computed<T>` handles, and tuples of two to five sources are
 supported. All values are local object state, not transformed world positions.
@@ -519,10 +516,9 @@ For a shared calculation use `let orbit = curve.end.map(function)`;
 then `scene.bind(dot.position(), &orbit, |position| position)`. Its output is cached
 once per changed input for all consumers. Tuples support one to five sources.
 
-`scene.try_animate(...)` returns `Result<CompiledScene, SceneError>` and rejects
+`scene.try_compile(..)` returns `Result<CompiledScene, SceneError>` and rejects
 cycles, overlapping binding destinations, and timeline writes to bound fields.
-`scene.animate(...)` keeps its existing return type and panics on these errors
-during construction. Both initialize the sampled animation and bindings at
+`scene.compile(..)` panics on these errors during construction. Both initialize the sampled animation and bindings at
 time zero. Bound fields can feed other bindings; execution order is prepared
 once regardless of registration order. Ordinary property handles still must
 belong to this scene; scene identity validation is not implemented.
@@ -550,7 +546,7 @@ scene.update(dot, &progress, |circle, progress| {
 
 `signal(initial)` returns a typed, standalone animation property. It is
 not a drawable or a dependency node. Animate it with the existing `.to`,
-`.offset`, `.over`, and sequence methods. Sampled values use scene-local storage;
+`.offset` and `.over` methods, inside any group. Sampled values use scene-local storage;
 the descriptions themselves can be reused across scenes independently.
 `scene.time()` is an explicit source of sampled `Duration`, clamped to the
 timeline range, not elapsed frame time.
@@ -583,11 +579,12 @@ quadratic segments, retaining the normal `start`/`end` reveal properties.
 
 ## Springs
 
-Continuous scalar properties and Point/Vec2/Size support `.to(value).spring(settings)`.
-Relative helpers also support `shift(dx, dy).spring(settings)`. Spring timing
-replaces the sequence's tween defaults. Explicit `.over`/`.ease` conflict and are
-reported during checked preparation; the resulting spring change has neither
-method. There are no per-property spring helper variants. These changes run
-through core spring actions. Import `Spring` from this
-crate or its prelude. There are no spring-specific renderer changes.
+Any interpolated property or signal supports `.to(value).spring(settings)`,
+including colours (channels overshoot briefly and rendering saturates them).
+Relative helpers also support `shift(dx, dy).spring(settings)`. A spring sets
+its own timing, replacing the scene's tween defaults; combining it with
+`.over`/`.ease` panics at that call. Discrete properties (text content,
+caps/joins) cannot spring, and `compile` reports it. These changes run through
+core spring actions. Import `Spring` from this crate or its prelude. There are
+no spring-specific renderer changes.
 See [spring options, normalized rest units and limits](../../docs/springs.md).

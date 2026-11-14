@@ -74,9 +74,11 @@ enum Motion {
     Spring(Box<Spring>),                // boxed: most changes never spring
 }
 
-/// Adds one change to the core timeline during `compile`.
+/// Adds one change to the core timeline during `compile`. The context gives
+/// model access, construction caches and error reporting; `lower_change`
+/// registers the core action.
 pub trait Step<M>: Send + Sync + 'static {
-    fn lower(&self, sequence: &mut Sequence<..>, timing: &Timing) -> TrackFragment;
+    fn lower(&self, context: &mut SceneContext<'_, M>, timing: &Timing) -> TrackFragment;
 }
 ```
 
@@ -352,20 +354,19 @@ Removed: `Sequence` (public), `animate`/`try_animate` (now
 `sequence.set`, `append`, `action`, `animate!`, `AnimationChange`, the change
 types (`Change`, `SpringTargetChange`, `SpringChange`, `SignalChange`,
 `SignalTargetSpringChange`, `SignalSpringChange`, `SelectionChange`,
-`SelectionSpringChange`), `spring_to`, `map_target`, returning durations for
-looping. `Property::map` / `.map` for computed values is unaffected.
+`SelectionSpringChange`), `spring_to`, `RegisterSignals`, `SceneSequence`
+and the 2D `Sequence` alias, `Sequence::new`/`with_signals` (integrations
+without a scene use core's builder), returning durations for looping, and the
+unused compound `Position` handle with its `*_position`/`*_axes` aliases
+(handles expose `position()`, `position_x()` and `position_y()`).
+`map_target` is now `to_with`. `Property::map` / `.map` for computed values
+is unaffected.
 
-To migrate:
-- Examples: `moving_square`, `insertion_sort`, `commit_graph`, `radius_area`,
-  `camera_zoom`, `text_animation`, `sine_unit_circle`, `spring_curves`,
-  `lissajous`, `bezier_explainer`, and `examples/support/*_tests.rs`.
-  `*_low_level` and `timeline_wave` use core directly and are unaffected.
-- Crate tests: `motiongfx_authoring/tests`, `motiongfx_2d/tests`,
-  `vello_motiongfx/src/*_tests.rs`.
-- Doc examples: `motiongfx_2d` crate docs, `tips.rs`, `style.rs`; the two
-  `compile_fail` spring doctests in `motiongfx_authoring/src/spring.rs` become
-  tests of the `compile` error messages.
-- READMEs and `architecture.md`.
+Everything is migrated: the examples, crate tests, doc examples, READMEs
+and `architecture.md`. `*_low_level` and `timeline_wave` use core directly
+and were unaffected. Changing defaults partway through a sequence has no
+replacement; per-change `.over`/`.ease` cover it, and group-level defaults are
+deferred.
 
 ## 10. Implementation plan
 
@@ -381,8 +382,23 @@ To migrate:
 4. **Markers in core**, then migrate `lissajous` *(done; `bezier_explainer`
    uses `PingPong`, needed no marker, and was migrated with the others)*.
 5. **Headless test that builds every example's animation** *(done: `support/headless.rs` samples forwards and backwards and renders a frame; one test per example)*.
-6. **Remove the old API** and migrate remaining tests and doc examples.
-7. **Docs and after-measurements**; one visual pass over the examples.
+6. **Remove the old API** and migrate remaining tests and doc examples
+   *(done)*. Review follow-ups made at the same time:
+   - `SceneContext` is the lowering context, so `Step` no longer sees the
+     public builder (it held the core builder and defaults directly);
+   - `Property` stores `Interp::{Smooth, Discrete}` instead of an interpolation
+     plus a separate `discrete` flag;
+   - property/target change methods carry shared bounds on the `impl` block;
+     `spring_to` removed, `map_target` renamed `to_with`;
+   - `AnimationErrorKind`/`SceneError` are `#[non_exhaustive]`; text
+     selection failures keep their `SelectionError` (`SelectionTargetError`);
+   - `scene.update` panics at the caller's line; `Debug` for `Animation`,
+     `Scene`, `CompiledScene`, `Signal`, `Property` and `Target`;
+   - bool parameters replaced by named functions (`insert_tip`,
+     `sharp_triangle`/`sharp_chevron`); `#[must_use]` on 2D object builders.
+7. **Docs and after-measurements** *(done)*; one visual pass over the
+   examples *(not yet done: the headless tests build, sample and encode
+   every example, but nobody has looked at the windows)*.
 
 Separate, any time: stop the preview host redrawing while idle (see Rendering
 performance); overlap errors (easiest after step 6).
@@ -442,6 +458,11 @@ sizes.
   `phase1-start`: 1k +3.9%, 10k +2.2%. The `compile` path is cheaper than the
   callback API running through `Animation`: no per-group `Vec`s, and fragments
   stream into core's combinators.
+- After step 6 (old API removed, review follow-ups), against `phase1-start`:
+  `setup/animate` 1k +3.8%, 10k −2.3%; `setup/objects` −9% to −11%;
+  playback and encoding within noise (one `sample_forward/1000` run at +9%
+  re-measured at +1.8%; sampling code is unchanged). Net: the value-based
+  API costs a few percent of setup at most, and nothing per frame.
 - Run-to-run noise on this machine is up to about 30% for unchanged code
   (playback and encoding moved that much between runs with no related
   change). Re-run when results look surprising; only trust large or

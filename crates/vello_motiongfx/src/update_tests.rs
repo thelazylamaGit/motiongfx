@@ -37,12 +37,11 @@ fn updates_run_after_bindings_in_registration_order_on_every_sample()
     scene.update(clock_label, time, |label, time| {
         label.content = time.as_millis().to_string().into();
     });
-    let mut animation = scene.animate(|sequence| {
-        sequence.wait(s(1));
-        sequence
-            .play(progress.to(10.0).over(s(2)).ease(ease::linear));
-        sequence.wait(s(1));
-    });
+    let mut animation = scene.compile([
+        wait(s(1)),
+        progress.to(10.0).over(s(2)).ease(ease::linear),
+        wait(s(1)),
+    ]);
     assert_eq!(calls.load(Ordering::Relaxed), 1); // Initializes at zero.
     for (index, (time, x)) in [
         (0, 0.0),
@@ -98,9 +97,8 @@ fn grouped_targets_preserve_caller_order_and_borrow_disjoint_objects()
             camera.scale = 1.0 + amount;
         },
     );
-    let mut animation = scene.animate(|sequence| {
-        sequence.play(amount.to(1.0).ease(ease::linear));
-    });
+    let mut animation =
+        scene.compile([amount.to(1.0).ease(ease::linear)]);
     animation.sample(ms(500));
     assert_eq!(animation.line(line).start, Point::new(10.5, 0.0));
     assert_eq!(animation.line(line).end, Point::new(20.5, 0.0));
@@ -127,9 +125,8 @@ fn array_targets_preserve_order_and_support_empty_arrays() {
     scene.update([] as [LineHandle; 0], &amount, |lines, _| {
         assert!(lines.is_empty())
     });
-    let mut animation = scene.animate(|sequence| {
-        sequence.play(amount.to(10.0).ease(ease::linear));
-    });
+    let mut animation =
+        scene.compile([amount.to(10.0).ease(ease::linear)]);
     animation.sample(ms(500));
     assert_eq!(animation.line(lines[2]).end.x, 5.0);
     assert_eq!(animation.line(lines[0]).end.x, 6.0);
@@ -180,12 +177,13 @@ fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
             line.end = b;
         },
     );
-    let mut animation = scene.animate(|sequence| {
-        sequence.play(t.to(0.5).ease(ease::linear));
-        for offset in [200.0, -240.0, 40.0] {
-            sequence.play(bend.offset(offset).ease(ease::linear));
-        }
-    });
+    let mut animation = scene.compile([
+        t.to(0.5).ease(ease::linear),
+        chain(
+            [200.0, -240.0, 40.0]
+                .map(|offset| bend.offset(offset).ease(ease::linear)),
+        ),
+    ]);
     let initial_geometry = animation.path(curve).geometry.clone();
     animation.sample(ms(500));
     assert!(Arc::ptr_eq(

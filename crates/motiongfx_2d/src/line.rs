@@ -131,36 +131,6 @@ end: Point => new(Line.end);
 end_x: f64 => new(Line.end.x);
 end_y: f64 => new(Line.end.y);
 );
-#[allow(non_camel_case_types)]
-pub type line_start = crate::Position<
-    LineId,
-    Line,
-    fields::start::Target,
-    fields::start_x::Target,
-    fields::start_y::Target,
->;
-pub fn line_start_axes(id: LineId) -> line_start {
-    crate::Position::from_targets(
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-    )
-}
-#[allow(non_camel_case_types)]
-pub type line_end = crate::Position<
-    LineId,
-    Line,
-    fields::end::Target,
-    fields::end_x::Target,
-    fields::end_y::Target,
->;
-pub fn line_end_axes(id: LineId) -> line_end {
-    crate::Position::from_targets(
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-        motiongfx_authoring::Target::new(id),
-    )
-}
 
 crate::properties::handle_methods!(LineHandle,Line,LineId;
 stroke: Color;

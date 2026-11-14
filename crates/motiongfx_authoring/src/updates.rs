@@ -30,6 +30,7 @@ macro_rules! tuple_targets {
     ($($name:ident:$slot:tt),+) => {
         impl<M:UpdateStorage,$($name: UpdateHandle<M>),+> UpdateTargets<M> for ($($name,)+) {
             type Objects<'a> = ($(&'a mut $name::Object,)+);
+            #[track_caller]
             fn callback<S, F>(self, source: S, mut update: F, world: &World<M>) -> NativeUpdate<M>
             where S: BindingSource<World<M>>, F: for<'a> FnMut(Self::Objects<'a>, S::Value) + ThreadSafe {
                 let layout = world.model().layout([$(self.$slot.spec($slot),)+]);
@@ -50,6 +51,7 @@ impl<M: UpdateStorage, H: UpdateHandle<M>, const N: usize>
     UpdateTargets<M> for [H; N]
 {
     type Objects<'a> = [&'a mut H::Object; N];
+    #[track_caller]
     fn callback<S, F>(
         self,
         source: S,

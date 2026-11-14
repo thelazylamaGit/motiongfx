@@ -79,7 +79,7 @@ Graphics. No ECS or general dynamic world registry is introduced.
 
 2D-only helpers are extension traits imported by `motiongfx_2d::prelude::*`:
 `Scene2dExt` for camera/background setup, `CompiledScene2dExt` for sampled reads.
-The inherent lifecycle methods (`add`, `animate`, `bind`, `update`, `sample`)
+The inherent lifecycle methods (`add`, `compile`, `bind`, `update`, `sample`)
 remain shared.
 
 ## Construction, sampling, rendering
@@ -109,10 +109,12 @@ remain shared.
    and returns typed handles. For example, `square.position_x()` is a property
    target, not the current numeric x value. `Scene` is an object collection and
    construction context, not the renderer, window, or timeline itself.
-3. `scene.animate(|sequence| ...)` authors and compiles one timeline, validates
-   native relationships, bakes action targets, and initialises sampled state.
-   `try_animate` reports construction errors instead of panicking. Compose
-   reusable functions within this process; there is no animation-merge API yet.
+3. `scene.compile(animations)` lowers a list of `Animation` values into one
+   core timeline, validates native relationships, bakes action targets, and
+   initialises sampled state. `try_compile` returns construction errors
+   instead of panicking. Animations are values, so reusable functions and
+   components return them; there is no merge API for compiled scenes yet.
+   See [the authoring redesign](authoring-redesign.md) for the representation.
 4. Sampling applies the core timeline, evaluates the prepared binding plan,
    then runs direct update callbacks in registration order.
 5. The host invokes a separate `vello_motiongfx::Renderer`, which reads sampled
@@ -252,16 +254,12 @@ uses the cached curved boundary. No per-frame heap path allocation is needed;
 ordinary cache checks, bounds/transforms, and Vello recording still take work.
 
 - Use ordinary timeline properties for authored changes: `.to`, `.offset`,
-  `.multiply`, `.set`, `.over`, `.ease`, waits, parallel groups, and stagger.
-  Constructing a change alone does not schedule it; `sequence.play` does.
-- `sequence.flow(interval, |sequence| { ... })` collects scoped/nested children
-  with fixed spacing between starts. It replaces the earlier `stagger` /
-  `staggered` method names and delegates to core `ord_flow`, reserving the
-  latest child end. A tuple/collection form was tried and removed for now: it
-  only accepted leaf changes, so nested groups, loops and waits still needed
-  the callback, leaving two overlapping spellings. `wait` remains a sequential
-  pause; it does not overlap the preceding child. The optional `animate!` macro
-  keeps its `stagger(interval, changes)` spelling and expands to a `flow` block.
+  `.multiply`, `.set`, `.to_with`, `.over`, `.ease`, `.spring`, combined with
+  `chain`, `all`, `flow`, `wait` and `marker`. Constructing an animation alone
+  does not schedule it (it is `must_use`); passing it to `scene.compile` does.
+- `flow(interval, [..])` starts children `interval` apart and delegates to core
+  `ord_flow`, reserving the latest child end. Children can be changes or nested
+  groups, built from any iterator.
 - Use reactive builder inputs for relationships between objects/values. Share
   common calculations through computed descriptions instead of repeating work.
 - `scene.bind` is advanced explicit wiring after object creation. Builder inputs
@@ -270,9 +268,8 @@ ordinary cache checks, bounds/transforms, and Vello recording still take work.
   does not fit property relationships. It runs on **every** sample, after
   bindings, without change caching or dependency ordering between callbacks.
   Keep it for those cases, not as the default for every animated property.
-- `animate!` remains optional. The main examples use plain sequence methods;
-  do not migrate them back to that macro just for consistency. It is distinct
-  from the small `computed!` dependency shorthand.
+- The callback `Sequence` API and its `animate!` macro were removed once every
+  example and test used `scene.compile`; `computed!` remains.
 
 Rust checks source/output/property types. Preparation checks binding cycles,
 missing properties, overlapping binding writers and timeline writes to bound
@@ -298,12 +295,11 @@ Springs reserve their full settling duration (the exact requested time for timed
 mode) using existing track ordering. `settle_duration()` exposes that reserved time
 (fallible, since it prepares the curve); `TimedSpring::duration()` is the
 infallible exact value, letting non-springable siblings such as colors tween in
-step via `.over(spring.duration())`. `SpringValue` carries a
-`#[diagnostic::on_unimplemented]` message so a non-springable value reports at
-its `.spring` call.
+step via `.over(spring.duration())`. Authoring springs any interpolated
+property; only discrete properties are refused, when compiling.
 There is no arrival-based continuation or spring-specific overlap policy.
 Track compilation and ordinary action conflict behavior remain unchanged.
-Invalid spring settings are reported by Scene::try_compile/try_animate as
+Invalid spring settings are reported by Scene::try_compile as
 SceneError::Animation, with the animation's file and line.
 
 Rest delta/speed are normalized (0.001 and 0.01/s), deliberately independent of
@@ -332,8 +328,10 @@ Useful comparison cases:
   MotionGfx wave comparison.
 - `moving_square`: direct native property changes.
 - `insertion_sort`: ordinary Rust procedural construction/sorting builds a
-  timeline, anchored labels follow bars, and `play_all` moves them together.
-- `commit_graph`: reusable circles/rings/paths, parallel pulse animations, stagger.
+  timeline, anchored labels follow bars, and one `all([..])` per pass moves
+  them together.
+- `commit_graph`: a reusable `Commit` component whose methods return
+  animations, parallel pulses and a `flow` stagger.
 - `sine_unit_circle`: fixed trace geometry revealed by a shared progress signal.
   `.map`/`computed!` positions feed object builders directly, reconstructing the
   orbit/connector on seeks without explicit `scene.bind` calls.
@@ -341,10 +339,10 @@ Useful comparison cases:
   quadratic geometry, reusable grid construction, and timed chapter changes.
 - `radius_area`: inline `.map` inputs and computed text/geometry from one signal.
 - `lissajous`: precomputed procedural paths, per-curve range signals, reactive
-  reference dots and nested diagonal timing on one sequence. Scoped
-  `sequence.flow` groups delegate to core `ord_flow`, alongside `parallel`
-  (`ord_all`) and `chain` (`ord_chain`), without manual delay calculations.
-  The intro group returns its reserved duration to configure `LoopFrom`; no separate timeline
+  reference dots and nested diagonal timing on one timeline. Nested `flow`
+  groups delegate to core `ord_flow`, alongside `all` (`ord_all`) and `chain`
+  (`ord_chain`), without manual delay calculations. A `marker("loop")` after
+  the intro configures `LoopFrom`; no separate timeline
   or custom renderer is used for either chapter. It uses standard canvas fitting
   on resize. Headless seek/timing regressions are in the example support folder.
 - `camera_zoom`: camera transforms without changing the underlying objects.
@@ -374,8 +372,8 @@ paint associations are cached, and what to revisit with future dynamic effects.
 
 Typed literal/byte-range selections animate fill/opacity without independent draw
 nodes. `text.select("word")`, `select_nth` and `select_range` now return deferred
-descriptions; only used selections register while lowering actions. The shared
-SceneSequence carries a SceneContext with model access, signal registration and
+descriptions; only used selections register while lowering actions. Lowering
+receives a SceneContext with model access, signal registration and
 construction-only typed memoization. These registration maps drop before playback.
 Missing/invalid queries report SceneError::Animation with query/source/call location
 before baking or sampling. Equivalent resolved ranges reuse the same target;
