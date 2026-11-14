@@ -1,17 +1,18 @@
-//! One scene-wide camera, sampled by the ordinary MotionGfx timeline.
+//! [`Camera`]: the scene's view, which can pan, zoom, turn and follow.
 
 use crate::{Graphics, Parent, Point};
 use kurbo::Affine;
 use motiongfx::prelude::SubjectSource;
 
-/// A view in centered, y-up canvas coordinates. Frame scale 0.25 shows a
-/// quarter of the normal width/height, making objects four times as large.
-/// Rotation is the camera's counterclockwise angle in radians;
-/// the rendered world moves in the opposite direction.
+/// The scene's view. Every scene has one; get it with `scene.camera()`, or
+/// set its starting state with `scene.set_camera(Camera::new()..)`.
 #[derive(Clone)]
 pub struct Camera {
+    /// Point at the centre of the view, in canvas units (y up).
     pub position: Point,
+    /// Size of the view frame: 0.5 shows half the width and height, so objects look twice as big.
     pub scale: f64,
+    /// Rotation of the view in radians, counterclockwise; the scene turns the other way.
     pub rotation: f64,
     target: Option<Parent>,
 }
@@ -28,6 +29,7 @@ impl Default for Camera {
 }
 
 impl Camera {
+    /// A camera at the origin, unscaled and unrotated.
     pub fn new<M: crate::Model2d>() -> crate::Object<Self, M> {
         crate::Object::new(Self::default())
     }
@@ -35,10 +37,9 @@ impl Camera {
 
 crate::object::properties!(Camera; position: Point, scale: f64, rotation: f64);
 impl<M: crate::Model2d> crate::Object<Camera, M> {
-    /// Follow an already-created rectangle or circle in this scene. Only
-    /// its world position is inherited, including its ancestors' transforms.
-    /// The camera's position remains an offset in world axes; target rotation
-    /// and scale do not rotate or zoom the camera.
+    /// Follow a rectangle or circle already in the scene: `position`
+    /// becomes an offset from it. The camera follows its position only, not
+    /// its rotation or scale.
     pub fn relative_to(mut self, target: impl Into<Parent>) -> Self {
         self.target = Some(target.into());
         self
@@ -70,13 +71,15 @@ impl Camera {
     }
 }
 
-/// Identity of the scene's single camera.
+/// Identifies the scene's camera.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
 pub struct CameraId;
 
-#[derive(Clone, Copy)]
+/// The scene's camera, from `scene.camera()`. Its methods return fields to
+/// animate.
+#[derive(Clone, Copy, Debug)]
 pub struct CameraHandle {
     pub(crate) id: CameraId,
 }
@@ -96,6 +99,8 @@ impl<M: crate::Model2d> crate::SceneObject<M> for Camera {
 }
 
 impl Graphics {
+    /// The transform from canvas to view coordinates for the camera as last
+    /// sampled, including any object it follows.
     pub fn camera_transform(&self) -> Affine {
         self.camera.view_transform(self)
     }
@@ -116,8 +121,7 @@ impl<M: crate::Model2d> SubjectSource<CameraId, Camera>
     }
 }
 
-// Fixed field identity is generated locally; no accessor metadata is stored in
-// each handle. See properties.rs and motiongfx_authoring::Target.
+// Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::fields!(fields, Camera, CameraId;
 scale: f64 => new(Camera.scale);
 rotation: f64 => new(Camera.rotation);

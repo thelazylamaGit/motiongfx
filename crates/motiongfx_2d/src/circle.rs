@@ -1,28 +1,35 @@
-//! Filled circles and stroked rings with typed animation targets.
+//! [`Circle`]: filled circles and, with a transparent fill, rings.
 
 use crate::{Color, DrawObject, Parent, Point, SceneObject};
 use kurbo::Affine;
 use motiongfx::prelude::SubjectSource;
 
-/// A circle with a local radius in canvas units. Scale transforms both the
-/// circle and its stroke, including children anchored with `relative_to`.
-/// Full circles have no caps or sharp joins. If open arcs/dashes are added,
-/// expose their meaningful stroke options then, rather than storing unused
-/// cap/join properties on today's circle.
+/// A circle. Create one with [`Circle::new`]; for a ring, use a
+/// transparent fill and a stroke. Scale also scales the stroke and any
+/// objects attached with `relative_to`.
 #[derive(Clone)]
 pub struct Circle {
+    /// Radius in canvas units.
     pub radius: f64,
+    /// Centre, in canvas units (y up).
     pub position: Point,
+    /// Fill colour.
     pub fill: Color,
+    /// Outline colour.
     pub stroke: Color,
+    /// Outline width in canvas units.
     pub stroke_width: f64,
+    /// 0 (invisible) to 1 (opaque).
     pub opacity: f64,
+    /// Uniform scale; 1 is normal size.
     pub scale: f64,
+    /// Rotation in radians, counterclockwise.
     pub rotation: f64,
     pub(crate) parent: Option<Parent>,
 }
 
 impl Circle {
+    /// A white circle of `radius` (a fixed value or a source to follow).
     pub fn new<M: crate::Model2d>(
         radius: impl Into<crate::Input<f64, M>>,
     ) -> crate::Object<Self, M> {
@@ -40,6 +47,7 @@ impl Circle {
         .radius(radius)
     }
 
+    /// Where the circle's local coordinates sit, relative to its parent.
     pub fn transform(&self) -> Affine {
         Affine::translate((self.position.x, -self.position.y))
             * Affine::rotate(-self.rotation)
@@ -53,28 +61,35 @@ crate::object::properties!(Circle;
 );
 crate::object::stroke!(Circle);
 impl<M: crate::Model2d> crate::Object<Circle, M> {
-    /// Inherit the parent's transform; style and opacity remain independent.
+    /// Attach to a rectangle or circle already in the scene: `position`
+    /// becomes an offset from it, and the circle moves, turns and scales
+    /// with it. Colour and opacity stay independent.
     pub fn relative_to(mut self, parent: impl Into<Parent>) -> Self {
         self.parent = Some(parent.into());
         self
     }
 }
 
+/// Identifies one [`Circle`] in its scene.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
 pub struct CircleId(pub(crate) usize);
 impl CircleId {
+    /// Its position in the scene's storage for this object type.
     pub fn index(self) -> usize {
         self.0
     }
 }
 
-#[derive(Clone, Copy)]
+/// A [`Circle`] in a scene, returned by `scene.add`. Its
+/// methods return fields to animate or for other objects to follow.
+#[derive(Clone, Copy, Debug)]
 pub struct CircleHandle {
     pub(crate) id: CircleId,
 }
 impl CircleHandle {
+    /// The object's ID.
     pub fn id(self) -> CircleId {
         self.id
     }
@@ -128,8 +143,7 @@ impl<M: crate::Model2d> SubjectSource<CircleId, Circle>
     }
 }
 
-// Fixed field identity is generated locally; no accessor metadata is stored in
-// each handle. See properties.rs and motiongfx_authoring::Target.
+// Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::fields!(fields, Circle, CircleId;
 radius: f64 => new(Circle.radius);
 fill: Color => new(Circle.fill);

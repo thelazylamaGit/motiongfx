@@ -1,20 +1,29 @@
-//! Rectangle state, authoring and typed subject access.
+//! [`Rectangle`]: rectangles, optionally with rounded corners.
 use crate::*;
 use motiongfx::prelude::SubjectSource;
-/// Rectangle centered on its position. Coordinates are logical canvas units,
-/// positive y points up, and rotation is counterclockwise in radians.
-/// Scale changes geometry without changing the stroke width.
+/// A rectangle centred on its position. Create one with [`Rectangle::new`].
+/// Scale changes its size but not its stroke width.
 #[derive(Clone)]
 pub struct Rectangle {
+    /// Width and height in canvas units.
     pub size: Size,
+    /// Centre, in canvas units (y up).
     pub position: Point,
+    /// Fill colour.
     pub fill: Color,
+    /// Outline colour.
     pub stroke: Color,
+    /// Outline width in canvas units.
     pub stroke_width: f64,
+    /// How open stroke ends and dash ends are drawn.
     pub line_cap: crate::Cap,
+    /// How stroke corners are drawn.
     pub line_join: crate::Join,
+    /// Uniform scale; 1 is normal size.
     pub scale: f64,
+    /// Rotation in radians, counterclockwise.
     pub rotation: f64,
+    /// Corner radius in canvas units; 0 for sharp corners.
     pub radius: f64,
 }
 
@@ -36,8 +45,8 @@ impl Default for Rectangle {
 }
 
 impl Rectangle {
-    /// Create initial rectangle state with the remaining properties defaulted.
-    /// Register this value with `Scene::add` to obtain animation handles.
+    /// A white `width` by `height` rectangle; set other fields with the
+    /// builder methods, then pass it to `scene.add`.
     pub fn new<M: Model2d>(
         width: f64,
         height: f64,
@@ -48,7 +57,7 @@ impl Rectangle {
         })
     }
 
-    /// Create a rectangle from a `(width, height)` tuple, `Vec2`, or `Size`.
+    /// A white rectangle from a `(width, height)` tuple, `Vec2` or `Size`.
     pub fn from_size<M: Model2d>(
         size: impl Into<(f64, f64)>,
     ) -> Object<Self, M> {
@@ -64,14 +73,15 @@ crate::object::properties!(Rectangle;
 crate::object::stroke!(Rectangle);
 crate::object::stroke_options!(Rectangle);
 
-/// Typed subject identity; separate from authoring handles and sampled state.
+/// Identifies one [`Rectangle`] in its scene.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
 pub struct RectangleId(pub(crate) usize);
 
-/// Setup-time property access, rather than the current property values.
-#[derive(Clone, Copy)]
+/// A [`Rectangle`] in a scene, returned by `scene.add`. Its
+/// methods return fields to animate or for other objects to follow.
+#[derive(Clone, Copy, Debug)]
 pub struct RectangleHandle {
     pub(crate) id: RectangleId,
 }
@@ -110,11 +120,13 @@ fn insert_rectangle<M: Model2d>(
 }
 
 impl RectangleId {
+    /// Its position in the scene's storage for this object type.
     pub fn index(self) -> usize {
         self.0
     }
 }
 impl RectangleHandle {
+    /// The object's ID.
     pub fn id(self) -> RectangleId {
         self.id
     }
@@ -129,8 +141,7 @@ impl<M: Model2d> SceneObject<M> for Rectangle {
     }
 }
 
-// Fixed field identity is generated locally; no accessor metadata is stored in
-// each handle. See properties.rs and motiongfx_authoring::Target.
+// Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::fields!(fields, Rectangle, RectangleId;
 fill: Color => new(Rectangle.fill);
 scale: f64 => new(Rectangle.scale);

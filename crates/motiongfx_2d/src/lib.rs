@@ -1,4 +1,9 @@
-//! Portable 2D state and authoring, independent of its renderer.
+//! 2D objects (rectangles, circles, lines, paths, text, triangles and
+//! chevrons), their styles and the camera, for authoring with
+//! `motiongfx_authoring`. Renderers such as `vello_motiongfx` draw the result.
+//!
+//! Import [`prelude`] for the common types. Objects follow signals and
+//! computed values directly:
 //!
 //! ```
 //! use motiongfx::prelude::{ease, ms};
@@ -24,6 +29,21 @@ pub use motiongfx_text::{
 };
 pub use peniko::Color;
 use peniko_motiongfx as _;
+/// A 2D scene being built: add objects, then `compile` it with its
+/// animations.
+///
+/// ```
+/// use motiongfx::prelude::ms;
+/// use motiongfx_2d::prelude::*;
+///
+/// let mut scene = Scene::new();
+/// let dot = scene.add(Circle::new(10.0));
+/// let mut animation = scene.compile([
+///     dot.position_x().to(100.0).over(ms(500)),
+///     dot.fill_to(motiongfx_2d::colors::ORANGE),
+/// ]);
+/// animation.sample(ms(250));
+/// ```
 pub type Scene = motiongfx_authoring::Scene<Graphics>;
 /// One animation in a 2D scene: a change, group or wait. Pass a list of
 /// them to `scene.compile(..)`, or combine them with `chain`/`all`/`flow`.
@@ -31,13 +51,17 @@ pub type Animation = motiongfx_authoring::Animation<Graphics>;
 /// The result of `scene.compile(..)`: the scene with its baked timeline,
 /// ready to sample at any time.
 pub type CompiledScene = motiongfx_authoring::CompiledScene<Graphics>;
+/// A value calculated from signals or other values in a 2D scene.
 pub type Computed<T, M = Graphics> =
     motiongfx_authoring::Computed<World<M>, T>;
 
-/// Static access to a 2D store. Composite models implement this alongside
-/// their other stores; subject reads keep using direct typed vector access.
+/// A model that contains 2D objects. [`Graphics`] is one; a model that
+/// combines 2D with other kinds of objects implements this to expose its
+/// `Graphics`, and can then use every 2D object.
 pub trait Model2d: 'static {
+    /// The 2D objects.
     fn graphics(&self) -> &Graphics;
+    /// The 2D objects, mutably.
     fn graphics_mut(&mut self) -> &mut Graphics;
 }
 impl Model2d for Graphics {
@@ -93,6 +117,7 @@ pub use triangle::{Triangle, TriangleHandle, TriangleId};
 mod wedge;
 pub use access::{CompiledScene2dExt, Scene2dExt};
 pub use rounded_triangle::Geometry;
+/// The types most 2D scenes use: `use motiongfx_2d::prelude::*;`.
 pub mod prelude {
     pub use crate::{
         Animation, Camera, Cap, Chevron, Circle, Color,

@@ -1,4 +1,5 @@
-//! Deferred, source-aware paint targets. Registration is construction work only.
+//! Text selections: part of a text, found by content or byte range, whose
+//! colour and opacity can be animated on their own.
 use crate::*;
 use motiongfx::prelude::{SubjectSource, ThreadSafe, TrackFragment};
 use motiongfx_authoring::{
@@ -10,17 +11,23 @@ use std::{
     panic::Location, sync::Arc, time::Duration,
 };
 
+/// The paint of one selected part of a text.
 #[derive(Clone)]
 pub struct TextSelection {
+    /// Which bytes of the text's content are selected.
     pub range: TextRange,
+    /// Colour of the selected part; starts as the text's fill.
     pub fill: Color,
+    /// Opacity of the selected part, multiplied by the text's own.
     pub opacity: f64,
 }
+/// Identifies one [`TextSelection`] in its scene.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
 pub struct TextSelectionId(usize);
 impl TextSelectionId {
+    /// Its position in [`Graphics::text_selections`].
     pub fn index(self) -> usize {
         self.0
     }
@@ -39,14 +46,15 @@ struct Query {
 #[derive(Default)]
 struct Selections(HashMap<Arc<Query>, TextSelectionId>);
 
-/// Reusable deferred selection. No source lookup or scene mutation occurs here.
-/// Only scheduled selections are validated/registered, before timeline baking.
+/// Part of a text to animate, from `text.select(..)`. The text is searched
+/// when the scene compiles, and only if an animation uses the selection;
+/// `compile` reports a selection that isn't found, with its line.
 #[derive(Clone)]
 pub struct TextSelectionHandle {
     query: Arc<Query>,
     location: &'static Location<'static>,
 }
-/// A deferred selection field, resolved to an ordinary Property during authoring.
+/// The fill or opacity of a [`TextSelectionHandle`], to animate.
 pub struct SelectionProperty<T, F> {
     query: Arc<Query>,
     location: &'static Location<'static>,
@@ -71,16 +79,19 @@ impl TextSelectionHandle {
             marker: PhantomData,
         }
     }
+    /// The selection's colour.
     pub fn fill(
         &self,
     ) -> SelectionProperty<Color, fields::fill::Marker> {
         self.property()
     }
+    /// The selection's opacity.
     pub fn opacity(
         &self,
     ) -> SelectionProperty<f64, fields::opacity::Marker> {
         self.property()
     }
+    /// Animate the selection's colour to `color`.
     #[track_caller]
     pub fn fill_to<M: Model2d>(
         &self,
@@ -88,6 +99,7 @@ impl TextSelectionHandle {
     ) -> motiongfx_authoring::Animation<M> {
         self.fill().to(color)
     }
+    /// Change the selection's colour instantly.
     #[track_caller]
     pub fn set_fill<M: Model2d>(
         &self,
@@ -97,12 +109,13 @@ impl TextSelectionHandle {
     }
 }
 impl TextHandle {
-    /// Describe the first non-overlapping literal occurrence in initial content.
+    /// The first occurrence of `needle` in the text's starting content.
     #[track_caller]
     pub fn select(self, needle: &str) -> TextSelectionHandle {
         self.select_nth(needle, 0)
     }
-    /// Occurrences are zero-based. Repeated equivalent selections share paint state.
+    /// The `occurrence`-th (from 0) occurrence of `needle`. Selections of
+    /// the same characters share one colour and opacity.
     #[track_caller]
     pub fn select_nth(
         self,
@@ -114,7 +127,7 @@ impl TextHandle {
             occurrence,
         })
     }
-    /// Describe a UTF-8 byte range; preparation validates its boundaries.
+    /// A byte range of the content; it must fall on character boundaries.
     #[track_caller]
     pub fn select_range(
         self,
@@ -344,8 +357,7 @@ impl<M: Model2d> SubjectSource<TextSelectionId, TextSelection>
     }
 }
 
-// Fixed field identity is generated locally; no accessor metadata is stored in
-// each handle. See properties.rs and motiongfx_authoring::Target.
+// Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::fields!(fields, TextSelection, TextSelectionId;
 fill: Color => new(TextSelection.fill);
 opacity: f64 => new(TextSelection.opacity);

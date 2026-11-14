@@ -1,14 +1,18 @@
-//! Transform-only anchoring between objects. A parent must already exist in
-//! the same scene; authoring therefore constructs parent links before children.
+//! [`Parent`]: an object that others attach to with `relative_to`, moving,
+//! turning and scaling with it.
 
 use crate::{
     CircleHandle, CircleId, Graphics, RectangleHandle, RectangleId,
 };
 use kurbo::Affine;
 
-#[derive(Clone, Copy)]
+/// An object that others can attach to with `relative_to`. Pass a
+/// rectangle or circle handle; it converts into this.
+#[derive(Clone, Copy, Debug)]
 pub enum Parent {
+    /// A rectangle.
     Rectangle(RectangleId),
+    /// A circle.
     Circle(CircleId),
 }
 
@@ -24,6 +28,8 @@ impl From<CircleHandle> for Parent {
 }
 
 impl Graphics {
+    /// The transform a child of `parent` inherits, including the parent's
+    /// own parents; identity for `None`.
     pub fn parent_transform(&self, parent: Option<Parent>) -> Affine {
         match parent {
             Some(Parent::Rectangle(id)) => {

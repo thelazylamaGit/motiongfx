@@ -1,18 +1,19 @@
-//! 2D conveniences on the shared scene lifecycle.
+//! 2D methods on the shared `Scene` and `CompiledScene` types, plus read
+//! access to [`Graphics`] for renderers.
 use crate::*;
 use motiongfx_authoring::Property;
-/// 2D configuration on the shared authoring scene. Import this trait (or the
-/// prelude) to keep the shared lifecycle independent of camera/background types.
+/// Camera and background setup for a 2D scene. In the prelude.
 pub trait Scene2dExt<M: Model2d> {
-    /// Handles for the single existing camera; repeated calls return the same targets.
+    /// The scene's camera, to animate. Every scene has exactly one.
     fn camera(&self) -> CameraHandle;
-    /// Replace initial camera state; this does not add a second camera.
+    /// Set the camera's starting state, such as following an object.
     fn set_camera(
         &mut self,
         camera: impl SceneObject<M, Handle = CameraHandle>,
     ) -> CameraHandle;
-    /// Fixed color or reactive clear/base color. The last call wins. For a
-    /// fixed color the returned property can be animated with ordinary actions.
+    /// Set the background colour: fixed, or following a signal or computed
+    /// value. The last call wins. Returns the background property, so a
+    /// fixed colour can be animated with `.to(..)`.
     fn set_background(
         &mut self,
         color: impl Into<Input<Color, M>>,
@@ -48,17 +49,30 @@ impl<M: Model2d> Scene2dExt<M> for motiongfx_authoring::Scene<M> {
         background::property()
     }
 }
-/// Read sampled 2D objects by typed handle. Handles must belong to this scene;
-/// the pre-existing ID representation does not enforce scene identity.
+/// Read 2D objects as last sampled, by handle. In the prelude.
+///
+/// # Panics
+///
+/// The object readers panic for a handle from another scene with fewer
+/// objects; one from a scene with more reads the wrong object.
 pub trait CompiledScene2dExt<M: Model2d> {
+    /// The background colour.
     fn background(&self) -> Color;
+    /// The camera.
     fn camera(&self) -> &Camera;
+    /// A rectangle.
     fn rectangle(&self, handle: RectangleHandle) -> &Rectangle;
+    /// A circle, including line tips.
     fn circle(&self, handle: CircleHandle) -> &Circle;
+    /// A triangle, including line tips.
     fn triangle(&self, handle: TriangleHandle) -> &Triangle;
+    /// A chevron, including line tips.
     fn chevron(&self, handle: ChevronHandle) -> &Chevron;
+    /// A line, from a plain or tipped line handle.
     fn line(&self, handle: impl Into<LineHandle>) -> &Line;
+    /// A path.
     fn path(&self, handle: PathHandle) -> &Path;
+    /// A text object.
     fn text(&self, handle: TextHandle) -> &Text;
 }
 impl<M: Model2d> CompiledScene2dExt<M>
@@ -92,48 +106,66 @@ impl<M: Model2d> CompiledScene2dExt<M>
         &self.model().graphics().texts[h.id.0]
     }
 }
+/// Read access for renderers. Each list is indexed by its object IDs'
+/// `index()`.
 impl Graphics {
+    /// The background colour.
     pub fn background(&self) -> Color {
         self.background.0
     }
+    /// The camera.
     pub fn camera(&self) -> &Camera {
         &self.camera
     }
+    /// Every rectangle.
     pub fn rectangles(&self) -> &[Rectangle] {
         &self.rectangles
     }
+    /// Every circle, including line tips.
     pub fn circles(&self) -> &[Circle] {
         &self.circles
     }
+    /// Every triangle, including line tips.
     pub fn triangles(&self) -> &[Triangle] {
         &self.triangles
     }
+    /// Every chevron, including line tips.
     pub fn chevrons(&self) -> &[Chevron] {
         &self.chevrons
     }
+    /// Every line.
     pub fn lines(&self) -> &[Line] {
         &self.lines
     }
+    /// Every path.
     pub fn paths(&self) -> &[Path] {
         &self.paths
     }
+    /// Every text object.
     pub fn texts(&self) -> &[Text] {
         &self.texts
     }
+    /// Every text selection that some animation used.
     pub fn text_selections(&self) -> &[TextSelection] {
         &self.text_selections
     }
+    /// The objects to draw, back to front. Line tips are drawn with their
+    /// line, so they aren't listed.
     pub fn draw_order(&self) -> &[DrawObject] {
         &self.order
     }
+    /// The transform `text` inherits from its parent (identity if none).
     pub fn text_parent_transform(&self, text: &Text) -> Affine {
         self.parent_transform(text.parent)
     }
+    /// The transform `circle` inherits from its parent (identity if none).
     pub fn circle_parent_transform(&self, circle: &Circle) -> Affine {
         self.parent_transform(circle.parent)
     }
 }
 impl Rectangle {
+    /// Where the rectangle's local coordinates sit on the canvas. Scale is
+    /// applied to the size instead, so strokes keep their width.
     pub fn transform(&self) -> Affine {
         Affine::translate((self.position.x, -self.position.y))
             * Affine::rotate(-self.rotation)

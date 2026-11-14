@@ -1,4 +1,4 @@
-//! Portable text state, independent of renderer-owned glyph/layout caches.
+//! [`Text`]: text objects, with real font shaping.
 
 use crate::{
     Color, FontStyle, FontWeight, Parent, Point, SceneObject,
@@ -8,41 +8,60 @@ use crate::{DrawObject, Model2d, World};
 use motiongfx::prelude::SubjectSource;
 use std::sync::Arc;
 
-/// Horizontal alignment relative to the text object's position.
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
+/// Which side of a text block its position anchors.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TextAlign {
+    /// The position is the block's left edge.
     #[default]
     Left,
+    /// The position is the block's centre.
     Center,
+    /// The position is the block's right edge.
     Right,
 }
 
-/// Plain text with its own position, style and transform. Position is the top
-/// of the text block; horizontal anchoring is controlled by `align`.
-/// Defaults to embedded Fira Sans. Family selection and layout are shared across renderers.
+/// A block of text. Create one with [`Text::new`]. The font defaults to the
+/// embedded Fira Sans; share settings between texts with a [`TextStyle`].
+///
+/// [`TextStyle`]: crate::TextStyle
 #[derive(Clone)]
 pub struct Text {
+    /// The text shown.
     pub content: Arc<str>,
+    /// Top of the text block, in canvas units (y up); `align` sets which side.
     pub position: Point,
+    /// Font size in canvas units.
     pub font_size: f64,
+    /// Font family name; Fira Sans is embedded by default.
     pub font_family: Arc<str>,
+    /// Font weight, such as `FontWeight::BOLD`.
     pub font_weight: FontWeight,
+    /// Normal, italic or oblique.
     pub font_style: FontStyle,
+    /// Line height as a multiple of the font size.
     pub line_height: f64,
+    /// Extra space between letters, in canvas units.
     pub letter_spacing: f64,
     /// Equal-width digits for counters and changing values; see `LayoutStyle`.
     pub tabular_numbers: bool,
+    /// Width to wrap lines at, in canvas units; 0 for no wrapping.
     pub wrap_width: f64,
+    /// Text colour.
     pub fill: Color,
+    /// 0 (invisible) to 1 (opaque).
     pub opacity: f64,
+    /// Uniform scale; 1 is normal size.
     pub scale: f64,
+    /// Rotation in radians, counterclockwise.
     pub rotation: f64,
+    /// Which side of the block `position` anchors.
     pub align: TextAlign,
     pub(crate) parent: Option<Parent>,
     pub(crate) selections: Vec<TextSelectionId>,
 }
 
 impl Text {
+    /// White 24-unit text showing `content` (fixed, or a source to follow).
     pub fn new<M: crate::Model2d>(
         content: impl Into<crate::Input<Arc<str>, M>>,
     ) -> crate::Object<Self, M> {
@@ -67,6 +86,7 @@ impl Text {
         })
         .content(content)
     }
+    /// The selections registered on this text, in registration order.
     pub fn selections(&self) -> &[TextSelectionId] {
         &self.selections
     }
@@ -82,32 +102,35 @@ crate::object::properties!(Text;
     }
 );
 impl<M: crate::Model2d> crate::Object<Text, M> {
-    /// Make position local to a rectangle or circle. Its translation, rotation,
-    /// and scale are inherited; text style and local animations stay independent.
-    /// The parent must belong to the same scene as this text.
+    /// Attach to a rectangle or circle already in the scene: `position`
+    /// becomes an offset from it, and the text moves, turns and scales with
+    /// it. Style stays independent.
     pub fn relative_to(mut self, parent: impl Into<Parent>) -> Self {
         self.parent = Some(parent.into());
         self
     }
 }
 
+/// Identifies one [`Text`] in its scene.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
 pub struct TextId(pub(crate) usize);
 impl TextId {
+    /// Its position in the scene's storage for this object type.
     pub fn index(self) -> usize {
         self.0
     }
 }
 
-/// Typed targets. Content is replaced discretely; numeric/style properties
-/// interpolate through the existing MotionGfx machinery.
-#[derive(Clone, Copy)]
+/// A [`Text`] in a scene, returned by `scene.add`. Its
+/// methods return fields to animate or for other objects to follow.
+#[derive(Clone, Copy, Debug)]
 pub struct TextHandle {
     pub(crate) id: TextId,
 }
 impl TextHandle {
+    /// The object's ID.
     pub fn id(self) -> TextId {
         self.id
     }
@@ -150,8 +173,7 @@ pub(crate) fn insert_text<M: Model2d>(
     TextHandle { id }
 }
 
-// Fixed field identity is generated locally; no accessor metadata is stored in
-// each handle. See properties.rs and motiongfx_authoring::Target.
+// Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::fields!(fields, Text, TextId;
 content: Arc<str> => discrete(Text.content);
 font_size: f64 => new(Text.font_size);
@@ -197,7 +219,7 @@ crate::properties::transform_methods!(TextHandle, Text, TextId);
 crate::properties::fill_methods!(TextHandle, Text, TextId);
 
 impl TextHandle {
-    /// Replace plain text at the scheduled time, without a tween or duration.
+    /// Change the text instantly.
     #[track_caller]
     pub fn set_content<M: crate::Model2d>(
         self,

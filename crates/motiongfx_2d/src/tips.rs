@@ -1,11 +1,11 @@
-//! Endpoint placement is separate from the ordinary shape implementation.
+//! Line tips: circles, triangles or chevrons drawn at a line's ends.
 
 use crate::*;
 use motiongfx::prelude::ThreadSafe;
 use std::ops::Deref;
 
-/// Marker for an endpoint without a tip. It has no animation properties.
-#[derive(Clone, Copy, Default)]
+/// No tip at this end.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct NoTip;
 
 #[doc(hidden)]
@@ -23,9 +23,10 @@ mod sealed {
     impl<M: crate::Model2d> Sealed for crate::Object<crate::Triangle, M> {}
     impl<M: crate::Model2d> Sealed for crate::Object<crate::Chevron, M> {}
 }
-/// Supported inline tip descriptions. Registration retains the shape's concrete
-/// handle type. Tips are drawn by their line, not as independent draw entries.
+/// A shape that can be a line tip: a circle, triangle or chevron
+/// description, or [`NoTip`]. Sealed: other types can't implement it.
 pub trait LineTip<M: Model2d = Graphics>: sealed::Sealed {
+    /// The tip's handle, such as a `CircleHandle`, to animate it.
     type Handle: Copy + ThreadSafe;
     #[doc(hidden)]
     fn attach(
@@ -111,7 +112,8 @@ impl EndpointTip {
     }
 }
 
-/// Construction-only wrapper retaining each tip's concrete shape type.
+/// A line description with tips, from `Line::new(..).start_tip(..)`.
+/// Pass it to `scene.add` to get a [`LineTipHandle`].
 #[derive(Clone)]
 pub struct LineWithTips<S = NoTip, E = NoTip, M: Model2d = Graphics> {
     line: Object<Line, M>,
@@ -154,6 +156,7 @@ impl<M: Model2d> Object<Line, M> {
             end_tip: NoTip,
         }
     }
+    /// Attach a shape at the end; see [`start_tip`](Self::start_tip).
     pub fn end_tip<E: LineTip<M>>(
         self,
         tip: E,
@@ -166,6 +169,7 @@ impl<M: Model2d> Object<Line, M> {
     }
 }
 impl<S, E, M: Model2d> LineWithTips<S, E, M> {
+    /// Replace the start tip.
     pub fn start_tip<T: LineTip<M>>(
         self,
         tip: T,
@@ -176,6 +180,7 @@ impl<S, E, M: Model2d> LineWithTips<S, E, M> {
             end_tip: self.end_tip,
         }
     }
+    /// Replace the end tip.
     pub fn end_tip<T: LineTip<M>>(
         self,
         tip: T,
@@ -186,6 +191,7 @@ impl<S, E, M: Model2d> LineWithTips<S, E, M> {
             end_tip: tip,
         }
     }
+    /// Set the line's colour and width (fixed values or sources).
     pub fn stroke(
         mut self,
         color: impl Into<Input<Color, M>>,
@@ -195,12 +201,14 @@ impl<S, E, M: Model2d> LineWithTips<S, E, M> {
         self
     }
 }
-// Forward only construction setters; runtime properties remain ordinary Line
-// properties, reached through the returned handle's Deref implementation.
+// The line's builder setters, forwarded so they still work after a tip
+// is added.
 macro_rules! setters {
     ($($field:ident: $ty:ty),* $(,)?) => {
         impl<S,E,M:Model2d> LineWithTips<S,E,M> {
-            $(pub fn $field(mut self, value: impl Into<Input<$ty,M>>) -> Self {
+            $(
+            #[doc = concat!("Set the line's `", stringify!($field), "` (fixed, or a source to follow).")]
+            pub fn $field(mut self, value: impl Into<Input<$ty,M>>) -> Self {
                 self.line = self.line.$field(value); self
             })*
         }
@@ -211,11 +219,15 @@ setters!(start: Point, end: Point, opacity: f64, stroke_width: f64,
     reveal: f64, line_dash: std::sync::Arc<[f64]>, dash_offset: f64,
     start_offset: f64, end_offset: f64,);
 
-/// Ordinary line properties plus statically typed endpoint shape handles.
-#[derive(Clone, Copy)]
+/// A line with tips in a scene, returned by `scene.add`. Use it like a
+/// [`LineHandle`] (it dereferences to one), and animate the tips through
+/// `start_tip` and `end_tip`.
+#[derive(Clone, Copy, Debug)]
 pub struct LineTipHandle<S, E> {
     pub(crate) line: LineHandle,
+    /// The start tip's handle ([`NoTip`] if none).
     pub start_tip: S,
+    /// The end tip's handle ([`NoTip`] if none).
     pub end_tip: E,
 }
 impl<S, E> Deref for LineTipHandle<S, E> {

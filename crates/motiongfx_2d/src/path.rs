@@ -1,27 +1,40 @@
-//! Stroked paths. Geometry is shared, while small reveal/style state is sampled.
+//! [`Path`]: stroked curves and polylines that can be drawn on gradually.
 
 use crate::{Color, DrawObject, Point, SceneObject};
 pub use kurbo::BezPath;
 use motiongfx::prelude::{SubjectSource, path};
 use std::sync::Arc;
 
+/// A stroked curve or polyline. Animate `end` from 0 to 1 to draw it on.
 #[derive(Clone)]
 pub struct Path {
+    /// The path's shape, shared between copies.
     pub geometry: Arc<BezPath>,
+    /// Offset of the path's coordinates, in canvas units (y up).
     pub position: Point,
+    /// Line colour.
     pub stroke: Color,
+    /// Line width in canvas units.
     pub stroke_width: f64,
+    /// How open stroke ends and dash ends are drawn.
     pub line_cap: crate::Cap,
+    /// How stroke corners are drawn.
     pub line_join: crate::Join,
+    /// 0 (invisible) to 1 (opaque).
     pub opacity: f64,
+    /// Uniform scale; 1 is normal size.
     pub scale: f64,
+    /// Rotation in radians, counterclockwise.
     pub rotation: f64,
+    /// Where the visible part starts, from 0 (path start) to 1 (end).
     pub start: f64,
+    /// Where the visible part ends, from 0 (path start) to 1 (end).
     pub end: f64,
 }
 
 impl Path {
-    /// Exact quadratic geometry, rather than sampling a polyline.
+    /// A quadratic Bézier curve; each point can be fixed or follow a
+    /// source.
     pub fn quadratic<M: crate::Model2d>(
         start: impl Into<crate::Input<Point, M>>,
         control: impl Into<crate::Input<Point, M>>,
@@ -59,8 +72,8 @@ impl Path {
         object
     }
 
-    /// Change a quadratic only when its control points differ. Fixed geometry
-    /// is reused through pauses and repeated samples; style/reveal stay intact.
+    /// Replace the geometry with a quadratic curve, unless it already is
+    /// this curve. Style and visible range are kept.
     pub fn set_quadratic(
         &mut self,
         start: impl Into<Point>,
@@ -81,7 +94,7 @@ impl Path {
         geometry.quad_to(control, end);
     }
 
-    /// Create a polyline from canvas points (positive y points up).
+    /// A polyline through `points`, in canvas units (y up).
     pub fn new<M: crate::Model2d, P: Into<Point>>(
         points: impl IntoIterator<Item = P>,
     ) -> crate::Object<Self, M> {
@@ -96,7 +109,7 @@ impl Path {
         Self::from_bez_path(geometry)
     }
 
-    /// Use arbitrary line, quadratic or cubic geometry generated in Rust.
+    /// A path with any geometry built with [`BezPath`].
     pub fn from_bez_path<M: crate::Model2d>(
         geometry: BezPath,
     ) -> crate::Object<Self, M> {
@@ -133,21 +146,26 @@ crate::object::properties!(Path;
 crate::object::stroke!(Path);
 crate::object::stroke_options!(Path);
 
+/// Identifies one [`Path`] in its scene.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
 pub struct PathId(pub(crate) usize);
 impl PathId {
+    /// Its position in the scene's storage for this object type.
     pub fn index(self) -> usize {
         self.0
     }
 }
 
-#[derive(Clone, Copy)]
+/// A [`Path`] in a scene, returned by `scene.add`. Its
+/// methods return fields to animate or for other objects to follow.
+#[derive(Clone, Copy, Debug)]
 pub struct PathHandle {
     pub(crate) id: PathId,
 }
 impl PathHandle {
+    /// The object's ID.
     pub fn id(self) -> PathId {
         self.id
     }
@@ -185,8 +203,7 @@ impl<M: crate::Model2d> SubjectSource<PathId, Path>
     }
 }
 
-// Fixed field identity is generated locally; no accessor metadata is stored in
-// each handle. See properties.rs and motiongfx_authoring::Target.
+// Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::fields!(fields, Path, PathId;
 stroke: Color => new(Path.stroke);
 stroke_width: f64 => new(Path.stroke_width);

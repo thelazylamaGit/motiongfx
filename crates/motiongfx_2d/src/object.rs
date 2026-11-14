@@ -77,8 +77,7 @@ where
         self.0.insert_into(scene)
     }
 }
-// Each generated setter accepts a fixed value or a typed source. Only dynamic
-// inputs add wiring; no extra evaluator is installed for ordinary constants.
+// One builder setter per field. Each takes a fixed value or a source.
 macro_rules! properties {
     ($state:ident; $($field:ident: $value:ty),* $(,)?;
         style $style:ident { $($styled:ident: $style_value:ty),* $(,)? }) => {
@@ -89,7 +88,9 @@ macro_rules! properties {
     };
     ($state:ident; $($field:ident: $value:ty),* $(,)?) => {
         impl<M:crate::Model2d> crate::Object<$state,M> {
-            $(pub fn $field(self, value: impl Into<crate::Input<$value,M>>) -> Self {
+            $(
+            #[doc = concat!("Set `", stringify!($field), "`: a fixed value, or a signal, computed value or property for it to follow.")]
+            pub fn $field(self, value: impl Into<crate::Input<$value,M>>) -> Self {
                 self.property(value, motiongfx::path!($state.$field), |handle| handle.$field().into())
             })*
         }
@@ -100,6 +101,7 @@ pub(crate) use properties;
 macro_rules! stroke {
     ($state:ident) => {
         impl<M: crate::Model2d> crate::Object<$state, M> {
+            /// Set the outline colour and width (fixed values or sources).
             pub fn stroke(
                 self,
                 color: impl Into<crate::Input<crate::Color, M>>,
@@ -121,12 +123,12 @@ macro_rules! stroke {
 }
 pub(crate) use stroke;
 
-// Opt in only for shapes where stroke endpoints/corners are meaningful.
+// Cap and join setters, for shapes whose strokes have ends or corners.
 macro_rules! stroke_options {
     ($state:ident) => {
         impl<M: crate::Model2d> crate::Object<$state, M> {
-            /// Stroke/dash endpoints: butt, square or round. Closed outlines
-            /// have no endpoints. This does not round the shape's filled geometry.
+            /// How open stroke ends and dash ends are drawn: butt, square or
+            /// round (the default). Closed outlines have no ends.
             pub fn line_cap(
                 self,
                 value: impl Into<crate::Input<crate::Cap, M>>,
@@ -137,8 +139,8 @@ macro_rules! stroke_options {
                     |handle| handle.line_cap().into(),
                 )
             }
-            /// Stroke corners: miter, bevel or round. This changes the outline,
-            /// not the underlying filled shape. Defaults to round.
+            /// How stroke corners are drawn: miter, bevel or round (the
+            /// default). The fill keeps its sharp corners.
             pub fn line_join(
                 self,
                 value: impl Into<crate::Input<crate::Join, M>>,

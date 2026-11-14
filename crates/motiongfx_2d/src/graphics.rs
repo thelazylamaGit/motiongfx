@@ -1,5 +1,8 @@
-//! Typed, renderer-independent 2D storage in draw order.
+//! [`Graphics`]: the 2D model that stores a scene's objects.
 use crate::*;
+/// The 2D model: every object in a scene, by type, plus the camera,
+/// background and draw order. `motiongfx_2d::Scene` uses it as its model;
+/// renderers read it through its accessor methods.
 #[derive(Default)]
 pub struct Graphics {
     pub(crate) background: background::Background,
@@ -15,13 +18,21 @@ pub struct Graphics {
     pub(crate) order: Vec<DrawObject>,
 }
 
-#[derive(Clone, Copy)]
+/// One entry in [`Graphics::draw_order`]: which object to draw next.
+#[derive(Clone, Copy, Debug)]
 pub enum DrawObject {
+    /// A triangle.
     Triangle(TriangleId),
+    /// A chevron.
     Chevron(ChevronId),
+    /// A rectangle.
     Rectangle(RectangleId),
+    /// A circle.
     Circle(CircleId),
+    /// A line, with its tips.
     Line(LineId),
+    /// A path.
     Path(PathId),
+    /// A text object.
     Text(TextId),
 }

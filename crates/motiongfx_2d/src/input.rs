@@ -1,4 +1,4 @@
-//! Model-specific conversions over shared, prepared reactive inputs.
+//! [`Input`]: what 2D builder setters accept.
 use crate::{
     Computed, Graphics, Model2d, Point, Signal, Size, Vec2, World,
 };
@@ -6,6 +6,9 @@ use motiongfx::prelude::{SubjectSource, ThreadSafe};
 use motiongfx::subject::SubjectId;
 use motiongfx_authoring::{BindingPlan, Property, Source};
 use std::sync::Arc;
+/// A value for a builder setter: fixed (`10.0`, `(1.0, 2.0)`, a colour)
+/// or a source to follow (`&signal`, a computed value or another object's
+/// property). Setters take `impl Into<Input<..>>`, so you rarely name it.
 pub struct Input<T, M = Graphics>(
     pub(crate) motiongfx_authoring::Input<M, T>,
 );
@@ -23,6 +26,7 @@ impl<T, M> Input<T, M> {
     fn fixed(value: T) -> Self {
         Self(motiongfx_authoring::Input::Fixed(value))
     }
+    /// The value, if this input is fixed.
     pub fn as_fixed(&self) -> Option<&T> {
         self.0.as_fixed()
     }

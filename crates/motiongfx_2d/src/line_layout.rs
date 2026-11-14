@@ -1,27 +1,34 @@
-//! Shared endpoint placement, reveal and shaft trimming for any 2D renderer.
+//! Where a line's visible shaft and tips go, for renderers to draw.
 use crate::{
     EndpointTip, Geometry, Graphics, Line, Point, TriangleId,
 };
 
-/// Visible shaft and endpoint placements, in y-up canvas coordinates.
-/// This small value contains no allocated geometry or renderer commands.
+/// Where to draw a line, after trimming, reveal and room for its tips, in
+/// canvas units (y up).
 pub struct LineLayout {
+    /// The visible part of the line, if any is left.
     pub shaft: Option<(Point, Point)>,
+    /// The start and end tips, if present and visible.
     pub tips: [Option<TipPlacement>; 2],
 }
 
-/// An attached shape's frame; the shape's own transform is local to this frame.
+/// Where one tip goes. The tip shape's own position, rotation and scale are
+/// applied on top of this.
 pub struct TipPlacement {
+    /// Which shape the tip is.
     pub tip: EndpointTip,
+    /// The point the tip sits on.
     pub position: Point,
+    /// The direction the tip faces (outwards along the line), in radians.
     pub rotation: f64,
+    /// Shrinks tips that don't fit on a short line; 1 when they fit.
     pub scale: f64,
 }
 
 impl Line {
-    /// Resolve portable line geometry. The adapter supplies prepared triangle
-    /// geometry so filled-tip trimming uses the same curved boundary as drawing.
-    /// Ordinary lines take a fast path without length/orientation calculations.
+    /// Work out where to draw this line and its tips, or `None` if nothing
+    /// is visible. `triangle_geometry` gives a triangle tip's outline, so the
+    /// line stops where a rounded triangle's edge actually is.
     pub fn layout(
         &self,
         graphics: &Graphics,

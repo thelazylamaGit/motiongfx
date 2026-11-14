@@ -1,4 +1,4 @@
-//! Filled triangle state, typed targets and rounded geometry.
+//! [`Triangle`]: a filled arrowhead, optionally with rounded corners.
 use crate::rounded_triangle::{self, Geometry};
 use crate::{Color, DrawObject, Object, Point, SceneObject, World};
 use kurbo::Affine;
@@ -7,13 +7,14 @@ use motiongfx::prelude::SubjectSource;
 crate::wedge::wedge!(Triangle, TriangleHandle, TriangleId, triangles, triangle, true, radius => triangle_geometry);
 
 impl Triangle {
+    /// The outline in local coordinates, with rounded corners if `radius`
+    /// is set.
     pub fn geometry(&self) -> Geometry {
         rounded_triangle::rounded(self.vertices(), self.radius)
     }
 }
 
-// Fixed field identity is generated locally; no accessor metadata is stored in
-// each handle. See properties.rs and motiongfx_authoring::Target.
+// Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::fields!(fields, Triangle, TriangleId;
 position: Point => new(Triangle.position);
 position_x: f64 => new(Triangle.position.x);

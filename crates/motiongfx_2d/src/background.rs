@@ -1,4 +1,4 @@
-//! Scene background state, consumed as the renderer's clear/base color.
+//! The scene's background colour, which renderers clear the frame with.
 
 use crate::Color;
 use motiongfx::prelude::{SubjectSource, path};
@@ -11,6 +11,7 @@ impl Default for Background {
     }
 }
 
+/// Identifies the scene's background colour.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]

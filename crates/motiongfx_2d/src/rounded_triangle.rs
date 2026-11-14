@@ -1,10 +1,12 @@
-//! Circular corner fillets for closed triangles. Coordinates are y-up.
-//! Fixed-capacity paths avoid allocating a buffer while constructing geometry.
+//! [`Geometry`]: triangle and chevron outlines, including rounded corners.
+//! Stored inline (at most 11 path elements), so building one doesn't
+//! allocate.
 
 use crate::Point;
 use kurbo::{Affine, ParamCurveExtrema, PathEl, segments};
 
-#[derive(Clone, Copy)]
+/// A triangle or chevron outline in local coordinates (y up).
+#[derive(Clone, Copy, Debug)]
 pub struct Geometry {
     elements: [PathEl; 11],
     len: usize,
@@ -34,9 +36,11 @@ impl Geometry {
         path.push(PathEl::LineTo(b));
         path
     }
+    /// The outline's path elements.
     pub fn elements(&self) -> &[PathEl] {
         &self.elements[..self.len]
     }
+    /// The same outline with y flipped, for renderers whose y points down.
     pub fn canvas(mut self) -> Self {
         for element in &mut self.elements[..self.len] {
             let flip = |p: Point| Point::new(p.x, -p.y);
@@ -54,6 +58,9 @@ impl Geometry {
         }
         self
     }
+    /// How far the outline, placed at `position` with `rotation` and
+    /// `scale`, reaches back along -x from the origin; used to trim a line
+    /// to meet a tip.
     pub fn extent(
         &self,
         position: Point,

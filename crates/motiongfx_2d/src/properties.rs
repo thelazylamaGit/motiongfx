@@ -1,15 +1,19 @@
 //! Macros declaring each object's typed fields and handle methods.
 
-// Declare field identity beside the owning object. Markers contain no data;
-// only a Target's subject ID occupies storage. General Property expansion is
-// shared with the ordinary animation/binding implementation.
+// Declares a module of field markers for one object type, next to the
+// object. `$method` is `new` (smooth) or `discrete`.
 macro_rules! fields {
     ($module:ident, $state:ty, $id:ty; $( $name:ident: $value:ty => $method:ident($($path:tt)+); )*) => {
+        #[doc = concat!("The animatable fields of [`", stringify!($state), "`].")]
         pub mod $module {
             use super::*;
-            $(pub mod $name {
+            $(
+            #[doc = concat!("The `", stringify!($name), "` field.")]
+            pub mod $name {
                 use super::*;
+                #[doc = concat!("Identifies the `", stringify!($name), "` field.")]
                 pub struct Marker;
+                #[doc = concat!("The `", stringify!($name), "` field of one object.")]
                 pub type Target = motiongfx_authoring::Target<$id,$state,$value,Marker>;
                 impl motiongfx_authoring::Field<$state,$value> for Marker {
                     fn property<I:Copy>(id:I)->motiongfx_authoring::Property<I,$state,$value> {
@@ -22,11 +26,13 @@ macro_rules! fields {
 }
 pub(crate) use fields;
 
-// Getter methods materialize only one typed target; each object handle owns one ID.
+// One getter per field on an object handle.
 macro_rules! handle_methods {
     ($handle:ident, $state:ty, $id:ty; $($name:ident: $value:ty;)*) => {
         impl $handle {
-            $(pub fn $name(self) -> fields::$name::Target {
+            $(
+            #[doc = concat!("The object's `", stringify!($name), "`, to animate (`.to(..)`) or for other objects to follow.")]
+            pub fn $name(self) -> fields::$name::Target {
                 motiongfx_authoring::Target::new(self.id)
             })*
         }
@@ -37,7 +43,7 @@ pub(crate) use handle_methods;
 macro_rules! fill_methods {
     ($handle:ident,$state:ty,$id:ty) => {
         impl $handle {
-            /// Animate fill using the scene defaults unless timed.
+            /// Animate the fill colour to `color`.
             #[track_caller]
             pub fn fill_to<M: crate::Model2d>(
                 self,
@@ -45,7 +51,7 @@ macro_rules! fill_methods {
             ) -> motiongfx_authoring::Animation<M> {
                 self.fill().to(color)
             }
-            /// Replace fill at the scheduled time without consuming duration.
+            /// Change the fill colour instantly.
             #[track_caller]
             pub fn set_fill<M: crate::Model2d>(
                 self,
@@ -61,7 +67,7 @@ pub(crate) use fill_methods;
 macro_rules! transform_methods {
     ($handle:ident,$state:ty,$id:ty) => {
         impl $handle {
-            /// Offset position from its action-start value.
+            /// Move by `(x, y)` from wherever the object is when this starts.
             #[track_caller]
             pub fn shift<M: crate::Model2d>(
                 self,
@@ -70,6 +76,7 @@ macro_rules! transform_methods {
             ) -> motiongfx_authoring::Animation<M> {
                 self.position().offset((x, y))
             }
+            /// Move horizontally by `x`.
             #[track_caller]
             pub fn shift_x<M: crate::Model2d>(
                 self,
@@ -77,6 +84,7 @@ macro_rules! transform_methods {
             ) -> motiongfx_authoring::Animation<M> {
                 self.position_x().offset(x)
             }
+            /// Move vertically by `y` (up is positive).
             #[track_caller]
             pub fn shift_y<M: crate::Model2d>(
                 self,
@@ -84,7 +92,7 @@ macro_rules! transform_methods {
             ) -> motiongfx_authoring::Animation<M> {
                 self.position_y().offset(y)
             }
-            /// Multiply scale from its action-start value.
+            /// Scale by `factor` relative to the current scale.
             #[track_caller]
             pub fn scale_by<M: crate::Model2d>(
                 self,
@@ -92,7 +100,7 @@ macro_rules! transform_methods {
             ) -> motiongfx_authoring::Animation<M> {
                 self.scale().multiply(factor)
             }
-            /// Offset rotation in counterclockwise radians.
+            /// Rotate by `angle` radians, counterclockwise.
             #[track_caller]
             pub fn rotate<M: crate::Model2d>(
                 self,

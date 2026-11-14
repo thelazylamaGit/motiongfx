@@ -1,4 +1,4 @@
-//! Open chevron state, typed targets and geometry.
+//! [`Chevron`]: an open arrowhead outline.
 use crate::rounded_triangle::Geometry;
 use crate::{Color, DrawObject, Object, Point, SceneObject, World};
 use kurbo::Affine;
@@ -14,9 +14,12 @@ crate::wedge::wedge!(
 );
 
 impl Chevron {
+    /// The outline in local coordinates.
     pub fn geometry(&self) -> Geometry {
         Geometry::sharp_chevron(self.vertices())
     }
+    /// How far the chevron reaches back from its apex along a line, so a
+    /// line tip can trim the line to meet it.
     pub fn extent(&self) -> f64 {
         self.geometry().extent(
             self.position,
@@ -26,8 +29,7 @@ impl Chevron {
     }
 }
 
-// Fixed field identity is generated locally; no accessor metadata is stored in
-// each handle. See properties.rs and motiongfx_authoring::Target.
+// Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::fields!(fields, Chevron, ChevronId;
 position: Point => new(Chevron.position);
 position_x: f64 => new(Chevron.position.x);
