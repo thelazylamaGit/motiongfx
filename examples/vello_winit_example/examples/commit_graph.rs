@@ -72,7 +72,8 @@ fn build_animation() -> motiongfx_2d::CompiledScene {
         Commit::new(&mut scene, (240.0, 60.0), MAUVE),
     ];
 
-    scene.defaults(s(1), ease::linear);
+    scene.defaults(s(1), ease::cubic::ease_in_out);
+
     scene.compile([
         trunk.end().to(1.0).over(ms(800)),
         flow(ms(120), commits.iter().map(Commit::appear)),
