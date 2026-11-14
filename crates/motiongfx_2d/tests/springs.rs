@@ -108,19 +108,24 @@ fn relative_helpers_use_spring_timing_and_preserve_action_start_values()
     }
 }
 
+/// Colours can spring. Channels overshoot past the target (rendering
+/// saturates them), and the spring settles exactly on the target.
 #[test]
-fn colors_can_spring_and_overshoot_stays_a_valid_color() {
+fn colors_can_spring_overshoot_and_settle() {
     let spring = Spring::timed(ms(500)).bounce(0.6);
     let mut scene = Scene::new();
     let dot = scene.add(Circle::new(2.0).fill(Color::BLACK));
     let mut animation =
         scene.compile([dot.fill_to(Color::WHITE).spring(spring)]);
+    let mut peak = 0.0_f32;
     for time in 0..=500 {
         animation.sample(ms(time));
-        for channel in animation.circle(dot).fill.components {
-            assert!((0.0..=1.0).contains(&channel), "{channel}");
-        }
+        peak = peak.max(animation.circle(dot).fill.components[0]);
     }
+    assert!(
+        peak > 1.0,
+        "red channel should overshoot, peaked at {peak}"
+    );
     assert_eq!(animation.circle(dot).fill, Color::WHITE);
 }
 

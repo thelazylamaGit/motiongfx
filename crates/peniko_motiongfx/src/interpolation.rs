@@ -145,16 +145,7 @@ impl Interpolation<Peniko> for RoundedRect {
 }
 
 impl Interpolation<Peniko> for Color {
-    /// Linear blend in sRGB. Progress outside `0..=1` (spring
-    /// overshoot) clamps each channel to `0..=1`, keeping the colour
-    /// valid; within `0..=1` the blend is unchanged.
     fn interp(a: &Self, b: &Self, t: f32) -> Self {
-        let color = a.lerp_rect(*b, t);
-        if (0.0..=1.0).contains(&t) {
-            return color;
-        }
-        Color::new(
-            color.components.map(|channel| channel.clamp(0.0, 1.0)),
-        )
+        a.lerp_rect(*b, t)
     }
 }

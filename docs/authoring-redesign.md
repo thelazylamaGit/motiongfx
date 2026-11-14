@@ -223,12 +223,17 @@ Window::new("Lissajous", CANVAS)
 
 ## 5. Springs
 
-Rule: **anything that interpolates smoothly can spring; each value type
-defines what overshoot means.**
+Rule: **anything that interpolates smoothly can spring; overshoot is the
+value's own extrapolation, not clamped by the animation system.**
 
 - Numbers, points, vectors and sizes extrapolate (overshoot).
-- Colours clamp each channel. A future HSL colour type springs per channel
-  without special handling.
+- Colours extrapolate too: channels briefly leave 0–1 during overshoot, and
+  rendering saturates them (the float-to-8-bit conversion clamps). An alpha
+  overshoot brightens slightly, because colours are premultiplied before that
+  conversion. Tween colours, or spring them in a colour space suited to
+  overshoot (for example a future HSL/Oklch type). An earlier per-channel
+  clamp was removed: rendering already handles it, and the clamp would have
+  changed upstream colour tweens with overshooting easings.
 - Values with valid ranges are clamped where they are used (the renderer
   already clamps opacity).
 - Discrete properties (text content, cap/join, any `Property::discrete` or
@@ -239,8 +244,9 @@ Implementation notes:
 - The spring step uses the property's stored interpolation function, so core's
   `SpringValue<M>` opt-in bound can relax to plain interpolation.
 - Every interpolation must behave sensibly for progress outside `0..=1`.
-  Audit: `Color` (clamp), `Spring` settings (used by `spring_curves`, bounded
-  same-mode interpolation), geometry/size types.
+  Audit: `Color` (extrapolates; saturated when drawn), `Spring` settings
+  (used by `spring_curves`, bounded same-mode interpolation), geometry/size
+  types (extrapolate).
 - No initial velocity or interruption support; unchanged from today.
 
 ## 6. Errors

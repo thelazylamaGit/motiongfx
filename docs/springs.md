@@ -123,10 +123,18 @@ entirely; it does not preserve a prefix or inherit velocity. This initial spring
 implementation neither changes that policy nor adds special overlap rejection.
 General interruption/live retargeting is deferred to future timeline work.
 
-`SpringValue<M>` opts continuous types into overshoot-capable interpolation.
-The core supports f32/f64; Peniko integration supplies Point/Vec2/Size. Discrete
-values, integers and colors do not automatically qualify. Custom integrations
-can opt in with their existing interpolation marker type.
+`SpringValue<M>` opts continuous types into overshoot-capable interpolation
+for core's `ActionBuilder::with_spring`. The core supports f32/f64; Peniko
+integration supplies Point/Vec2/Size. Custom integrations can opt in with their
+existing interpolation marker type.
+
+`InterpActionBuilder::with_spring` instead springs whatever interpolation the
+action already has, with no `SpringValue` bound. Authoring uses it, so any
+interpolated property can spring; only discrete properties are refused.
+Overshoot is the interpolation's own extrapolation: colour channels briefly
+leave 0–1 and rendering saturates them (an alpha overshoot brightens slightly,
+since colours are premultiplied first). Tween colours, or spring them in a
+colour space suited to overshoot.
 
 ## Errors and compatibility
 
