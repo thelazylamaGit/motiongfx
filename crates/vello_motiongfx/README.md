@@ -1,10 +1,10 @@
 # Vello MotionGfx
 
-Vello renderer for [motiongfx_2d](../motiongfx_2d/README.md) sampled objects.
-This crate owns Vello command emission and its path, text and rounded-triangle
-caches. It does not own another Scene, timeline, signal store or object model.
-Portable authoring types are re-exported for import compatibility; new animation
-files should import them from `motiongfx_2d`.
+Draws [motiongfx_2d](../motiongfx_2d/README.md) scenes with Vello. Sample a
+compiled scene, then render it into a `vello::Scene`; the renderer caches path
+geometry, text layout and triangle outlines between frames. It also re-exports
+`motiongfx_2d` for convenience, but import authoring types from `motiongfx_2d`
+directly.
 
 ```rust
 use motiongfx::prelude::s;

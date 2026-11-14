@@ -1,8 +1,6 @@
-//! A seekable example clock, independent of MotionGfx timelines.
-//!
-//! Demos can sample a timeline or calculate a picture directly from
-//! [`PlaybackState::time`]. Stateful simulations must implement their own
-//! reset/replay if they want to reconstruct an earlier time.
+//! The preview's clock and controls. Demos draw from
+//! [`PlaybackState::time`], so seeking works as long as what they draw
+//! depends only on the time.
 
 use std::time::Duration;
 
@@ -16,16 +14,21 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 
 use crate::labels;
 
+/// What playback does when it reaches the end.
 #[derive(Clone, Copy, Debug, Default)]
 pub enum PlaybackMode {
+    /// Stop at the end.
     #[default]
     Once,
+    /// Start again from the beginning.
     Loop,
+    /// Play backwards to the start, then forwards again.
     PingPong,
-    /// Play the introduction once, then repeat the remainder.
+    /// Play the introduction once, then repeat from this time to the end.
     LoopFrom(Duration),
 }
 
+/// How long the preview runs and what happens at the end.
 #[derive(Clone, Copy, Debug)]
 pub struct PlaybackConfig {
     duration: Duration,
@@ -33,7 +36,11 @@ pub struct PlaybackConfig {
 }
 
 impl PlaybackConfig {
-    /// Duration is the preview range; it need not come from a timeline.
+    /// Play `duration` once.
+    ///
+    /// # Panics
+    ///
+    /// If `duration` is zero.
     pub fn new(duration: Duration) -> Self {
         assert!(
             !duration.is_zero(),
@@ -45,6 +52,11 @@ impl PlaybackConfig {
         }
     }
 
+    /// Use `mode` at the end.
+    ///
+    /// # Panics
+    ///
+    /// If a [`PlaybackMode::LoopFrom`] start isn't before the end.
     pub fn with_mode(mut self, mode: PlaybackMode) -> Self {
         if let PlaybackMode::LoopFrom(start) = mode {
             assert!(
@@ -60,13 +72,18 @@ impl PlaybackConfig {
 /// Everything the playback controls draw. The host redraws when it changes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlaybackState {
+    /// The time to show.
     pub time: Duration,
+    /// The total duration.
     pub duration: Duration,
+    /// Whether time is moving.
     pub playing: bool,
+    /// Whether ping-pong playback is on its way back.
     pub reversing: bool,
 }
 
-/// No wall clock or renderer: advancing is explicit and testable.
+/// The preview clock. It doesn't read the system clock: the caller
+/// advances it, which keeps it testable.
 pub struct Playback {
     config: PlaybackConfig,
     phase: f64,
@@ -74,6 +91,7 @@ pub struct Playback {
 }
 
 impl Playback {
+    /// A clock at time zero, playing.
     pub fn new(config: PlaybackConfig) -> Self {
         Self {
             config,
@@ -82,6 +100,8 @@ impl Playback {
         }
     }
 
+    /// Move time on by `delta` if playing, applying the playback mode at
+    /// the end.
     pub fn advance(&mut self, delta: Duration) {
         if !self.playing {
             return;
@@ -106,6 +126,7 @@ impl Playback {
         }
     }
 
+    /// The current time and play state.
     pub fn state(&self) -> PlaybackState {
         let end = self.config.duration.as_secs_f64();
         let reversing =
@@ -125,16 +146,20 @@ impl Playback {
         }
     }
 
-    /// Seek pauses playback. Resuming after a seek moves forward.
+    /// Jump to `time` (clamped to the duration) and pause. Resuming plays
+    /// forwards.
     pub fn seek(&mut self, time: Duration) {
         self.phase = time.min(self.config.duration).as_secs_f64();
         self.pause();
     }
 
+    /// Stop time moving.
     pub fn pause(&mut self) {
         self.playing = false;
     }
 
+    /// Play if paused, pause if playing. Playing from the end of a
+    /// [`PlaybackMode::Once`] preview restarts it.
     pub fn toggle(&mut self) {
         if !self.playing
             && self.phase >= self.config.duration.as_secs_f64()
@@ -146,8 +171,8 @@ impl Playback {
     }
 }
 
-/// A host-owned control strip, using logical WINDOW coordinates. It is
-/// separate from each demo's fitted canvas and its MotionGfx track layout.
+/// The control strip along the bottom of the window, in logical window
+/// coordinates.
 pub(crate) struct PlaybackControls {
     pub clock: Playback,
     cursor: Option<Point>,

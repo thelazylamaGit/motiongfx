@@ -17,6 +17,7 @@
 //! assert_eq!(animation.circle(circle).radius, 15.0);
 //! assert_eq!(animation.circle(circle).position, Point::new(30.0, 0.0));
 //! ```
+#![warn(missing_docs)]
 pub use kurbo::{Affine, Cap, Join, Point, Rect, Size, Vec2};
 pub use motiongfx_authoring::{
     AnimationError, AnimationErrorKind, BindingError, BindingSource,

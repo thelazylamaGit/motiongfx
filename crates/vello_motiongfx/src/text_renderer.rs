@@ -1,4 +1,6 @@
-//! Renderer-owned text caches. Paint and transforms are resolved after layout.
+//! Text drawing: shaped layouts are cached per text object and rebuilt only
+//! when content, font or layout settings change; colour, opacity and
+//! position are applied each frame.
 use crate::{Text, TextAlign, TextSelection};
 use motiongfx_text::{FontSystem, LayoutCache, LayoutStyle};
 use std::ops::Range;

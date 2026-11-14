@@ -1,6 +1,7 @@
 //! Vello rendering for the portable MotionGfx 2D model.
 //! Author scenes with motiongfx_2d; sample with motiongfx_authoring; render here.
 #![doc = include_str!("../README.md")]
+#![warn(missing_docs)]
 pub use motiongfx_2d::*;
 pub mod lettering;
 mod path_renderer;

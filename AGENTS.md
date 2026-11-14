@@ -56,7 +56,9 @@ Follow the Rust API guidelines for doc comments:
 - Start with one sentence saying what the item does or is, in the reader's
   terms. Don't restate the name, and don't list what it doesn't do.
 - Document every public item. Add `# Panics` and `# Errors` sections where
-  they apply, and a short `# Examples` block on main entry points.
+  they apply, and a short `# Examples` block on main entry points. The
+  authoring, 2D, Vello and host crates set `#![warn(missing_docs)]`, so
+  clippy with `-D warnings` fails on an undocumented public item.
 - Comments inside code explain *why*, not what the next line does.
 - Performance notes, measurements and design history belong in `docs/`, not in
   doc comments.

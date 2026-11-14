@@ -1,4 +1,4 @@
-//! Vello command emission. Sampled object types remain renderer-independent.
+//! [`Renderer`]: draws a sampled 2D scene into a `vello::Scene`.
 use crate::*;
 use vello::kurbo::{
     Affine, Circle as CircleShape, Line as LineShape, Stroke,
@@ -275,7 +275,24 @@ trait RenderWedge {
 }
 wedge_renderer!(Triangle, true);
 wedge_renderer!(Chevron, false);
-/// Records Vello commands and owns renderer-specific geometry/text caches.
+/// Draws sampled 2D scenes into a `vello::Scene`. Keep one per window and
+/// reuse it: it caches path geometry, text layout and rounded triangles
+/// between frames and rebuilds an entry only when its object changes.
+///
+/// ```
+/// use motiongfx::prelude::s;
+/// use motiongfx_2d::prelude::*;
+/// use vello_motiongfx::Renderer;
+///
+/// let mut scene = Scene::new();
+/// let dot = scene.add(Circle::new(12.0));
+/// let mut animation = scene.compile([dot.position_x().to(100.0)]);
+/// let mut renderer = Renderer::default();
+/// let mut frame = vello::Scene::new();
+/// let size = Size::new(800.0, 600.0);
+/// animation.sample(s(1));
+/// renderer.render(&animation, &mut frame, size, size, 1.0);
+/// ```
 #[derive(Default)]
 pub struct Renderer {
     text_fonts: Option<motiongfx_text::FontSystem>,
@@ -284,11 +301,14 @@ pub struct Renderer {
     pub(crate) triangle_geometry: Vec<CachedTriangle>,
 }
 impl Renderer {
-    /// Lazily create the shared font/layout resources, including embedded Fira
-    /// Sans. Register application fonts here before rendering font-backed text.
+    /// The fonts text is shaped with (Fira Sans is built in). Register your
+    /// own fonts here before rendering text that uses them.
     pub fn fonts_mut(&mut self) -> &mut motiongfx_text::FontSystem {
         self.text_fonts.get_or_insert_with(Default::default)
     }
+    /// Draw `animation` as last sampled into `scene`. The `canvas` (the
+    /// scene's coordinate space, centred on the origin) is scaled to fit
+    /// `viewport` (logical pixels), then multiplied by `dpi`.
     pub fn render<M: Model2d>(
         &mut self,
         animation: &motiongfx_authoring::CompiledScene<M>,
@@ -305,6 +325,7 @@ impl Renderer {
             dpi,
         );
     }
+    /// Like [`render`](Self::render), from the 2D objects directly.
     pub fn render_graphics(
         &mut self,
         graphics: &Graphics,

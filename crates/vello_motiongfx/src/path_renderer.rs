@@ -1,4 +1,5 @@
-//! Reuse the existing Peniko tracer, caching its output outside sampled state.
+//! Path drawing: the visible part of each path, cached until the path's
+//! geometry or visible range changes.
 
 use crate::Path;
 use peniko_motiongfx::trace::Trace;

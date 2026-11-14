@@ -1,3 +1,23 @@
+//! A native preview window for MotionGfx animations: renders a compiled
+//! scene with Vello and adds play/pause and scrubbing controls.
+//!
+//! ```no_run
+//! use std::time::Duration;
+//! use motiongfx_2d::prelude::*;
+//! use vello_winit_motiongfx::Window;
+//!
+//! let mut scene = Scene::new();
+//! let dot = scene.add(Circle::new(20.0));
+//! let animation = scene.compile([
+//!     dot.position_x().to(200.0).over(Duration::from_millis(800)),
+//! ]);
+//! Window::new("Moving dot", (800.0, 450.0)).run(animation)?;
+//! # Ok::<(), winit::error::EventLoopError>(())
+//! ```
+//!
+//! For custom drawing without a compiled scene, implement [`VelloDemo`]
+//! and run it with [`VelloWinitApp`].
+#![warn(missing_docs)]
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -22,9 +42,8 @@ pub use playback::{
     Playback, PlaybackConfig, PlaybackMode, PlaybackState,
 };
 
-/// Native preview window for an authored animation. Playback duration comes
-/// from the compiled track, including waits; the window has no separate clock
-/// range to keep in sync with the animation.
+/// A preview window for a compiled scene. Playback runs for the
+/// animation's duration.
 pub struct Window {
     title: &'static str,
     canvas: Size,
@@ -33,14 +52,26 @@ pub struct Window {
 }
 
 impl Window {
+    /// A window titled `title` showing a `(width, height)` canvas, centred
+    /// on the origin. The canvas is scaled to fit the window.
+    ///
+    /// # Panics
+    ///
+    /// If the width or height isn't finite and positive.
     pub fn new(
         title: &'static str,
         canvas: impl Into<(f64, f64)>,
     ) -> Self {
         let (width, height) = canvas.into();
         let canvas = Size::new(width, height);
-        assert!(canvas.width.is_finite() && canvas.width > 0.0);
-        assert!(canvas.height.is_finite() && canvas.height > 0.0);
+        assert!(
+            canvas.width.is_finite() && canvas.width > 0.0,
+            "canvas width must be finite and positive, got {width}"
+        );
+        assert!(
+            canvas.height.is_finite() && canvas.height > 0.0,
+            "canvas height must be finite and positive, got {height}"
+        );
         Self {
             title,
             canvas,
@@ -49,13 +80,14 @@ impl Window {
         }
     }
 
+    /// Play once (the default), loop, ping-pong, or loop after an intro.
     pub fn playback_mode(mut self, mode: PlaybackMode) -> Self {
         self.playback_mode = mode;
         self
     }
 
-    /// Use a configured scene renderer, for example with additional font files
-    /// registered through `Renderer::fonts_mut()` before opening the window.
+    /// Draw with `renderer`, for example one with extra fonts registered
+    /// through `Renderer::fonts_mut()`.
     pub fn renderer(
         mut self,
         renderer: vello_motiongfx::Renderer,
@@ -64,6 +96,15 @@ impl Window {
         self
     }
 
+    /// Open the window and play `animation` until the window is closed.
+    ///
+    /// # Errors
+    ///
+    /// If the windowing event loop can't be created or fails.
+    ///
+    /// # Panics
+    ///
+    /// If the window, GPU surface or Vello renderer can't be created.
     pub fn run(
         self,
         animation: motiongfx_2d::CompiledScene,
@@ -124,24 +165,31 @@ impl VelloDemo for AnimationDemo {
     }
 }
 
+/// Custom content for the preview window, drawn directly with Vello from
+/// the playback state. [`Window`] uses this to show a compiled scene;
+/// implement it for drawing that doesn't use one.
 pub trait VelloDemo {
+    /// The window's title.
     fn window_title(&self) -> &'static str;
-    /// Initial drawable size; the host adds space for playback controls.
+    /// The drawing area's starting size in logical pixels; the window
+    /// adds room for the controls below it.
     fn initial_logical_size(&self) -> (f64, f64);
-    /// Clear color, read after rebuild_scene so animated backgrounds use the
-    /// current sample. Preview controls paint their own background over it.
+    /// The colour the frame is cleared to. Read after `rebuild_scene`, so
+    /// it can change with the animation.
     fn background(&self) -> Color {
         Color::from_rgb8(28, 28, 46)
     }
-    /// Drawable area above the host's playback controls, in logical pixels.
+    /// The drawing area (above the controls) changed to `size`, in logical
+    /// pixels.
     fn size_changed(&mut self, size: Size);
-    /// The preview range is independent of MotionGfx: a procedural demo
-    /// can simply choose a duration and draw from `playback.time`.
+    /// How long playback runs and what happens at the end. Defaults to
+    /// 30 seconds, played once.
     fn playback_config(&self) -> PlaybackConfig {
         PlaybackConfig::new(Duration::from_secs(30))
     }
-    /// Draw at the supplied absolute time. The same callback is used for
-    /// ordinary playback and seeking, with no timeline required.
+    /// Draw the frame for `playback.time` into `scene` (already cleared).
+    /// Called for playback and seeking alike, so draw from the time rather
+    /// than from the previous frame.
     fn rebuild_scene(
         &mut self,
         scene: &mut Scene,
@@ -149,10 +197,11 @@ pub trait VelloDemo {
         playback: PlaybackState,
     );
 
-    /// Optional input handling. Cursor positions in `event` are physical
-    /// pixels; divide by `scale_factor` for logical window coordinates.
-    /// Return `true` if the event changed what the demo draws: the host only
-    /// redraws when playback, the window or the demo changes.
+    /// Handle a window event the controls didn't use. Cursor positions are
+    /// in physical pixels; divide by `scale_factor` for logical ones.
+    /// Return `true` if the event changed what the demo draws, so the
+    /// window redraws; it otherwise redraws only for playback and window
+    /// changes.
     fn window_event(
         &mut self,
         _event: &WindowEvent,
@@ -162,27 +211,40 @@ pub trait VelloDemo {
     }
 }
 
+/// The preview application: runs a [`VelloDemo`] in a window with
+/// playback controls. Pass it to winit's `EventLoop::run_app`.
 pub struct VelloWinitApp<'s, D: VelloDemo> {
+    /// Vello's GPU devices and surfaces.
     pub context: RenderContext,
+    /// Vello's renderer, created when the window first appears.
     pub renderer: Option<Renderer>,
+    /// The window and its surface, while it exists.
     pub state: RenderState<'s>,
+    /// The frame being drawn, rebuilt each frame.
     pub scene: Scene,
+    /// The content being shown.
     pub demo: D,
     controls: PlaybackControls,
     last_frame: Instant,
-    /// Hidden behind other windows (reported on macOS, iOS, X11 and web).
+    /// Hidden behind other windows. Not every platform reports this.
     occluded: bool,
 }
 
+/// Whether the app has a window to draw to.
 pub enum RenderState<'s> {
+    /// No surface; holds the window to reuse on resume, if one was made.
     Suspended(Option<Arc<WinitWindow>>),
+    /// Drawing to `window` through `surface`.
     Active {
+        /// The GPU surface.
         surface: Box<RenderSurface<'s>>,
+        /// The window.
         window: Arc<WinitWindow>,
     },
 }
 
 impl<'s, D: VelloDemo> VelloWinitApp<'s, D> {
+    /// An app showing `demo`; the window opens when the event loop starts.
     pub fn new(demo: D) -> Self {
         let controls = PlaybackControls::new(demo.playback_config());
         Self {

@@ -1,7 +1,6 @@
-//! Legacy immediate 5x7 vector lettering, with no font file or shaping engine.
-//! ASCII letters are displayed in uppercase; unknown characters use `?`.
-//! Retained for preview controls and low-level examples. Authored `Text` uses
-//! the font-backed renderer instead; this is not an alternate Text font mode.
+//! A tiny 5x7 pixel font drawn as vector squares, for the preview controls
+//! and the low-level examples. Letters show in uppercase; characters it
+//! doesn't have show as `?`. Scene `Text` uses real fonts instead.
 
 use vello::Scene;
 use vello::kurbo::{Affine, BezPath, Point, Rect, Shape, Size};
@@ -58,6 +57,8 @@ fn glyph(c: char) -> [u8; 7] {
     }
 }
 
+/// Draw `text` with its top-left corner at `origin`, each pixel `size`
+/// units square, in `ink`, transformed by `xf`.
 pub fn draw(
     scene: &mut Scene,
     xf: Affine,
@@ -77,8 +78,8 @@ pub fn draw(
     );
 }
 
-/// Geometry in unit pixel cells. Font size, alignment and object transforms
-/// are applied later, so moving/fading/resizing text reuses this geometry.
+/// The text's pixels as a path in unit cells, and the size it covers.
+/// Size and position are applied when drawing, so the path can be reused.
 pub(crate) fn layout(text: &str) -> (BezPath, Size) {
     let mut path = BezPath::new();
     let mut column_index = 0;

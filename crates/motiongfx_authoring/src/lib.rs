@@ -7,6 +7,7 @@
 //! any time. [`signal`]s and [`computed()`] values drive object fields that
 //! follow other values. A model crate such as `motiongfx_2d` supplies the
 //! objects; see its docs for a complete example.
+#![warn(missing_docs)]
 
 use motiongfx::prelude::*;
 use motiongfx::subject::SubjectId;

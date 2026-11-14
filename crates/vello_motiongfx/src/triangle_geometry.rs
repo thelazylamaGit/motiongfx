@@ -1,7 +1,7 @@
-//! Renderer-owned rounded triangle cache.
+//! Triangle outlines, cached per triangle.
 use motiongfx_2d::Geometry;
-/// Kept outside sampled Triangle state, like the existing path/text caches.
-/// Only size, angle and radius change local geometry; styles/transforms don't.
+/// One triangle's outline, rebuilt only when its size, angle or radius
+/// changes.
 pub struct CachedTriangle {
     key: [f64; 3],
     pub geometry: Geometry,
