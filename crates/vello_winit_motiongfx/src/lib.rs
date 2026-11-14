@@ -151,11 +151,14 @@ pub trait VelloDemo {
 
     /// Optional input handling. Cursor positions in `event` are physical
     /// pixels; divide by `scale_factor` for logical window coordinates.
+    /// Return `true` if the event changed what the demo draws: the host only
+    /// redraws when playback, the window or the demo changes.
     fn window_event(
         &mut self,
         _event: &WindowEvent,
         _scale_factor: f64,
-    ) {
+    ) -> bool {
+        false
     }
 }
 
@@ -167,6 +170,8 @@ pub struct VelloWinitApp<'s, D: VelloDemo> {
     pub demo: D,
     controls: PlaybackControls,
     last_frame: Instant,
+    /// Hidden behind other windows (reported on macOS, iOS, X11 and web).
+    occluded: bool,
 }
 
 pub enum RenderState<'s> {
@@ -188,7 +193,27 @@ impl<'s, D: VelloDemo> VelloWinitApp<'s, D> {
             demo,
             controls,
             last_frame: Instant::now(),
+            occluded: false,
         }
+    }
+
+    fn request_redraw(&self) {
+        if let RenderState::Active { window, .. } = &self.state {
+            window.request_redraw();
+        }
+    }
+
+    /// Whether to keep drawing frames: only while time moves and the
+    /// window is visible. Otherwise the host waits for a change.
+    fn animating(&self) -> bool {
+        let RenderState::Active { window, .. } = &self.state else {
+            return false;
+        };
+        let size = window.inner_size();
+        self.controls.clock.state().playing
+            && !self.occluded
+            && size.width > 0
+            && size.height > 0
     }
 
     fn tick_playback(&mut self) {
@@ -387,6 +412,7 @@ impl<D: VelloDemo> ApplicationHandler for VelloWinitApp<'_, D> {
             window,
         };
         self.last_frame = Instant::now();
+        self.request_redraw();
     }
 
     fn suspended(&mut self, _el: &ActiveEventLoop) {
@@ -403,7 +429,17 @@ impl<D: VelloDemo> ApplicationHandler for VelloWinitApp<'_, D> {
         _id: winit::window::WindowId,
         event: WindowEvent,
     ) {
+        if let WindowEvent::RedrawRequested = event {
+            self.render();
+            // Keep the frame loop going only while playing; vsync paces it.
+            if self.animating() {
+                self.request_redraw();
+            }
+            return;
+        }
         self.tick_playback();
+        let before = self.controls.clock.state();
+        let mut redraw = false;
         if let RenderState::Active { window, .. } = &self.state {
             let scale = window.scale_factor();
             let size = window.inner_size();
@@ -416,9 +452,11 @@ impl<D: VelloDemo> ApplicationHandler for VelloWinitApp<'_, D> {
                 ),
             );
             if !consumed {
-                self.demo.window_event(&event, scale);
+                redraw = self.demo.window_event(&event, scale);
             }
         }
+        // A seek, play/pause or loss of focus changes the picture.
+        redraw |= self.controls.clock.state() != before;
         match event {
             WindowEvent::CloseRequested => el.exit(),
             WindowEvent::Resized(size) => {
@@ -428,7 +466,10 @@ impl<D: VelloDemo> ApplicationHandler for VelloWinitApp<'_, D> {
                 };
                 let scale_factor = window.scale_factor();
                 self.handle_resize(scale_factor, size);
+                // Draw now for smooth resizing; the request also restarts
+                // the frame loop after the window is restored.
                 self.render();
+                redraw = true;
             }
             WindowEvent::ScaleFactorChanged {
                 scale_factor, ..
@@ -441,16 +482,16 @@ impl<D: VelloDemo> ApplicationHandler for VelloWinitApp<'_, D> {
                         window.inner_size(),
                     );
                 }
+                redraw = true;
             }
-            WindowEvent::RedrawRequested => {
-                self.render();
-                if let RenderState::Active { window, .. } =
-                    &self.state
-                {
-                    window.request_redraw();
-                }
+            WindowEvent::Occluded(occluded) => {
+                self.occluded = occluded;
+                redraw |= !occluded;
             }
             _ => {}
+        }
+        if redraw {
+            self.request_redraw();
         }
     }
 }

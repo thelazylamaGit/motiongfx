@@ -57,7 +57,8 @@ impl PlaybackConfig {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+/// Everything the playback controls draw. The host redraws when it changes.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlaybackState {
     pub time: Duration,
     pub duration: Duration,
