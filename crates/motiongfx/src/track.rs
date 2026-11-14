@@ -229,6 +229,13 @@ impl TrackFragment {
         #[cfg(not(feature = "diagnostics"))]
         resolve_conflicts(&mut sequences);
 
+        // After conflict resolution, which picks winners by `ActionId`
+        // rather than list position, and before anything reads a
+        // sequence's first/last clip as its start/end.
+        for (_, sequence) in sequences.iter_mut() {
+            sequence.sort_by_start();
+        }
+
         if sequences.is_empty() {
             return Track {
                 field_lookups: Box::new([]),
@@ -961,6 +968,32 @@ mod tests {
                 .compile();
 
             assert_eq!(baked(&track), [id[0], id[1], id[2]]);
+        }
+
+        /// Parallel branches append clips in authoring order, so one
+        /// field can collect a later-starting clip first. Sampling
+        /// binary-searches the clips and `end()` reads the last one, so
+        /// compile must restore start-time order.
+        #[test]
+        fn clips_authored_out_of_time_order_are_sorted() {
+            let id = ids(2);
+            let track = TrackFragment::new()
+                .upsert_sequence(
+                    key("a"),
+                    seq(&[clip(id[0], 100, 50)]),
+                )
+                .upsert_sequence(key("a"), seq(&[clip(id[1], 0, 50)]))
+                .compile();
+
+            let (_, span) = track.sequences_spans()[0];
+            let starts = track
+                .clips(span)
+                .iter()
+                .map(|clip| clip.start)
+                .collect::<Vec<_>>();
+
+            assert_eq!(starts, [cs(0), cs(100)]);
+            assert_eq!(track.duration(), cs(150));
         }
 
         #[test]

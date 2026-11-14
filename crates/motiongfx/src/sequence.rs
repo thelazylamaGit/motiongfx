@@ -1,5 +1,6 @@
 use core::time::Duration;
 
+use alloc::vec::Vec;
 use nonempty::NonEmpty;
 
 use crate::action::ActionClip;
@@ -46,11 +47,33 @@ impl Sequence {
             clip.start = clip.start.saturating_add(duration);
         }
     }
+
+    /// Puts clips in start-time order (ties by [`ActionId`](crate::action::ActionId)),
+    /// which sampling's binary search relies on.
+    ///
+    /// Clips are appended in authoring order, and parallel branches can
+    /// author a later-starting clip before an earlier one on the same
+    /// field. Lists are usually already ordered, so this is one pass
+    /// with no sort and no allocation.
+    pub(crate) fn sort_by_start(&mut self) {
+        let key = |clip: &ActionClip| (clip.start, clip.id);
+        if self.clips.iter().is_sorted_by_key(key) {
+            return;
+        }
+
+        let mut clips: Vec<ActionClip> =
+            self.clips.iter().copied().collect();
+        clips.sort_unstable_by_key(key);
+        self.clips = NonEmpty::from_vec(clips)
+            .expect("sorting keeps every clip");
+    }
 }
 
 impl Sequence {
-    /// Reports every clip from `first_new` on that starts before the
-    /// clip listed ahead of it, and every earlier clip it overlaps.
+    /// Reports every earlier clip that a clip from `first_new` on
+    /// overlaps. Clips listed out of start-time order are valid (they
+    /// come from parallel branches) and are sorted when the track
+    /// compiles, so only overlaps are reported.
     #[cfg(feature = "tracing")]
     fn report_conflicts_from(&self, first_new: usize) {
         // The latest end time among all clips before the new clips.
@@ -65,20 +88,6 @@ impl Sequence {
         for (index, clip) in
             self.clips.iter().enumerate().skip(first_new)
         {
-            if let Some(prev) = index
-                .checked_sub(1)
-                .and_then(|prev_index| self.clips.get(prev_index))
-                .filter(|prev| clip.start < prev.start)
-            {
-                tracing::error!(
-                    "`ActionClip` {} starts at {:?}, before clip {} at {:?} on the same field",
-                    index,
-                    clip.start,
-                    index - 1,
-                    prev.start,
-                );
-            }
-
             // No earlier clip reaches this clip, so nothing can
             // overlap it and the scan is skipped.
             if clip.start < max_end {

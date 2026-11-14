@@ -102,3 +102,58 @@ fn backward_jump_into_a_gap_holds_the_preceding_clips_end() {
         back.x
     );
 }
+
+/// Parallel branches on one field where the branch authored first
+/// starts later: `late` plays x -> 1 over [1, 2], `early` (authored
+/// second) plays x -> 2 over [0, 0.5]. Neither overlaps, so both must
+/// play, sampling correctly in any seek order.
+#[test]
+fn parallel_branches_authored_out_of_time_order() {
+    let mut registry = Registry::new();
+    let mut builder = registry.create_builder::<World>();
+
+    let late = [
+        TrackFragment::silent(s(1)),
+        builder
+            .act_builder(CUBE, path!(Transform.translation.x), |_| {
+                1.0
+            })
+            .with_interp(lerp_f32)
+            .play(s(1)),
+    ]
+    .ord_chain();
+    let early = builder
+        .act_builder(CUBE, path!(Transform.translation.x), |_| 2.0)
+        .with_interp(lerp_f32)
+        .play(ms(500));
+    let track = [late, early].ord_all();
+
+    let mut timeline = builder.compile(track.compile());
+    let mut world = world_starting_at(Vec3::default());
+    timeline.bake_actions(&registry, &world);
+
+    // Forward through both clips and the gap, then backward to zero.
+    for (millis, expected) in [
+        (250, 1.0),
+        (500, 2.0),
+        (750, 2.0),
+        (1500, 1.5),
+        (2000, 1.0),
+        (1500, 1.5),
+        (750, 2.0),
+        (250, 1.0),
+        (0, 0.0),
+    ] {
+        let x = sample_at(
+            &registry,
+            &mut timeline,
+            &mut world,
+            ms(millis),
+        )
+        .x;
+        assert!(
+            (x - expected).abs() < 1e-3,
+            "t = {millis}ms: x = {x}, expected {expected}"
+        );
+    }
+}
