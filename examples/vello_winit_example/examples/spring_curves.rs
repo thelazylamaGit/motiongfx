@@ -302,3 +302,12 @@ fn main() -> Result<(), winit::error::EventLoopError> {
 #[cfg(test)]
 #[path = "support/spring_curves_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "support/headless.rs"]
+mod headless;
+
+#[test]
+fn builds_and_samples_headlessly() {
+    headless::check(build_animation());
+}

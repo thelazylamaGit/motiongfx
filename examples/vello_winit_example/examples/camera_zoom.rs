@@ -9,7 +9,7 @@ use motiongfx_2d::{
 };
 use vello_winit_motiongfx::Window;
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn build_animation() -> motiongfx_2d::CompiledScene {
     let mut scene = Scene::new();
 
     // Map each Manim unit to 100 logical pixels. Positive y points up.
@@ -22,7 +22,7 @@ fn main() -> Result<(), winit::error::EventLoopError> {
     let camera = scene.camera();
     // Animate the frame's size, not magnification: 1/4 size means 4x
     // magnification. Position and size use the same smooth progress.
-    let animation = scene.compile([
+    scene.compile([
         all([
             camera.scale().to(0.25).over(s(2)),
             camera.position().to_xy(0.0, 300.0).over(s(2)),
@@ -32,10 +32,23 @@ fn main() -> Result<(), winit::error::EventLoopError> {
             camera.scale().to(1.0).over(s(2)),
             camera.position().to_xy(0.0, 0.0).over(s(2)),
         ]),
-    ]);
+    ])
+}
+
+fn main() -> Result<(), winit::error::EventLoopError> {
+    let animation = build_animation();
 
     // The 800px-high canvas leaves room to see the full 600px circle.
     // Shared playback controls stay outside the animated camera view.
     Window::new("MotionGfx | Camera zoom", (1200.0, 800.0))
         .run(animation)
+}
+
+#[cfg(test)]
+#[path = "support/headless.rs"]
+mod headless;
+
+#[test]
+fn builds_and_samples_headlessly() {
+    headless::check(build_animation());
 }

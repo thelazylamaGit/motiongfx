@@ -54,7 +54,7 @@ fn grid(
     lines
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn build_animation() -> motiongfx_2d::CompiledScene {
     let mut scene = Scene::new();
     let guides = signal(0.0);
     let t = signal(0.0);
@@ -209,7 +209,7 @@ fn main() -> Result<(), winit::error::EventLoopError> {
 
     // Chapter changes are timeline events, not a second set of time thresholds.
     scene.defaults(s(1), ease::linear);
-    let animation = scene.compile([
+    scene.compile([
         all(grid_lines.iter().map(|line| {
             line.reveal()
                 .to(1.0)
@@ -230,7 +230,11 @@ fn main() -> Result<(), winit::error::EventLoopError> {
             .set_content("04  SAME MATH AT EVERY TIMELINE POSITION"),
         t.to(1.0).over(ms(1500)).ease(ease::cubic::ease_in_out),
         wait(s(1)),
-    ]);
+    ])
+}
+
+fn main() -> Result<(), winit::error::EventLoopError> {
+    let animation = build_animation();
 
     Window::new(
         "MotionGfx | A curve from three points",
@@ -238,4 +242,13 @@ fn main() -> Result<(), winit::error::EventLoopError> {
     )
     .playback_mode(PlaybackMode::PingPong)
     .run(animation)
+}
+
+#[cfg(test)]
+#[path = "support/headless.rs"]
+mod headless;
+
+#[test]
+fn builds_and_samples_headlessly() {
+    headless::check(build_animation());
 }

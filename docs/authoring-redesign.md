@@ -380,7 +380,7 @@ To migrate:
    tests (`lissajous`, `spring_curves`) keep running.
 4. **Markers in core**, then migrate `lissajous` *(done; `bezier_explainer`
    uses `PingPong`, needed no marker, and was migrated with the others)*.
-5. **Headless test that builds every example's animation.**
+5. **Headless test that builds every example's animation** *(done: `support/headless.rs` samples forwards and backwards and renders a frame; one test per example)*.
 6. **Remove the old API** and migrate remaining tests and doc examples.
 7. **Docs and after-measurements**; one visual pass over the examples.
 

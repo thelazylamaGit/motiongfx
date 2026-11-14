@@ -15,7 +15,7 @@ const SCALE: f64 = 100.0;
 const RED: Color = Color::from_rgb8(225, 50, 56);
 const INK: Color = Color::from_rgb8(36, 36, 36);
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn build_animation() -> motiongfx_2d::CompiledScene {
     let mut scene = Scene::new();
     let radius = signal(3.0);
     let area = radius.map(|r| PI * r * r);
@@ -56,16 +56,29 @@ fn main() -> Result<(), winit::error::EventLoopError> {
 
     // Motion Canvas's default signal tween easing is cubic in/out.
     scene.defaults(s(2), ease::cubic::ease_in_out);
-    let animation = scene.compile([
+    scene.compile([
         radius.to(4.0),
         wait(ms(100)),
         radius.to(3.0),
         wait(s(1)),
-    ]);
+    ])
+}
+
+fn main() -> Result<(), winit::error::EventLoopError> {
+    let animation = build_animation();
 
     Window::new(
         "MotionGfx | Radius and area signals",
         (1280.0, 1000.0),
     )
     .run(animation)
+}
+
+#[cfg(test)]
+#[path = "support/headless.rs"]
+mod headless;
+
+#[test]
+fn builds_and_samples_headlessly() {
+    headless::check(build_animation());
 }

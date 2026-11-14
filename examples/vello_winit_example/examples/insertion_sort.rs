@@ -14,7 +14,7 @@ fn slot(index: usize, count: usize) -> f64 {
     (index as f64 - middle) * 90.0
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn build_animation() -> motiongfx_2d::CompiledScene {
     let mut scene = Scene::new();
 
     scene.add(
@@ -89,8 +89,21 @@ fn main() -> Result<(), winit::error::EventLoopError> {
     }
     steps.push(status.set_content("SORTED / HOLD"));
     steps.push(wait(ms(600)));
-    let animation = scene.compile(steps);
+    scene.compile(steps)
+}
+
+fn main() -> Result<(), winit::error::EventLoopError> {
+    let animation = build_animation();
 
     Window::new("MotionGfx | Insertion sort", (900.0, 600.0))
         .run(animation)
+}
+
+#[cfg(test)]
+#[path = "support/headless.rs"]
+mod headless;
+
+#[test]
+fn builds_and_samples_headlessly() {
+    headless::check(build_animation());
 }

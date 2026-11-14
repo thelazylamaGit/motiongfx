@@ -51,7 +51,7 @@ impl Commit {
     }
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn build_animation() -> motiongfx_2d::CompiledScene {
     let mut scene = Scene::new();
     // Positive y points up here, so negate Canvas Commons' y coordinates.
     let trunk = scene.add(
@@ -73,14 +73,27 @@ fn main() -> Result<(), winit::error::EventLoopError> {
     ];
 
     scene.defaults(s(1), ease::linear);
-    let animation = scene.compile([
+    scene.compile([
         trunk.end().to(1.0).over(ms(800)),
         flow(ms(120), commits.iter().map(Commit::appear)),
         fork.end().to(1.0).over(ms(800)),
         all(commits.iter().map(Commit::pulse)),
         wait(ms(400)),
-    ]);
+    ])
+}
+
+fn main() -> Result<(), winit::error::EventLoopError> {
+    let animation = build_animation();
 
     Window::new("MotionGfx | Commit graph", (960.0, 540.0))
         .run(animation)
+}
+
+#[cfg(test)]
+#[path = "support/headless.rs"]
+mod headless;
+
+#[test]
+fn builds_and_samples_headlessly() {
+    headless::check(build_animation());
 }

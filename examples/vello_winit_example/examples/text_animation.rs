@@ -8,7 +8,7 @@ use motiongfx_2d::{
 };
 use vello_winit_motiongfx::Window;
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn build_animation() -> motiongfx_2d::CompiledScene {
     let mut scene = Scene::new();
     // Fira Sans is embedded by default. Register other font files on the
     // renderer before using their family names; no OS font install is needed.
@@ -22,7 +22,7 @@ fn main() -> Result<(), winit::error::EventLoopError> {
     );
     let words = title.select("words");
     let move_word = title.select("move");
-    let animation = scene.compile([
+    scene.compile([
         all([
             title.opacity().to(1.0).over(ms(600)),
             title.position_y().to(30.0).over(ms(600)),
@@ -33,11 +33,24 @@ fn main() -> Result<(), winit::error::EventLoopError> {
         title.scale().to(1.15).over(ms(600)),
         wait(s(1)),
         title.opacity().to(0.0).over(ms(600)),
-    ]);
+    ])
+}
+
+fn main() -> Result<(), winit::error::EventLoopError> {
+    let animation = build_animation();
 
     Window::new(
         "MotionGfx | Font text and word highlights",
         (1100.0, 500.0),
     )
     .run(animation)
+}
+
+#[cfg(test)]
+#[path = "support/headless.rs"]
+mod headless;
+
+#[test]
+fn builds_and_samples_headlessly() {
+    headless::check(build_animation());
 }

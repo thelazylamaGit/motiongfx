@@ -20,7 +20,8 @@ const DOT_COLOR: Color = Color::from_rgb8(247, 217, 111);
 const CONNECTOR_COLOR: Color = Color::from_rgb8(255, 241, 182);
 const CURVE_COLOR: Color = Color::from_rgb8(244, 211, 69);
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn build_animation()
+-> Result<motiongfx_2d::CompiledScene, motiongfx_2d::SceneError> {
     let mut scene = Scene::new();
     let progress = signal(0.0);
     let orbit = progress.map(|progress| {
@@ -82,10 +83,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Shared calculations run when inputs change, including backward seeks.
     // `try_compile` reports binding cycles/writer conflicts before playback.
-    let animation = scene.try_compile([
+    scene.try_compile([
         progress.to(1.0).over(ms(8500)).ease(ease::linear),
         wait(s(1)),
-    ])?;
+    ])
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let animation = build_animation()?;
 
     Window::new(
         "MotionGfx | Unit circle and sine curve",
@@ -93,4 +98,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .run(animation)?;
     Ok(())
+}
+
+#[cfg(test)]
+#[path = "support/headless.rs"]
+mod headless;
+
+#[test]
+fn builds_and_samples_headlessly() {
+    headless::check(build_animation().expect("valid scene"));
 }
