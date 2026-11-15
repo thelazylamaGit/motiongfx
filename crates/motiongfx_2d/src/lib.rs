@@ -21,9 +21,9 @@
 pub use kurbo::{Affine, Cap, Join, Point, Rect, Size, Vec2};
 pub use motiongfx_authoring::{
     AnimationError, AnimationErrorKind, BindingError, BindingSource,
-    SampleTime, SceneError, SceneObject, Signal, SignalId, Source,
-    Spring, SpringCurve, SpringError, World, all, chain, computed,
-    flow, marker, signal, smooth, wait,
+    SampleTime, SceneError, SceneObject, Signal, SignalId, Simulated,
+    Source, Spring, SpringCurve, SpringError, World, all, chain,
+    computed, flow, marker, signal, smooth, wait,
 };
 pub use motiongfx_text::{
     FontStyle, FontWeight, SelectionError, TextRange,

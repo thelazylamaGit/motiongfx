@@ -1,5 +1,9 @@
 //! [`Scene`] (building) and [`CompiledScene`] (playing), shared by every
 //! model, plus the [`World`] they store objects and signals in.
+use crate::simulation::{
+    DEFAULT_RATE, Simulated, Simulation, SimulationStates, Stepper,
+    step_index, step_time,
+};
 use crate::{
     BindingError, BindingPlan, Property, SignalId, SignalValues,
     SignalWorld, Source,
@@ -62,6 +66,7 @@ impl std::error::Error for SceneError {
 pub struct World<M> {
     model: M,
     signals: SignalValues,
+    pub(crate) simulations: SimulationStates,
     time: Duration,
 }
 impl<M> World<M> {
@@ -229,6 +234,8 @@ pub struct Scene<M> {
     updates: Vec<NativeUpdate<M>>,
     preparation: Vec<(TypeId, Prepare<M>)>,
     defaults: crate::AnimationDefaults,
+    simulations: Vec<Box<dyn Stepper<M>>>,
+    simulation_rate: u32,
 }
 impl<M: Default + 'static> Default for Scene<M> {
     fn default() -> Self {
@@ -248,12 +255,15 @@ impl<M: 'static> Scene<M> {
             world: World {
                 model,
                 signals: SignalValues::default(),
+                simulations: SimulationStates::default(),
                 time: Duration::ZERO,
             },
             bindings: BindingPlan::default(),
             updates: Vec::new(),
             preparation: Vec::new(),
             defaults: crate::AnimationDefaults::default(),
+            simulations: Vec::new(),
+            simulation_rate: DEFAULT_RATE,
         }
     }
     /// Duration and ease for every animation that does not set its own.
@@ -261,6 +271,109 @@ impl<M: 'static> Scene<M> {
     /// including ones built before this call.
     pub fn defaults(&mut self, duration: Duration, ease: EaseFn) {
         self.defaults = crate::AnimationDefaults { duration, ease };
+    }
+    /// How many steps per second every simulation in this scene takes
+    /// (60 unless set). Each step's closure receives `dt = 1 / rate`
+    /// seconds. Read when the scene compiles, so it applies to simulations
+    /// added before this call too.
+    ///
+    /// Keep it at or above the frame rate you play or export at: a frame
+    /// shows the latest step, so a slower rate repeats states.
+    ///
+    /// # Panics
+    ///
+    /// If `steps_per_second` is zero.
+    #[track_caller]
+    pub fn simulation_rate(&mut self, steps_per_second: u32) {
+        assert!(
+            steps_per_second > 0,
+            "a simulation needs at least one step per second"
+        );
+        self.simulation_rate = steps_per_second;
+    }
+    /// A value that advances in fixed steps from its previous state, such
+    /// as a falling ball's height and speed. `step` receives the state to
+    /// change and the step length `dt` in seconds (see
+    /// [`simulation_rate`](Self::simulation_rate)).
+    ///
+    /// The simulation runs once when the scene compiles, from time 0 to the
+    /// scene's end, and stores every step; sampling looks the state up, so
+    /// seeking is exact in both directions. Keep the state small: it is
+    /// stored once per step.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use motiongfx::prelude::s;
+    /// use motiongfx_authoring::{Scene, wait};
+    ///
+    /// let mut scene = Scene::<()>::new();
+    /// // Falls from rest under gravity.
+    /// let height = scene.simulate((100.0, 0.0), |(height, speed): &mut (f64, f64), dt| {
+    ///     *speed -= 9.8 * dt;
+    ///     *height += *speed * dt;
+    /// });
+    /// let mut animation = scene.compile([wait(s(1))]);
+    /// animation.sample(s(1));
+    /// let &(fallen, _) = animation.simulated(height);
+    /// assert!(fallen < 100.0);
+    /// ```
+    pub fn simulate<T, F>(
+        &mut self,
+        initial: T,
+        mut step: F,
+    ) -> Simulated<T>
+    where
+        T: Clone + PartialEq + ThreadSafe,
+        F: FnMut(&mut T, f64) + ThreadSafe,
+    {
+        let handle = self.world.simulations.add(initial);
+        self.simulations.push(Box::new(Simulation {
+            handle,
+            read: |_: &World<M>, _: &BindingPlan<World<M>>| (),
+            step: move |state: &mut T, (), dt| step(state, dt),
+        }));
+        handle
+    }
+    /// Like [`simulate`](Self::simulate), but each step also reads
+    /// `inputs` (a signal, computed value, property, or a tuple of them) as
+    /// they are at that step's time, so the timeline can change what the
+    /// simulation does. `step` receives the state, the inputs' values and
+    /// `dt` in seconds.
+    ///
+    /// # Panics
+    ///
+    /// If `inputs` reads a property that doesn't exist in this scene.
+    #[track_caller]
+    pub fn simulate_with<T, S, F>(
+        &mut self,
+        initial: T,
+        inputs: S,
+        step: F,
+    ) -> Simulated<T>
+    where
+        T: Clone + PartialEq + ThreadSafe,
+        S: Source<World<M>>,
+        F: FnMut(&mut T, S::Value, f64) + ThreadSafe,
+    {
+        let inputs =
+            inputs.register(&mut self.world, &mut self.bindings);
+        self.bindings
+            .validate_source(&self.world, &inputs)
+            .unwrap_or_else(|error| {
+                panic!("invalid simulation input: {error}")
+            });
+        let handle = self.world.simulations.add(initial);
+        self.simulations.push(Box::new(Simulation {
+            handle,
+            read: move |world: &World<M>, bindings: &BindingPlan<World<M>>| {
+                bindings
+                    .read_source(world, &inputs)
+                    .expect("validated simulation input exists")
+            },
+            step,
+        }));
+        handle
     }
     /// The model: the objects added so far.
     pub fn model(&self) -> &M {
@@ -418,6 +531,8 @@ impl<M: 'static> Scene<M> {
             bindings: self.bindings,
             updates: self.updates,
         };
+        animation
+            .run_simulations(self.simulations, self.simulation_rate);
         animation.sample(Duration::ZERO);
         Ok(animation)
     }
@@ -499,6 +614,46 @@ impl<M: 'static> CompiledScene<M> {
         &self,
     ) -> &[(motiongfx::track::MarkerName, Duration)] {
         self.timeline.tracks()[0].markers()
+    }
+    /// The state of `simulation` at the time last sampled.
+    ///
+    /// # Panics
+    ///
+    /// If this scene has no simulation of type `T` at the handle's
+    /// position, as with a handle from another scene.
+    #[track_caller]
+    pub fn simulated<T: 'static>(
+        &self,
+        simulation: Simulated<T>,
+    ) -> &T {
+        self.world
+            .simulations
+            .state(simulation, self.world.time)
+            .expect("the simulation belongs to this scene")
+    }
+    /// Run every simulation from time 0 to the end, `rate` steps per
+    /// second, storing each step. Each step reads its inputs from the
+    /// scene sampled at that step's time.
+    fn run_simulations(
+        &mut self,
+        mut simulations: Vec<Box<dyn Stepper<M>>>,
+        rate: u32,
+    ) {
+        self.world.simulations.set_rate(rate);
+        if simulations.is_empty() {
+            return;
+        }
+        let steps = step_index(self.duration(), rate);
+        let dt = 1.0 / f64::from(rate);
+        for simulation in &simulations {
+            simulation.reserve(&mut self.world, steps);
+        }
+        for index in 0..steps {
+            self.sample(step_time(index, rate));
+            for simulation in &mut simulations {
+                simulation.step(&mut self.world, &self.bindings, dt);
+            }
+        }
     }
     /// Show the scene at `time` (clamped to the duration): apply the
     /// animations, then the bindings, then the `scene.update` callbacks.

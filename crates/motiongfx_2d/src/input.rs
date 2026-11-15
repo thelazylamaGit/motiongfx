@@ -4,7 +4,7 @@ use crate::{
 };
 use motiongfx::prelude::{SubjectSource, ThreadSafe};
 use motiongfx::subject::SubjectId;
-use motiongfx_authoring::{BindingPlan, Property, Source};
+use motiongfx_authoring::{BindingPlan, Property, Simulated, Source};
 use std::sync::Arc;
 /// A value for a builder setter: fixed (`10.0`, `(1.0, 2.0)`, a colour)
 /// or a source to follow (`&signal`, a computed value or another object's
@@ -53,6 +53,20 @@ impl<T, M> From<Signal<T>> for Input<T, M> {
 impl<T: Clone, M> From<&Signal<T>> for Input<T, M> {
     fn from(value: &Signal<T>) -> Self {
         value.clone().into()
+    }
+}
+impl<T: Clone + PartialEq + ThreadSafe, M: Model2d> From<Simulated<T>>
+    for Input<T, M>
+{
+    fn from(value: Simulated<T>) -> Self {
+        Self::mapped(value, std::convert::identity)
+    }
+}
+impl<T: Clone + PartialEq + ThreadSafe, M: Model2d>
+    From<&Simulated<T>> for Input<T, M>
+{
+    fn from(value: &Simulated<T>) -> Self {
+        (*value).into()
     }
 }
 impl<T, M> From<Computed<T, M>> for Input<T, M> {

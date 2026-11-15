@@ -33,6 +33,8 @@ pub use scene::{
 };
 pub use values::SampleTime;
 mod signals;
+mod simulation;
+pub use simulation::Simulated;
 mod source;
 mod spring;
 mod target;
