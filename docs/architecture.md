@@ -268,6 +268,11 @@ ordinary cache checks, bounds/transforms, and Vello recording still take work.
   does not fit property relationships. It runs on **every** sample, after
   bindings, without change caching or dependency ordering between callbacks.
   Keep it for those cases, not as the default for every animated property.
+- `scene.simulate` / `simulate_with` are sources that advance in fixed steps
+  from their previous state (collisions, forces, feedback). They run once at
+  `compile` and are looked up by time, so seeking stays exact. See
+  [simulations.md](simulations.md); deterministic particles are planned in
+  [particles.md](particles.md).
 - The callback `Sequence` API and its `animate!` macro were removed once every
   example and test used `scene.compile`; `computed!` remains.
 

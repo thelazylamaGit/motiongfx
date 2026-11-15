@@ -214,6 +214,21 @@ This is optional native binding support, not automatic dependency tracking or
 a scripting interpreter. The shared `Scene<M>` owns the plan and finalizes it
 during `try_compile` (returns `SceneError`) or `compile` (panics).
 
+## Simulations
+
+`scene.simulate(initial, |state, dt| ..)` and
+`scene.simulate_with(initial, inputs, |state, inputs, dt| ..)` describe values
+that advance in fixed steps from their previous state, such as a bouncing
+ball. They return a `Simulated<T>` source that objects follow like a signal
+(`.map(..)`, or directly as a builder input), without `.to(..)`.
+
+`compile` runs every simulation from time 0 to the scene's end at
+`scene.simulation_rate(..)` steps per second (60 by default), sampling the
+scene at each step so inputs are read at that step's time, and stores every
+step. Sampling looks the state up, so seeking is exact in both directions.
+A simulation-only scene sets its length with `wait`. Storage, costs and
+future checkpointing are in [docs/simulations.md](../../docs/simulations.md).
+
 ## Standalone sources
 
 `signal(initial)` / `Signal::new(initial)` and

@@ -51,6 +51,8 @@ let track = [
 
 - [Native authoring architecture and direction](docs/architecture.md): crate
   boundaries, design decisions, current limitations and future options.
+- [Simulations](docs/simulations.md): fixed-step simulations run at compile
+  and scrubbed like any other value.
 - [`vello_winit_example`](examples/vello_winit_example/README.md): native Rust
   authoring examples with shared Vello/Winit preview and scrubbing controls.
 - [Contributor and agent guidance](AGENTS.md): implementation conventions and
