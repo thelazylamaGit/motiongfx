@@ -14,7 +14,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `lissajous` | Lissajous table | Procedural path construction, reactive reference dots, nested timing, one-time grid intro and a looping curve chapter |
 | `procedural_wave_low_level` | Custom host integration | Direct Vello drawing from preview time; no MotionGfx timeline, with shared pause/seek controls |
 | `insertion_sort` | Canvas Commons sorting | Procedural creation, nested position targets, moving text labels, discrete pass captions |
-| `sorting` | Sorting visualizer | 128 HSL-coloured bars; bubble, selection and insertion sort run at build time and each pass becomes one step moving only the displaced bars |
+| `sorting` | Sorting visualizer | 128 Oklch-coloured bars; bubble, selection and insertion sort run at build time and each pass becomes one step moving only the displaced bars |
 | `insertion_sort_low_level` | Previous annotated version | Same sorting choreography using raw MotionGfx and Vello calls |
 | `commit_graph` | Canvas Commons commit graph | A reusable circle/ring component, path reveal, staggered back easing, ordinary ring scale/opacity tracks |
 | `moving_square` | Manim `MovingAround` | Typed property handles, sequential translation, fill interpolation, relative scale, and rotation |

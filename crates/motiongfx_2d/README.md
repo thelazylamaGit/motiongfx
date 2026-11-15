@@ -48,6 +48,13 @@ camera transforms; playback controls retain their own painted background.
 `.fill(color)` and `.stroke(color, width)` calls customize the initial state;
 struct literals with `..Rectangle::default()` remain supported. Shared
 `colors::{BLUE, ORANGE, WHITE, ...}` constants avoid repeated RGB definitions.
+`colors::{hsl, hsv, oklch}` build a colour from hue, saturation/chroma and
+lightness/value (all 0 to 1 except hue, in degrees); add transparency with
+`.with_alpha(a)` on any colour. Use `oklch` for even-looking gradients. They
+return ordinary sRGB colours, converted once when called. To animate one
+channel, such as hue, keep it in a signal and fill with
+`hue.map(|hue| oklch(0.72, 0.17, hue))`; the colour is only recalculated
+when the signal changes.
 `Rectangle::from_size(size)` also accepts a tuple such as `(160.0, 160.0)`,
 a `Vec2`, or a `Size`.
 `.position((x, y))` sets the initial center and `.radius(value)` sets a corner

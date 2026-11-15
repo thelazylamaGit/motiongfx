@@ -21,10 +21,11 @@
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
     Animation, Color, CompiledScene, Rectangle, RectangleHandle,
-    Scene, Scene2dExt, Text, all, colors::WHITE, wait,
+    Scene, Scene2dExt, Text, all,
+    colors::{WHITE, oklch},
+    wait,
 };
 use std::time::Duration;
-use vello::peniko::color::{AlphaColor, Hsl};
 use vello_winit_motiongfx::Window;
 
 // ---------------------------------------------------------------------------
@@ -156,8 +157,8 @@ fn bar_height(value: usize) -> f64 {
 /// Colour for `value`: hue follows height, so sorted bars form a rainbow.
 fn bar_color(value: usize) -> Color {
     let hue = 360.0 * value as f32 / BAR_COUNT as f32;
-    // HSL takes hue in degrees, saturation and lightness in percent.
-    AlphaColor::<Hsl>::new([hue, 80.0, 62.0, 1.0]).convert()
+    // Oklch keeps every hue equally bright, so the gradient looks even.
+    oklch(0.72, 0.16, hue)
 }
 
 // ---------------------------------------------------------------------------
