@@ -4,13 +4,14 @@
 //! The file reads top to bottom in three parts:
 //!
 //! 1. **The algorithms.** Each is ordinary Rust that sorts a slice in place
-//!    and calls `on_pass` after every pass. They know nothing about
-//!    animation.
+//!    and calls `on_step` after every comparison or swap, with the slot it
+//!    is looking at. They know nothing about animation.
 //! 2. **Layout.** Small functions that turn a slot or a value into a
 //!    position, size or colour.
 //! 3. **The scene.** [`build_animation`] creates the bars, runs every sort
-//!    once, and turns each reported pass into one animation step that moves
-//!    only the bars whose slot changed.
+//!    once, and turns each reported step into a short animation: the active
+//!    bar turns white, holds, then any bars the step swapped move and the
+//!    active bar returns to its colour.
 //!
 //! The sorts run once, while the scene is built. Playback only samples the
 //! finished timeline, which is why scrubbing backwards works.
@@ -48,13 +49,14 @@ const MAX_HEIGHT: f64 = 540.0;
 /// The bars' shared bottom edge (y points up, 0 is the window's centre).
 const BASELINE: f64 = -310.0;
 
-/// How long the bars take to slide to their new slots after each pass of a
+/// How long the bars take to slide to their new slots after each step of a
 /// sort. `Duration::ZERO` makes them jump there instantly.
 const MOVE_TIME: Duration = Duration::ZERO;
-/// Pause after each pass, once its bars have moved. Use this with a
-/// `MOVE_TIME` of zero to step through the passes; with both zero, the
-/// bars jump straight to sorted.
-const PASS_HOLD: Duration = ms(30);
+/// How long each step's active bar stays highlighted before the bars move.
+/// A sort of 128 bars takes several thousand steps, so keep this short.
+const STEP_HOLD: Duration = ms(3);
+/// Colour of the bar a step is looking at.
+const HIGHLIGHT: Color = WHITE;
 /// How long the bars take to scatter before the next algorithm.
 const SHUFFLE_TIME: Duration = ms(800);
 /// Pause before each sort starts.
@@ -66,18 +68,19 @@ const PAUSE_AFTER: Duration = ms(1200);
 // The algorithms
 // ---------------------------------------------------------------------------
 
-/// The callback a sort calls after each pass, with the whole slice in its
-/// current order.
+/// The callback a sort calls after each comparison or swap, with the whole
+/// slice in its current order and the slot it is looking at (its "active"
+/// slot, which the animation highlights).
 ///
 /// It is a mutable reference to a closure (`&mut dyn FnMut`) rather than a
 /// generic `impl FnMut` so every sort has the same concrete type and can be
 /// stored as a plain function pointer in [`Algorithm`].
-type OnPass<'a, T> = &'a mut dyn FnMut(&[T]);
+type OnStep<'a, T> = &'a mut dyn FnMut(&[T], usize);
 
 /// A sorting algorithm and the name shown while it runs.
 struct Algorithm {
     name: &'static str,
-    sort: fn(&mut [usize], OnPass<'_, usize>),
+    sort: fn(&mut [usize], OnStep<'_, usize>),
 }
 
 /// The algorithms to show, in order.
@@ -96,9 +99,11 @@ const ALGORITHMS: &[Algorithm] = &[
     },
 ];
 
-/// Sweeps adjacent pairs, swapping those out of order; each pass carries
-/// the largest remaining value to the end. Stops after a pass with no swaps.
-fn bubble_sort<T: Ord>(values: &mut [T], on_pass: OnPass<'_, T>) {
+/// Sweeps adjacent pairs, swapping those out of order; each sweep carries
+/// the largest remaining value to the end. Stops after a sweep with no
+/// swaps. Reports every comparison, with the larger value of the pair
+/// active.
+fn bubble_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
     for end in (1..values.len()).rev() {
         let mut swapped = false;
         for i in 0..end {
@@ -106,36 +111,42 @@ fn bubble_sort<T: Ord>(values: &mut [T], on_pass: OnPass<'_, T>) {
                 values.swap(i, i + 1);
                 swapped = true;
             }
+            // Swapped or not, the larger of the pair is now at `i + 1`.
+            on_step(values, i + 1);
         }
         if !swapped {
             break;
         }
-        on_pass(values);
     }
 }
 
-/// Swaps the smallest remaining value into the next slot.
-fn selection_sort<T: Ord>(values: &mut [T], on_pass: OnPass<'_, T>) {
+/// Scans for the smallest remaining value and swaps it into the next slot.
+/// Reports each slot the scan looks at, then the swap.
+fn selection_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
     for i in 0..values.len() {
-        // `min_by` returns `None` only for an empty range, and `i..len` is
-        // never empty inside this loop.
-        let smallest = (i..values.len())
-            .min_by(|&a, &b| values[a].cmp(&values[b]))
-            .expect("the range starts below its end");
+        let mut smallest = i;
+        for j in i + 1..values.len() {
+            on_step(values, j);
+            if values[j] < values[smallest] {
+                smallest = j;
+            }
+        }
         values.swap(i, smallest);
-        on_pass(values);
+        on_step(values, i);
     }
 }
 
-/// Moves each value left past the larger values before it.
-fn insertion_sort<T: Ord>(values: &mut [T], on_pass: OnPass<'_, T>) {
+/// Takes each value in turn and moves it left past the larger values before
+/// it. Reports picking the value up, then each step it takes.
+fn insertion_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
     for i in 1..values.len() {
+        on_step(values, i);
         let mut j = i;
         while j > 0 && values[j - 1] > values[j] {
             values.swap(j - 1, j);
             j -= 1;
+            on_step(values, j);
         }
-        on_pass(values);
     }
 }
 
@@ -157,7 +168,6 @@ fn bar_height(value: usize) -> f64 {
 /// Colour for `value`: hue follows height, so sorted bars form a rainbow.
 fn bar_color(value: usize) -> Color {
     let hue = 360.0 * value as f32 / BAR_COUNT as f32;
-    // Oklch keeps every hue equally bright, so the gradient looks even.
     hsl(hue, 1.0, 0.5)
 }
 
@@ -169,7 +179,7 @@ fn bar_color(value: usize) -> Color {
 /// over `duration` (zero jumps instantly).
 ///
 /// Both slices list bar values by slot. Returns `None` when nothing moved,
-/// so a pass that changes nothing adds no step.
+/// such as after a comparison that didn't swap.
 fn move_bars(
     bars: &[RectangleHandle],
     from: &[usize],
@@ -254,13 +264,16 @@ fn build_animation() -> CompiledScene {
         // The sort owns `order` mutably for the call; the closure borrows
         // `bars`, `shown` and `steps`, which are separate variables, so the
         // borrows don't overlap.
-        (algorithm.sort)(&mut order, &mut |current| {
-            if let Some(moves) =
-                move_bars(&bars, &shown, current, MOVE_TIME)
-            {
-                steps.push(moves);
-                steps.push(wait(PASS_HOLD));
-            }
+        (algorithm.sort)(&mut order, &mut |current, active| {
+            let value = current[active];
+            let bar = bars[value];
+            // Highlight the active bar where it was, hold, move whatever
+            // this step swapped, then return the bar to its own colour.
+            steps.push(bar.set_fill(HIGHLIGHT));
+            steps.push(wait(STEP_HOLD));
+            steps
+                .extend(move_bars(&bars, &shown, current, MOVE_TIME));
+            steps.push(bar.set_fill(bar_color(value)));
             shown.copy_from_slice(current);
         });
         debug_assert!(
@@ -268,6 +281,17 @@ fn build_animation() -> CompiledScene {
             "{} left bars unsorted",
             algorithm.name
         );
+
+        steps.push(wait(ms(200)));
+
+        // Sorted now, so value order is left-to-right order: sweep across.
+        for (value, bar) in bars.iter().enumerate() {
+            steps.extend([
+                bar.set_fill(HIGHLIGHT),
+                wait(ms(15)),
+                bar.set_fill(bar_color(value)),
+            ]);
+        }
         steps.push(wait(PAUSE_AFTER));
     }
     scene.compile(steps)
