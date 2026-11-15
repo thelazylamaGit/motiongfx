@@ -1,6 +1,6 @@
 # Vello / Winit examples
 
-`moving_square`, `insertion_sort`, `commit_graph`, `camera_zoom`, `sine_unit_circle`, `lissajous`, `simulations`
+`moving_square`, `insertion_sort`, `sorting`, `commit_graph`, `camera_zoom`, `sine_unit_circle`, `lissajous`, `simulations`
 and `bezier_explainer` / `radius_area` use the plain native
 authoring API: each builds a list of animations and passes it to
 `scene.compile`. The other comparison scenes retain the low-level MotionGfx API.
@@ -14,6 +14,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `lissajous` | Lissajous table | Procedural path construction, reactive reference dots, nested timing, one-time grid intro and a looping curve chapter |
 | `procedural_wave_low_level` | Custom host integration | Direct Vello drawing from preview time; no MotionGfx timeline, with shared pause/seek controls |
 | `insertion_sort` | Canvas Commons sorting | Procedural creation, nested position targets, moving text labels, discrete pass captions |
+| `sorting` | Sorting visualizer | 128 HSL-coloured bars; bubble, selection and insertion sort run at build time and each pass becomes one step moving only the displaced bars |
 | `insertion_sort_low_level` | Previous annotated version | Same sorting choreography using raw MotionGfx and Vello calls |
 | `commit_graph` | Canvas Commons commit graph | A reusable circle/ring component, path reveal, staggered back easing, ordinary ring scale/opacity tracks |
 | `moving_square` | Manim `MovingAround` | Typed property handles, sequential translation, fill interpolation, relative scale, and rotation |
@@ -33,6 +34,7 @@ cargo run -p vello_winit_example --example bezier_explainer
 cargo run -p vello_winit_example --example radius_area
 cargo run -p vello_winit_example --example text_animation
 cargo run -p vello_winit_example --example simulations
+cargo run -p vello_winit_example --example sorting
 ```
 
 The radius/area example mirrors the supplied signal relationships: radius
@@ -118,6 +120,16 @@ cover nested properties, anchoring, text changes, rendering caches and seeking.
 Authored Text uses cached real-font shaping. The original annotated low-level
 version retains the legacy immediate lettering and remains as
 `insertion_sort_low_level` for comparisons.
+
+The **sorting** example shuffles `BAR_COUNT` (128) bars with a seeded
+generator, then sorts them with bubble, selection and insertion sort in turn,
+reshuffling between them; the title names the current algorithm. Bar hue
+follows height, so the sorted bars form a rainbow. Bars are sharp-cornered
+`Rectangle`s: one fill each, no stroke. Each sort is an ordinary generic
+function that calls `on_pass` with the slice after every pass; the scene
+compares it with the previous pass and moves only the bars whose slot changed,
+so a pass that moves nothing adds no step. To add an algorithm, write another
+function with the same signature and list it in `ALGORITHMS`.
 
 Run from the workspace root:
 
