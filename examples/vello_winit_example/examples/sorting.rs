@@ -1,20 +1,35 @@
 //! Sorting algorithms: `BAR_COUNT` bars, coloured by height, start shuffled
 //! and are sorted by each algorithm in turn, reshuffling in between.
 //!
-//! Each algorithm is plain Rust that sorts a slice and reports every pass.
-//! The sorts run once while the scene is built; each reported pass becomes
-//! one step that moves only the bars whose slot changed. To add an
-//! algorithm, write a function with the same signature as [`bubble_sort`]
-//! and list it in [`ALGORITHMS`].
+//! The file reads top to bottom in three parts:
+//!
+//! 1. **The algorithms.** Each is ordinary Rust that sorts a slice in place
+//!    and calls `on_pass` after every pass. They know nothing about
+//!    animation.
+//! 2. **Layout.** Small functions that turn a slot or a value into a
+//!    position, size or colour.
+//! 3. **The scene.** [`build_animation`] creates the bars, runs every sort
+//!    once, and turns each reported pass into one animation step that moves
+//!    only the bars whose slot changed.
+//!
+//! The sorts run once, while the scene is built. Playback only samples the
+//! finished timeline, which is why scrubbing backwards works.
+//!
+//! To add an algorithm, write a function with the same signature as
+//! [`bubble_sort`] and add it to [`ALGORITHMS`].
 
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
-    Color, Rectangle, RectangleHandle, Scene, Scene2dExt, Text, all,
-    colors::WHITE, wait,
+    Animation, Color, CompiledScene, Rectangle, RectangleHandle,
+    Scene, Scene2dExt, Text, all, colors::WHITE, wait,
 };
 use std::time::Duration;
 use vello::peniko::color::{AlphaColor, Hsl};
 use vello_winit_motiongfx::Window;
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
 
 /// Number of bars; any positive count works.
 const BAR_COUNT: usize = 128;
@@ -23,20 +38,36 @@ const SEED: u64 = 0x5EED;
 
 /// Width the bars spread across, in canvas units.
 const SPREAD: f64 = 1200.0;
+/// Distance between the centres of neighbouring bars.
+const PITCH: f64 = SPREAD / BAR_COUNT as f64;
+/// Width of one bar; the rest of the pitch is the gap between bars.
+const BAR_WIDTH: f64 = PITCH * 0.75;
 /// Height of the tallest bar.
 const MAX_HEIGHT: f64 = 540.0;
-/// The bars' shared bottom edge.
+/// The bars' shared bottom edge (y points up, 0 is the window's centre).
 const BASELINE: f64 = -310.0;
 
 /// How long one pass of a sort takes.
 const PASS: Duration = ms(50);
 /// How long the bars take to scatter before the next algorithm.
 const SHUFFLE: Duration = ms(800);
+/// Pause before each sort starts.
+const PAUSE_BEFORE: Duration = ms(500);
+/// Pause to admire the sorted bars before moving on.
+const PAUSE_AFTER: Duration = ms(1200);
 
-/// Called by a sort with the whole slice after each pass.
+// ---------------------------------------------------------------------------
+// The algorithms
+// ---------------------------------------------------------------------------
+
+/// The callback a sort calls after each pass, with the whole slice.
+///
+/// It is a mutable reference to a closure (`&mut dyn FnMut`) rather than a
+/// generic `impl FnMut` so every sort has the same concrete type and can be
+/// stored as a plain function pointer in [`Algorithm`].
 type OnPass<'a, T> = &'a mut dyn FnMut(&[T]);
 
-/// A named sort that reports its passes.
+/// A sorting algorithm and the name shown while it runs.
 struct Algorithm {
     name: &'static str,
     sort: fn(&mut [usize], OnPass<'_, usize>),
@@ -79,6 +110,8 @@ fn bubble_sort<T: Ord>(values: &mut [T], on_pass: OnPass<'_, T>) {
 /// Swaps the smallest remaining value into the next slot.
 fn selection_sort<T: Ord>(values: &mut [T], on_pass: OnPass<'_, T>) {
     for i in 0..values.len() {
+        // `min_by` returns `None` only for an empty range, and `i..len` is
+        // never empty inside this loop.
         let smallest = (i..values.len())
             .min_by(|&a, &b| values[a].cmp(&values[b]))
             .expect("the range starts below its end");
@@ -99,13 +132,17 @@ fn insertion_sort<T: Ord>(values: &mut [T], on_pass: OnPass<'_, T>) {
     }
 }
 
-/// Horizontal centre of the bar in `slot`.
+// ---------------------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------------------
+
+/// Horizontal centre of the bar in `slot`; the middle slot sits at x = 0.
 fn slot_x(slot: usize) -> f64 {
-    let pitch = SPREAD / BAR_COUNT as f64;
-    (slot as f64 - (BAR_COUNT as f64 - 1.0) / 2.0) * pitch
+    (slot as f64 - (BAR_COUNT as f64 - 1.0) / 2.0) * PITCH
 }
 
-/// Height of the bar for `value`, from `0..BAR_COUNT`.
+/// Height of the bar for `value` (`0..BAR_COUNT`); the smallest is still
+/// visible.
 fn bar_height(value: usize) -> f64 {
     (value + 1) as f64 / BAR_COUNT as f64 * MAX_HEIGHT
 }
@@ -113,18 +150,25 @@ fn bar_height(value: usize) -> f64 {
 /// Colour for `value`: hue follows height, so sorted bars form a rainbow.
 fn bar_color(value: usize) -> Color {
     let hue = 360.0 * value as f32 / BAR_COUNT as f32;
+    // HSL takes hue in degrees, saturation and lightness in percent.
     AlphaColor::<Hsl>::new([hue, 80.0, 62.0, 1.0]).convert()
 }
 
-/// Moves every bar whose slot differs between `from` and `to`. Returns
-/// `None` when nothing moved, so empty passes add no step.
+// ---------------------------------------------------------------------------
+// The scene
+// ---------------------------------------------------------------------------
+
+/// Moves each bar from its slot in `from` to its slot in `to`, all at once.
+///
+/// Both slices list bar values by slot. Returns `None` when nothing moved,
+/// so a pass that changes nothing adds no step.
 fn move_bars(
     bars: &[RectangleHandle],
     from: &[usize],
     to: &[usize],
     duration: Duration,
-) -> Option<motiongfx_2d::Animation> {
-    let moves: Vec<_> = to
+) -> Option<Animation> {
+    let moves: Vec<Animation> = to
         .iter()
         .zip(from)
         .enumerate()
@@ -136,9 +180,10 @@ fn move_bars(
     (!moves.is_empty()).then(|| all(moves))
 }
 
-fn build_animation() -> motiongfx_2d::CompiledScene {
+fn build_animation() -> CompiledScene {
     let mut scene = Scene::new();
     scene.set_background(Color::from_rgb8(12, 15, 23));
+    // Every move uses these unless it says otherwise with `.over(..)`.
     scene.defaults(PASS, ease::cubic::ease_in_out);
 
     let title = scene.add(
@@ -154,41 +199,48 @@ fn build_animation() -> motiongfx_2d::CompiledScene {
             .fill(WHITE),
     );
 
+    // A bar's value is its rank: 0 is the shortest, `BAR_COUNT - 1` the
+    // tallest. `order[slot]` is the value in that slot, left to right.
     let mut rng = SplitMix64(SEED);
     let mut order: Vec<usize> = (0..BAR_COUNT).collect();
     rng.shuffle(&mut order);
 
-    // `bars[value]` is the bar showing `value`, wherever it currently is.
+    // `order` maps slot -> value; creating the bars needs value -> slot.
     let mut start_slot = vec![0; BAR_COUNT];
     for (slot, &value) in order.iter().enumerate() {
         start_slot[value] = slot;
     }
-    let bars: Vec<_> = start_slot
+    // `bars[value]` is the bar showing `value`, wherever it is on screen.
+    let bars: Vec<RectangleHandle> = start_slot
         .iter()
         .enumerate()
         .map(|(value, &slot)| {
             let height = bar_height(value);
-            let width = SPREAD / BAR_COUNT as f64 * 0.75;
             scene.add(
-                Rectangle::new(width, height)
+                Rectangle::new(BAR_WIDTH, height)
                     .position((slot_x(slot), BASELINE + height / 2.0))
                     .fill(bar_color(value)),
             )
         })
         .collect();
 
+    // The order as last animated. Each step moves bars from `shown` to the
+    // new order, then updates `shown`; one buffer is reused throughout.
+    let mut shown = order.clone();
     let mut steps = Vec::new();
     for (index, algorithm) in ALGORITHMS.iter().enumerate() {
         if index > 0 {
-            let sorted = order.clone();
             rng.shuffle(&mut order);
             steps.push(title.set_content("Shuffling"));
-            steps.extend(move_bars(&bars, &sorted, &order, SHUFFLE));
-            steps.push(title.set_content(algorithm.name));
+            steps.extend(move_bars(&bars, &shown, &order, SHUFFLE));
+            shown.copy_from_slice(&order);
         }
-        steps.push(wait(ms(500)));
+        steps.push(title.set_content(algorithm.name));
+        steps.push(wait(PAUSE_BEFORE));
 
-        let mut shown = order.clone();
+        // The sort owns `order` mutably for the call; the closure borrows
+        // `bars`, `shown` and `steps`, which are separate variables, so the
+        // borrows don't overlap.
         (algorithm.sort)(&mut order, &mut |pass| {
             steps.extend(move_bars(&bars, &shown, pass, PASS));
             shown.copy_from_slice(pass);
@@ -198,17 +250,17 @@ fn build_animation() -> motiongfx_2d::CompiledScene {
             "{} left bars unsorted",
             algorithm.name
         );
-        steps.push(wait(ms(1200)));
+        steps.push(wait(PAUSE_AFTER));
     }
     scene.compile(steps)
 }
 
 /// A small, seedable pseudo-random generator, so the example needs no
-/// random-number dependency.
+/// random-number dependency. Not suitable for anything security-related.
 struct SplitMix64(u64);
 
 impl SplitMix64 {
-    fn next(&mut self) -> u64 {
+    fn next_u64(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -216,10 +268,13 @@ impl SplitMix64 {
         z ^ (z >> 31)
     }
 
-    /// Fisher–Yates shuffle.
+    /// Fisher–Yates shuffle: every ordering is (almost exactly) equally
+    /// likely.
     fn shuffle<T>(&mut self, items: &mut [T]) {
         for i in (1..items.len()).rev() {
-            let j = (self.next() % (i as u64 + 1)) as usize;
+            // The result is at most `i`, so converting back to `usize`
+            // can't truncate.
+            let j = (self.next_u64() % (i as u64 + 1)) as usize;
             items.swap(i, j);
         }
     }
