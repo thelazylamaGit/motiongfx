@@ -1,6 +1,6 @@
 # Vello / Winit examples
 
-`moving_square`, `insertion_sort`, `commit_graph`, `camera_zoom`, `sine_unit_circle`, `lissajous`
+`moving_square`, `insertion_sort`, `commit_graph`, `camera_zoom`, `sine_unit_circle`, `lissajous`, `simulations`
 and `bezier_explainer` / `radius_area` use the plain native
 authoring API: each builds a list of animations and passes it to
 `scene.compile`. The other comparison scenes retain the low-level MotionGfx API.
@@ -21,6 +21,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `sine_unit_circle` | Manim `SineCurveUnitCircle` | Shared progress signal, `.map`/`computed!` positions, reactive object inputs, and cached path reveal |
 | `bezier_explainer` | Quadratic Bézier lesson | Typed signals/computed values, source-aware object creation, exact quadratic geometry, and ping-pong playback |
 | `text_animation` | Native font text | Embedded Fira Sans, fade/slide/scale and typed word fill/opacity animation |
+| `simulations` | Manim `RotationUpdater` and a bouncing ball | Fixed-step simulations run at compile: one reads a timeline-switched rate, one is free-running physics; both scrub exactly |
 | `radius_area` | Motion Canvas radius/area signals | One animated radius drives circle size, a dashed line with inline triangle tips, label positions and computed area text; labels share a typed `TextStyle` |
 
 ```sh
@@ -31,6 +32,7 @@ cargo run -p vello_winit_example --example sine_unit_circle
 cargo run -p vello_winit_example --example bezier_explainer
 cargo run -p vello_winit_example --example radius_area
 cargo run -p vello_winit_example --example text_animation
+cargo run -p vello_winit_example --example simulations
 ```
 
 The radius/area example mirrors the supplied signal relationships: radius
@@ -180,8 +182,8 @@ the shared preview controls. It is not the recommended scene-authoring pattern;
 use the authored examples for that, or `timeline_wave` for the orchestrated
 MotionGfx wave comparison. Its wave is a pure function of time, so scrubbing
 reconstructs the picture
-directly. Stateful simulations need their own reset/replay or checkpoints
-to reconstruct earlier states; the clock cannot make them seekable alone.
+directly. Stateful simulations belong in `scene.simulate` instead, which runs
+them at compile so they can be scrubbed (see the `simulations` example).
 
 Read `examples/bezier_explainer.rs` in order: reusable grid construction,
 signals/computed geometry, object creation, then the timeline. It uses
