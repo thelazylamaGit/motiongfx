@@ -22,7 +22,7 @@ use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
     Animation, Color, CompiledScene, Rectangle, RectangleHandle,
     Scene, Scene2dExt, Text, all,
-    colors::{WHITE, oklch},
+    colors::{WHITE, hsl},
     wait,
 };
 use std::time::Duration;
@@ -158,7 +158,7 @@ fn bar_height(value: usize) -> f64 {
 fn bar_color(value: usize) -> Color {
     let hue = 360.0 * value as f32 / BAR_COUNT as f32;
     // Oklch keeps every hue equally bright, so the gradient looks even.
-    oklch(0.72, 0.16, hue)
+    hsl(hue, 1.0, 0.5)
 }
 
 // ---------------------------------------------------------------------------
