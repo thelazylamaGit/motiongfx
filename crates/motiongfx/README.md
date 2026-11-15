@@ -110,7 +110,9 @@ or easing setter. `Spring::timed(duration).bounce(...)` fits the full transition
 into exactly that duration; physical and visual modes derive their settling time.
 Springs reserve their full settling duration in ordinary
 track ordering. Existing overlap/conflict rules apply equally to springs and
-other actions; no spring-specific interruption policy is added.
+other actions, including `TrackFragment::interrupting`, which cuts a running
+clip at the interrupter's start (see
+[interruption](../../docs/interruption.md)).
 `SpringValue<M>` opts continuous values into overshooting interpolation; scalars
 are built in and geometry integrations opt in suitable types.
 See [spring contracts and limitations](../../docs/springs.md), including normalized

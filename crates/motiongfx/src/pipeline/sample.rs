@@ -1,6 +1,7 @@
 use crate::ThreadSafe;
 use crate::action::{
-    ActionId, ActionTable, InterpStorage, SampleMode, Segment,
+    ActionId, ActionTable, EaseStorage, InterpStorage, SampleMode,
+    Segment,
 };
 use crate::registry::LensRegistry;
 use crate::spring::SpringStorage;
@@ -69,28 +70,63 @@ where
                 let spring = spring_col.and_then(|col| {
                     table.get_by_column::<SpringStorage>(col, &id)
                 });
-                let t = if let Some(spring) = spring {
-                    spring
-                        .0
-                        .sample(core::time::Duration::from_secs_f64(
-                            t as f64
-                                * spring.0.duration().as_secs_f64(),
-                        ))
-                        .position as f32
-                } else {
-                    match ease {
-                        Some(ease) => ease.0(t),
-                        None => t,
-                    }
-                };
-
-                interp.0(&segment.start, &segment.end, t)
+                value_at(segment, interp, ease, spring, t)
             }
         };
 
         ctx.world.apply_source(sid, |source| {
             *lens.get_mut(source) = target;
         });
+    }
+}
+
+/// The value of an action `progress` (0 to 1) of the way through its
+/// clip: its spring if it has one, otherwise its ease (linear without
+/// one), then its interpolation.
+pub(crate) fn value_at<T>(
+    segment: &Segment<T>,
+    interp: &InterpStorage<T>,
+    ease: Option<&EaseStorage>,
+    spring: Option<&SpringStorage>,
+    progress: f32,
+) -> T {
+    let t = if let Some(spring) = spring {
+        spring
+            .0
+            .sample(core::time::Duration::from_secs_f64(
+                progress as f64 * spring.0.duration().as_secs_f64(),
+            ))
+            .position as f32
+    } else {
+        match ease {
+            Some(ease) => ease.0(progress),
+            None => progress,
+        }
+    };
+
+    interp.0(&segment.start, &segment.end, t)
+}
+
+/// The value an interrupted action had reached when it was cut, `kept`
+/// of the way through its original clip.
+pub(crate) fn cut_value<T: Clone + ThreadSafe>(
+    action_table: &ActionTable,
+    id: ActionId,
+    segment: &Segment<T>,
+    kept: f32,
+) -> T {
+    let table = action_table.table();
+    match table.get::<InterpStorage<T>>(&id) {
+        Some(interp) => value_at(
+            segment,
+            interp,
+            action_table.ease(&id),
+            table.get::<SpringStorage>(&id),
+            kept,
+        ),
+        // Sampling writes nothing for an action without interpolation,
+        // so it only ever shows its end.
+        None => segment.end.clone(),
     }
 }
 

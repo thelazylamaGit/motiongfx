@@ -5,6 +5,7 @@ use crate::ThreadSafe;
 use crate::action::{
     ActionId, ActionTable, Segment, UntypedSubjectId,
 };
+use crate::pipeline::sample::cut_value;
 use crate::registry::LensRegistry;
 use crate::subject::SubjectId;
 use crate::world::SubjectSource;
@@ -41,13 +42,17 @@ pub struct BakeClipCtx<'a, W> {
     pub subject: UntypedSubjectId,
     pub field: UntypedField,
     pub action_id: ActionId,
+    /// The fraction of its clip the action keeps if an interrupting
+    /// clip cut it.
+    pub cut: Option<f32>,
     pub scratch: &'a mut BakeScratch,
     pub action_table: &'a mut ActionTable,
     pub lens_registry: &'a LensRegistry,
 }
 
 /// Bakes one clip's [`Segment`] against the source's working copy, so
-/// it composes on top of every earlier clip.
+/// it composes on top of every earlier clip. A cut clip leaves the value
+/// it reached at the cut, where its interrupting clip starts.
 pub fn bake_clip<W, I, S, T>(ctx: BakeClipCtx<'_, W>)
 where
     W: SubjectSource<I, S>,
@@ -76,13 +81,20 @@ where
 
     let start = lens.get_ref(source).clone();
     let end = action(&start);
+    let segment = Segment::new(start, end);
+    let reached = match ctx.cut {
+        Some(kept) => {
+            cut_value(ctx.action_table, ctx.action_id, &segment, kept)
+        }
+        None => segment.end.clone(),
+    };
 
     let seg_col = ctx.action_table.ensure_segment_column::<T>();
     ctx.action_table.set_segment_by_column(
         ctx.action_id,
-        Segment::new(start, end.clone()),
+        segment,
         seg_col,
     );
 
-    *lens.get_mut(source) = end;
+    *lens.get_mut(source) = reached;
 }

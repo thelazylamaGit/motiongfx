@@ -65,6 +65,7 @@ pub fn chain(
             track = track.upsert_sequence(key, other_sequence);
         }
         track.take_markers(other_track.markers, chain_duration);
+        track.interrupting.append(&mut other_track.interrupting);
 
         chain_duration =
             chain_duration.saturating_add(other_track.duration);
@@ -91,6 +92,7 @@ pub fn all(
             track = track.upsert_sequence(key, other_sequence);
         }
         track.take_markers(other_track.markers, Duration::ZERO);
+        track.interrupting.append(&mut other_track.interrupting);
     }
 
     track.duration = max_duration;
@@ -114,6 +116,7 @@ pub fn any(
             track = track.upsert_sequence(key, other_sequence);
         }
         track.take_markers(other_track.markers, Duration::ZERO);
+        track.interrupting.append(&mut other_track.interrupting);
     }
 
     track.duration = min_duration;
@@ -143,6 +146,7 @@ pub fn flow(
             track = track.upsert_sequence(key, sequence);
         }
         track.take_markers(other_track.markers, flow_delay);
+        track.interrupting.extend(other_track.interrupting);
     }
 
     track.duration = final_duration;
@@ -173,6 +177,10 @@ pub struct TrackFragment {
     /// by the combinators exactly like clips. Empty (no allocation) in
     /// fragments without markers.
     markers: Vec<(MarkerName, Duration)>,
+    /// Clips that cut a running clip on the same field instead of
+    /// conflicting with it; see [`Self::interrupting`]. Empty (no
+    /// allocation) in fragments that don't interrupt.
+    interrupting: Vec<ActionId>,
 }
 
 impl TrackFragment {
@@ -189,6 +197,7 @@ impl TrackFragment {
             sequences: HashMap::new(),
             duration: Duration::ZERO,
             markers: Vec::new(),
+            interrupting: Vec::new(),
         }
     }
 
@@ -197,6 +206,7 @@ impl TrackFragment {
             duration: clip.duration,
             sequences: [(key, Sequence::new(clip))].into(),
             markers: Vec::new(),
+            interrupting: Vec::new(),
         }
     }
 
@@ -209,6 +219,7 @@ impl TrackFragment {
             sequences: HashMap::new(),
             duration: Duration::ZERO,
             markers: alloc::vec![(name.into(), Duration::ZERO)],
+            interrupting: Vec::new(),
         }
     }
 
@@ -247,7 +258,25 @@ impl TrackFragment {
             sequences: HashMap::new(),
             duration,
             markers: Vec::new(),
+            interrupting: Vec::new(),
         }
+    }
+
+    /// Lets every clip in this fragment interrupt a clip on the same
+    /// field that is still running when it starts, instead of
+    /// conflicting with it.
+    ///
+    /// The running clip is cut where this one starts: up to the cut it
+    /// follows its original timing, and the interrupting clip starts
+    /// from the value it had reached. A clip starting at the same
+    /// instant, or on an aliasing field path, still conflicts.
+    #[must_use = "This method consumes the fragment and returns a marked one."]
+    pub fn interrupting(mut self) -> Self {
+        for sequence in self.sequences.values() {
+            self.interrupting
+                .extend(sequence.clips.iter().map(|clip| clip.id));
+        }
+        self
     }
 
     /// Updates or inserts a [`Sequence`] in a track.
@@ -285,17 +314,22 @@ impl TrackFragment {
         let mut sequences =
             self.sequences.into_iter().collect::<Vec<_>>();
 
+        // Before anything reads a sequence's first/last clip as its
+        // start/end, and before cutting, which compares neighbours.
+        // Conflict resolution picks winners by `ActionId`, so it does
+        // not depend on this order.
+        for (_, sequence) in sequences.iter_mut() {
+            sequence.sort_by_start();
+        }
+
+        // Cut first, so a clip an interrupting clip takes over from no
+        // longer overlaps it and is not reported as a conflict.
+        let cuts = cut_interrupted(&mut sequences, self.interrupting);
+
         #[cfg(feature = "diagnostics")]
         let conflicts = resolve_conflicts(&mut sequences);
         #[cfg(not(feature = "diagnostics"))]
         resolve_conflicts(&mut sequences);
-
-        // After conflict resolution, which picks winners by `ActionId`
-        // rather than list position, and before anything reads a
-        // sequence's first/last clip as its start/end.
-        for (_, sequence) in sequences.iter_mut() {
-            sequence.sort_by_start();
-        }
 
         // Stable, so markers at the same time keep their authoring order.
         let mut markers = self.markers;
@@ -308,6 +342,7 @@ impl TrackFragment {
                 field_lookups: Box::new([]),
                 sequence_spans: Box::new([]),
                 clip_arena: Box::new([]),
+                cut_progress: Box::new([]),
                 bake_order: Box::new([]),
                 #[cfg(feature = "diagnostics")]
                 conflicts,
@@ -380,6 +415,8 @@ impl TrackFragment {
             .flat_map(|(_, clips)| clips)
             .collect::<Box<[_]>>();
 
+        let cut_progress = cut_progress(&clip_arena, cuts);
+
         // `clip_arena` stays grouped by sequence for the per-field
         // spans; `bake_order` is the same clips in start-time order,
         // ties by `ActionId`.
@@ -394,6 +431,7 @@ impl TrackFragment {
             field_lookups: field_lookups.into_boxed_slice(),
             sequence_spans: sequence_spans.into_boxed_slice(),
             clip_arena,
+            cut_progress,
             bake_order,
             #[cfg(feature = "diagnostics")]
             conflicts,
@@ -428,6 +466,66 @@ pub struct FieldConflict {
 type ConflictReport = Box<[FieldConflict]>;
 #[cfg(not(feature = "diagnostics"))]
 type ConflictReport = ();
+
+/// Cuts every clip that the next clip on the same field interrupts,
+/// returning each cut clip's ID with the fraction of its original
+/// duration it keeps.
+///
+/// Sequences must be sorted by start. A clip is cut when the next one is
+/// marked interrupting and starts strictly inside it. Clips that start
+/// together, or that still overlap after cutting, are left for
+/// `resolve_conflicts`.
+fn cut_interrupted(
+    sequences: &mut [(ActionKey, Sequence)],
+    mut interrupting: Vec<ActionId>,
+) -> Vec<(ActionId, f32)> {
+    let mut cuts = Vec::new();
+    if interrupting.is_empty() {
+        return cuts;
+    }
+    interrupting.sort_unstable();
+
+    for (_, sequence) in sequences.iter_mut() {
+        for index in 1..sequence.len() {
+            let clip = sequence.clips[index];
+            if interrupting.binary_search(&clip.id).is_err() {
+                continue;
+            }
+            let previous = &mut sequence.clips[index - 1];
+            if previous.start < clip.start
+                && clip.start < previous.end()
+            {
+                let kept = clip.start - previous.start;
+                let progress = (kept.as_secs_f64()
+                    / previous.duration.as_secs_f64())
+                    as f32;
+                previous.duration = kept;
+                cuts.push((previous.id, progress));
+            }
+        }
+    }
+    cuts
+}
+
+/// The kept fraction of every clip in `clip_arena`, by index: 1 for
+/// clips that run in full. Empty, and so free to look up, when nothing
+/// was cut.
+fn cut_progress(
+    clip_arena: &[ActionClip],
+    mut cuts: Vec<(ActionId, f32)>,
+) -> Box<[f32]> {
+    if cuts.is_empty() {
+        return Box::new([]);
+    }
+    cuts.sort_unstable_by_key(|&(id, _)| id);
+    clip_arena
+        .iter()
+        .map(|clip| {
+            cuts.binary_search_by_key(&clip.id, |&(id, _)| id)
+                .map_or(1.0, |found| cuts[found].1)
+        })
+        .collect()
+}
 
 /// Only fields of the same subject and source type can alias, so
 /// conflicts are searched within these groups only.
@@ -600,6 +698,11 @@ pub struct Track {
     /// Contiguous storage of all action clips.
     clip_arena: Box<[ActionClip]>,
 
+    /// For each clip in `clip_arena`, the fraction of its original
+    /// duration it keeps after an interrupting clip cut it (1 if it runs
+    /// in full). Empty when no clip in the track was cut.
+    cut_progress: Box<[f32]>,
+
     /// `clip_arena` indices in start-time order, ties by `ActionId`.
     bake_order: Box<[u32]>,
 
@@ -650,6 +753,17 @@ impl Track {
         &self.clip_arena[span.offset..span.offset + span.len]
     }
 
+    /// How much of the clip at `index` within `span` remains after an
+    /// interrupting clip cut it, as a fraction of its original
+    /// duration, or `None` if it runs in full.
+    #[inline]
+    pub fn cut(&self, span: Span, index: usize) -> Option<f32> {
+        self.cut_progress
+            .get(span.offset + index)
+            .copied()
+            .filter(|&progress| progress < 1.0)
+    }
+
     /// Every clip in start-time order, ties broken by `ActionId`.
     #[inline]
     pub fn bake_clips(
@@ -658,6 +772,22 @@ impl Track {
         self.bake_order
             .iter()
             .map(|&i| &self.clip_arena[i as usize])
+    }
+
+    /// [`Self::bake_clips`], each with the fraction of its clip it keeps
+    /// if an interrupting clip cut it.
+    pub(crate) fn bake_clips_with_cuts(
+        &self,
+    ) -> impl Iterator<Item = (&ActionClip, Option<f32>)> + '_ {
+        self.bake_order.iter().map(|&i| {
+            let i = i as usize;
+            let cut = self
+                .cut_progress
+                .get(i)
+                .copied()
+                .filter(|&progress| progress < 1.0);
+            (&self.clip_arena[i], cut)
+        })
     }
 
     #[inline]

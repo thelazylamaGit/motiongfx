@@ -70,6 +70,21 @@ struct QueuedSample {
     keyframe: Duration,
 }
 
+/// Maps a sample of a clip that an interrupting clip cut onto the part
+/// of its original curve it kept: progress through the shortened clip
+/// becomes progress through the first `kept` of the original, and its
+/// end becomes the value it had reached at the cut.
+#[inline]
+fn cut_mode(mode: SampleMode, kept: Option<f32>) -> SampleMode {
+    match (mode, kept) {
+        (SampleMode::Interp(t), Some(kept)) => {
+            SampleMode::Interp(t * kept)
+        }
+        (SampleMode::End, Some(kept)) => SampleMode::Interp(kept),
+        (mode, _) => mode,
+    }
+}
+
 impl<W: 'static> Timeline<W> {
     /// Bakes every clip's [`Segment`](crate::action::Segment). Clips
     /// are visited in start-time order over a per-track working copy
@@ -83,7 +98,7 @@ impl<W: 'static> Timeline<W> {
         for track in self.tracks.iter() {
             let mut scratch = BakeScratch::default();
 
-            for clip in track.bake_clips() {
+            for (clip, cut) in track.bake_clips_with_cuts() {
                 let Some(key) =
                     self.action_table.key(&clip.id).copied()
                 else {
@@ -97,6 +112,7 @@ impl<W: 'static> Timeline<W> {
                         subject: *key.subject_id(),
                         field: *key.field(),
                         action_id: clip.id,
+                        cut,
                         scratch: &mut scratch,
                         action_table: &mut self.action_table,
                         lens_registry: &registry.lens,
@@ -158,13 +174,13 @@ impl<W: 'static> Timeline<W> {
 
                     let entry = match boundary {
                         BoundaryMode::Start => {
-                            clips.first().map(|c| (c, c.start))
+                            clips.first().map(|c| (c, 0, c.start))
                         }
-                        BoundaryMode::End => {
-                            clips.last().map(|c| (c, c.end()))
-                        }
+                        BoundaryMode::End => clips
+                            .last()
+                            .map(|c| (c, clips.len() - 1, c.end())),
                     };
-                    let Some((clip, keyframe)) = entry else {
+                    let Some((clip, index, keyframe)) = entry else {
                         continue;
                     };
 
@@ -172,7 +188,10 @@ impl<W: 'static> Timeline<W> {
                         *key,
                         QueuedSample {
                             id: clip.id,
-                            mode: boundary.into(),
+                            mode: cut_mode(
+                                boundary.into(),
+                                self.tracks[i].cut(*span, index),
+                            ),
                             keyframe,
                         },
                     );
@@ -235,8 +254,12 @@ impl<W: 'static> Timeline<W> {
                         *key,
                         QueuedSample {
                             id: clip.id,
-                            mode: SampleMode::Interp(
-                                clip.progress(self.target_time),
+                            mode: cut_mode(
+                                SampleMode::Interp(
+                                    clip.progress(self.target_time),
+                                ),
+                                self.tracks[self.curr_index]
+                                    .cut(*span, index),
                             ),
                             keyframe: self.target_time,
                         },
@@ -244,7 +267,8 @@ impl<W: 'static> Timeline<W> {
                 }
                 // `target_time` is out of bounds.
                 Err(index) => {
-                    let clip = &clips[index.saturating_sub(1)];
+                    let clip_index = index.saturating_sub(1);
+                    let clip = &clips[clip_index];
 
                     // Target time before the sequence -> Start,
                     // otherwise it is past `index - 1` -> End (the
@@ -259,7 +283,11 @@ impl<W: 'static> Timeline<W> {
                         *key,
                         QueuedSample {
                             id: clip.id,
-                            mode: sample_mode,
+                            mode: cut_mode(
+                                sample_mode,
+                                self.tracks[self.curr_index]
+                                    .cut(*span, clip_index),
+                            ),
                             keyframe,
                         },
                     );
