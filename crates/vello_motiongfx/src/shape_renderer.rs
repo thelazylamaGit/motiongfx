@@ -10,6 +10,10 @@ trait RenderRectangle {
 impl RenderRectangle for Rectangle {
     fn render(&self, scene: &mut vello::Scene, screen: Affine) {
         let rectangle = self;
+        let opacity = rectangle.opacity.clamp(0.0, 1.0) as f32;
+        if opacity == 0.0 {
+            return;
+        }
         let xf = screen * self.transform();
         let half_w = rectangle.size.width * rectangle.scale / 2.0;
         let half_h = rectangle.size.height * rectangle.scale / 2.0;
@@ -17,14 +21,22 @@ impl RenderRectangle for Rectangle {
             .to_rounded_rect(
                 rectangle.radius * rectangle.scale.abs(),
             );
-        scene.fill(Fill::NonZero, xf, rectangle.fill, None, &shape);
+        let fill = rectangle.fill;
+        scene.fill(
+            Fill::NonZero,
+            xf,
+            fill.with_alpha(fill.components[3] * opacity),
+            None,
+            &shape,
+        );
         if rectangle.stroke_width > 0.0 {
+            let stroke = rectangle.stroke;
             scene.stroke(
                 &Stroke::new(rectangle.stroke_width)
                     .with_caps(rectangle.line_cap)
                     .with_join(rectangle.line_join),
                 xf,
-                rectangle.stroke,
+                stroke.with_alpha(stroke.components[3] * opacity),
                 None,
                 &shape,
             );

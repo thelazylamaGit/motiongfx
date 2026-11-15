@@ -156,3 +156,55 @@ fn circle_ring_rendering_matches_parent_scale_and_derived_pulse_math()
         );
     }
 }
+
+#[test]
+fn rectangle_opacity_fades_fill_and_outline_and_hides_at_zero() {
+    let mut renderer = Renderer::default();
+    let mut scene = Scene::new();
+    let fill = colors::BLUE.with_alpha(0.8);
+    let rectangle = scene.add(
+        Rectangle::new(40.0, 20.0)
+            .fill(fill)
+            .stroke(colors::ORANGE, 2.0),
+    );
+    scene.defaults(s(1), ease::linear);
+    let mut animation = scene.compile([rectangle.opacity().to(0.0)]);
+    let size = Size::new(200.0, 200.0);
+    let shape =
+        Rect::new(-20.0, -10.0, 20.0, 10.0).to_rounded_rect(0.0);
+    for time in [0, 500, 1000, 500, 0] {
+        animation.sample(ms(time));
+        let mut actual = vello::Scene::new();
+        renderer.render(&animation, &mut actual, size, size, 1.0);
+
+        let opacity = 1.0 - time as f32 / 1000.0;
+        let mut expected = vello::Scene::new();
+        if opacity > 0.0 {
+            let xf = Affine::translate((100.0, 100.0));
+            expected.fill(
+                Fill::NonZero,
+                xf,
+                fill.with_alpha(0.8 * opacity),
+                None,
+                &shape,
+            );
+            expected.stroke(
+                &Stroke::new(2.0),
+                xf,
+                colors::ORANGE.with_alpha(opacity),
+                None,
+                &shape,
+            );
+        }
+        assert_eq!(
+            actual.encoding().draw_data,
+            expected.encoding().draw_data,
+            "at {time}ms"
+        );
+        assert_eq!(
+            actual.encoding().n_paths,
+            expected.encoding().n_paths,
+            "at {time}ms"
+        );
+    }
+}

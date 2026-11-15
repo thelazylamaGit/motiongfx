@@ -11,6 +11,8 @@ pub struct Rectangle {
     pub position: Point,
     /// Fill colour.
     pub fill: Color,
+    /// 0 (invisible) to 1 (opaque); multiplies the fill and outline alpha.
+    pub opacity: f64,
     /// Outline colour.
     pub stroke: Color,
     /// Outline width in canvas units.
@@ -33,6 +35,7 @@ impl Default for Rectangle {
             size: Size::new(100.0, 100.0),
             position: Point::ZERO,
             fill: Color::WHITE,
+            opacity: 1.0,
             stroke: Color::TRANSPARENT,
             stroke_width: 0.0,
             line_cap: crate::Cap::Round,
@@ -67,7 +70,7 @@ impl Rectangle {
 }
 
 crate::object::properties!(Rectangle;
-    size: Size, position: Point, fill: Color, radius: f64,
+    size: Size, position: Point, fill: Color, opacity: f64, radius: f64,
     scale: f64, rotation: f64, stroke_width: f64,
 );
 crate::object::stroke!(Rectangle);
@@ -144,6 +147,7 @@ impl<M: Model2d> SceneObject<M> for Rectangle {
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::fields!(fields, Rectangle, RectangleId;
 fill: Color => new(Rectangle.fill);
+opacity: f64 => new(Rectangle.opacity);
 scale: f64 => new(Rectangle.scale);
 rotation: f64 => new(Rectangle.rotation);
 size: Size => new(Rectangle.size);
@@ -159,6 +163,7 @@ position_y: f64 => new(Rectangle.position.y);
 
 crate::properties::handle_methods!(RectangleHandle,Rectangle,RectangleId;
 fill: Color;
+opacity: f64;
 scale: f64;
 rotation: f64;
 size: Size;
