@@ -193,10 +193,9 @@ anim.delay(ms(500))     // start this one later
   dropped change, naming the later one's line (authoring enables core's
   `diagnostics` feature, which records the drops, and keeps each action's ID
   with its line while lowering; no measurable setup cost, see
-  Measurements). Possible later feature: **takeover**, where the earlier clip
-  is cut at the overlap and the later one starts from the value at that
-  moment. Baking already chains start values, so this is a contained core
-  change with no per-frame cost.
+  Measurements). An animation marked `.interrupt()` takes over instead: the
+  earlier clip is cut where it starts and it starts from the value reached
+  there; see [interruption.md](interruption.md).
 
 ## 4. Markers
 

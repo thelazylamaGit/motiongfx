@@ -143,9 +143,30 @@ file and line of the animation and a `kind`:
 - `Overlap`: two changes to the same property (or a point and one of its
   axes) running at the same time. Core would keep only the later-written
   one, so this is reported at the earlier one with the later one's line.
-  Run them one after another with `chain`, or animate different properties.
+  Run them one after another with `chain`, animate different properties, or
+  mark the later one `.interrupt()` to let it take over (below).
 
 Both enums are `#[non_exhaustive]`, so matches need a `_` arm.
+
+## Interrupting
+
+`.interrupt()` lets an animation take over from a running animation of the
+same property instead of overlapping it. The running one is cut where the new
+one starts: up to there it follows its own timing, and the new one starts
+from the value it had reached. On a group, every change inside may take over.
+
+```rust,ignore
+// Heads for 100 but turns back towards 0 after 200 ms.
+all([
+    x.to(100.0).over(s(1)),
+    x.to(0.0).over(ms(500)).delay(ms(200)).interrupt(),
+])
+```
+
+Only an animation that started earlier is cut; two starting together still
+overlap. Animations of a point and one of its axes still overlap for now.
+Cutting doesn't change group timing. A cut spring hands over its position but
+not its speed. See [interruption](../../docs/interruption.md).
 
 ## Spring changes
 
@@ -179,10 +200,9 @@ flow(ms(300), [
 
 Overshoot is the interpolation's own extrapolation: colour channels briefly
 leave 0–1 and rendering saturates them. A spring overlapping a later change
-to the same property is an `Overlap` error like any other; there is no
-spring-specific interruption policy. Settings
-are fixed per action; no live parameter changes or velocity-preserving
-interruption is implied. See [spring usage and limitations](../../docs/springs.md).
+to the same property is an `Overlap` error like any other, unless the later
+one is marked `.interrupt()`, which cuts the spring and starts from its
+position (not its speed). Settings are fixed per action. See [spring usage and limitations](../../docs/springs.md).
 
 ## Native derived relationships and validation
 

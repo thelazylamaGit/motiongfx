@@ -126,7 +126,8 @@ earlier clip entirely; it does not preserve a prefix or inherit velocity.
 Authoring's `Scene::compile` reports such overlaps as errors instead. Springs
 settle for a while, so a spring followed by an overlapping change to the same
 property is the usual way to hit this.
-General interruption/live retargeting is deferred to future timeline work.
+An interrupting change (`.interrupt()`) cuts a spring and starts from its
+position, not its velocity; see [interruption](interruption.md).
 
 `SpringValue<M>` opts continuous types into overshoot-capable interpolation
 for core's `ActionBuilder::with_spring`. The core supports f32/f64; Peniko

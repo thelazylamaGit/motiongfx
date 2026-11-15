@@ -44,6 +44,10 @@ enum Node<M> {
     Group(Order, Vec<Animation<M>>),
     Wait(Duration),
     Marker(MarkerName, &'static Location<'static>),
+    /// Every change inside may interrupt a running animation of the same
+    /// property; see [`Animation::interrupt`]. Boxed so the common nodes
+    /// stay small.
+    Interrupt(Box<Animation<M>>),
 }
 
 #[derive(Clone, Copy)]
@@ -67,6 +71,7 @@ impl<M> Clone for Animation<M> {
             Node::Marker(name, location) => {
                 Node::Marker(name.clone(), location)
             }
+            Node::Interrupt(inner) => Node::Interrupt(inner.clone()),
         })
     }
 }
@@ -99,6 +104,9 @@ impl<M> std::fmt::Debug for Animation<M> {
             }
             Node::Marker(name, _) => {
                 f.debug_tuple("Marker").field(name).finish()
+            }
+            Node::Interrupt(inner) => {
+                f.debug_tuple("Interrupt").field(inner).finish()
             }
         }
     }
@@ -172,6 +180,7 @@ impl<M: 'static> Animation<M> {
     fn motion(&mut self) -> &mut Motion {
         match &mut self.0 {
             Node::Step(_, timing) => &mut timing.motion,
+            Node::Interrupt(inner) => inner.motion(),
             Node::Group(..) | Node::Wait(_) | Node::Marker(..) => {
                 panic!("{GROUP_TIMING}")
             }
@@ -233,6 +242,38 @@ impl<M: 'static> Animation<M> {
         chain([wait(duration), self])
     }
 
+    /// Let this animation take over from a running animation of the same
+    /// property instead of overlapping it, which `compile` reports as an
+    /// error. On a group, every change inside may take over.
+    ///
+    /// The running animation is cut where this one starts: up to there it
+    /// follows its own timing, and this one starts from the value it had
+    /// reached. Only an animation that started earlier is cut; two that
+    /// start at the same moment still overlap. An animation of `x` does
+    /// not cut one of the whole `position`; that is still an overlap.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use motiongfx::prelude::{ms, s};
+    /// use motiongfx_authoring::{Animation, all, signal};
+    /// let x = signal(0.0);
+    /// // Heads for 100, but turns back towards 0 after 200 ms.
+    /// let turn: Animation<()> = all([
+    ///     x.to(100.0).over(s(1)),
+    ///     x.to(0.0).over(ms(500)).delay(ms(200)).interrupt(),
+    /// ]);
+    /// ```
+    pub fn interrupt(self) -> Self {
+        match self.0 {
+            // Nothing inside to cut with.
+            Node::Wait(_) | Node::Marker(..) | Node::Interrupt(_) => {
+                self
+            }
+            node => Self(Node::Interrupt(Box::new(Self(node)))),
+        }
+    }
+
     /// Lower this tree into one core fragment, in source order. Child
     /// fragments stream straight into core's combinators.
     pub(crate) fn lower(
@@ -259,6 +300,9 @@ impl<M: 'static> Animation<M> {
                 } else {
                     TrackFragment::new()
                 }
+            }
+            Node::Interrupt(inner) => {
+                inner.lower(context).interrupting()
             }
         }
     }
@@ -567,7 +611,7 @@ impl std::fmt::Display for AnimationError {
             ),
             AnimationErrorKind::Overlap { field, later } => write!(
                 f,
-                "this animation of `{field}` overlaps a later one at {later}, which would replace it; run them one after another with chain([..]) or animate different properties"
+                "this animation of `{field}` overlaps a later one at {later}, which would replace it; run them one after another with chain([..]), animate different properties, or add .interrupt() to the later one if it should take over from where this one is (it must start later)"
             ),
         }
     }

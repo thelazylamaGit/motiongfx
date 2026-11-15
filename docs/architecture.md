@@ -404,6 +404,12 @@ instead of introducing a separate scheduler without a demonstrated need.
 
 ## Future options, not implemented commitments
 
+### Interrupting animations across aliasing paths
+
+`.interrupt()` cuts a running animation of the same property (implemented).
+Cutting only the `x` of a running `position` animation, and springs that keep
+their speed when cut, are designed in [interruption.md](interruption.md).
+
 ### More fine-grained updates and idle rendering
 
 The current `signal`/`.map`/`computed!` authoring shape can be preserved while

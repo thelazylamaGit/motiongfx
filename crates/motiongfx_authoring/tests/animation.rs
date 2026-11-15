@@ -216,6 +216,49 @@ fn instant_changes_skip_the_ease_and_restore_on_backward_seeks() {
 }
 
 #[test]
+fn an_interrupting_change_takes_over_from_where_the_running_one_is() {
+    // x heads 0 -> 10 over [0, 400]; at 100 (2.5) it turns back to 0
+    // over [100, 300]. Defaults are linear.
+    let turn_back = x(0).to(0.0).over(ms(200)).delay(ms(100));
+    for animation in [
+        all([
+            x(0).to(10.0).over(ms(400)),
+            turn_back.clone().interrupt(),
+        ]),
+        // Marking the whole group marks the change inside it.
+        all([x(0).to(10.0).over(ms(400)), turn_back]).interrupt(),
+    ] {
+        let mut animation = scene().compile([animation]);
+        assert_eq!(animation.duration(), ms(400));
+        close(item(&mut animation, 50, 0).x, 1.25);
+        close(item(&mut animation, 200, 0).x, 1.25);
+        close(item(&mut animation, 350, 0).x, 0.0);
+        close(item(&mut animation, 50, 0).x, 1.25);
+    }
+}
+
+#[test]
+fn interrupting_changes_starting_together_still_overlap() {
+    let result = scene().try_compile([all([
+        x(0).to(10.0),
+        x(0).to(20.0).interrupt(),
+    ])]);
+    let Err(SceneError::Animation(errors)) = result else {
+        panic!("expected an overlap error");
+    };
+    assert!(
+        matches!(
+            errors[..],
+            [AnimationError {
+                kind: AnimationErrorKind::Overlap { .. },
+                ..
+            }]
+        ),
+        "{errors:?}"
+    );
+}
+
+#[test]
 fn signals_register_when_compiled_and_can_spring() {
     let progress = signal(0.0_f64);
     let label = signal(String::new());
