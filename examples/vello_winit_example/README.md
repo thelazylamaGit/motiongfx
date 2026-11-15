@@ -128,7 +128,9 @@ follows height, so the sorted bars form a rainbow. Bars are sharp-cornered
 `Rectangle`s: one fill each, no stroke. Each sort is an ordinary generic
 function that calls `on_pass` with the slice after every pass; the scene
 compares it with the previous pass and moves only the bars whose slot changed,
-so a pass that moves nothing adds no step. To add an algorithm, write another
+so a pass that moves nothing adds no step. `MOVE_TIME` sets how long bars
+slide after each pass and `PASS_HOLD` adds a pause after it; set `MOVE_TIME`
+to zero and `PASS_HOLD` to a few milliseconds for instant swaps. To add an algorithm, write another
 function with the same signature and list it in `ALGORITHMS`.
 
 Run from the workspace root:

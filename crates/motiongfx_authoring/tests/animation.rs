@@ -201,6 +201,21 @@ fn instant_changes_ignore_default_durations() {
 }
 
 #[test]
+fn instant_changes_skip_the_ease_and_restore_on_backward_seeks() {
+    // Ends at half way, so applying it at the exact instant would show.
+    fn half(t: f32) -> f32 {
+        t * 0.5
+    }
+    let mut scene = scene();
+    scene.defaults(ms(100), half);
+    let mut animation =
+        scene.compile([wait(ms(100)), x(0).set(10.0)]);
+    close(item(&mut animation, 100, 0).x, 10.0);
+    close(item(&mut animation, 50, 0).x, 0.0);
+    close(item(&mut animation, 100, 0).x, 10.0);
+}
+
+#[test]
 fn signals_register_when_compiled_and_can_spring() {
     let progress = signal(0.0_f64);
     let label = signal(String::new());

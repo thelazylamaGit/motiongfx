@@ -47,10 +47,15 @@ const MAX_HEIGHT: f64 = 540.0;
 /// The bars' shared bottom edge (y points up, 0 is the window's centre).
 const BASELINE: f64 = -310.0;
 
-/// How long one pass of a sort takes.
-const PASS: Duration = ms(50);
+/// How long the bars take to slide to their new slots after each pass of a
+/// sort. `Duration::ZERO` makes them jump there instantly.
+const MOVE_TIME: Duration = Duration::ZERO;
+/// Pause after each pass, once its bars have moved. Use this with a
+/// `MOVE_TIME` of zero to step through the passes; with both zero, the
+/// bars jump straight to sorted.
+const PASS_HOLD: Duration = ms(30);
 /// How long the bars take to scatter before the next algorithm.
-const SHUFFLE: Duration = ms(800);
+const SHUFFLE_TIME: Duration = ms(800);
 /// Pause before each sort starts.
 const PAUSE_BEFORE: Duration = ms(500);
 /// Pause to admire the sorted bars before moving on.
@@ -60,7 +65,8 @@ const PAUSE_AFTER: Duration = ms(1200);
 // The algorithms
 // ---------------------------------------------------------------------------
 
-/// The callback a sort calls after each pass, with the whole slice.
+/// The callback a sort calls after each pass, with the whole slice in its
+/// current order.
 ///
 /// It is a mutable reference to a closure (`&mut dyn FnMut`) rather than a
 /// generic `impl FnMut` so every sort has the same concrete type and can be
@@ -158,7 +164,8 @@ fn bar_color(value: usize) -> Color {
 // The scene
 // ---------------------------------------------------------------------------
 
-/// Moves each bar from its slot in `from` to its slot in `to`, all at once.
+/// Moves each bar from its slot in `from` to its slot in `to`, all at once,
+/// over `duration` (zero jumps instantly).
 ///
 /// Both slices list bar values by slot. Returns `None` when nothing moved,
 /// so a pass that changes nothing adds no step.
@@ -184,7 +191,7 @@ fn build_animation() -> CompiledScene {
     let mut scene = Scene::new();
     scene.set_background(Color::from_rgb8(12, 15, 23));
     // Every move uses these unless it says otherwise with `.over(..)`.
-    scene.defaults(PASS, ease::cubic::ease_in_out);
+    scene.defaults(MOVE_TIME, ease::cubic::ease_in_out);
 
     let title = scene.add(
         Text::new(ALGORITHMS[0].name)
@@ -232,7 +239,12 @@ fn build_animation() -> CompiledScene {
         if index > 0 {
             rng.shuffle(&mut order);
             steps.push(title.set_content("Shuffling"));
-            steps.extend(move_bars(&bars, &shown, &order, SHUFFLE));
+            steps.extend(move_bars(
+                &bars,
+                &shown,
+                &order,
+                SHUFFLE_TIME,
+            ));
             shown.copy_from_slice(&order);
         }
         steps.push(title.set_content(algorithm.name));
@@ -241,9 +253,14 @@ fn build_animation() -> CompiledScene {
         // The sort owns `order` mutably for the call; the closure borrows
         // `bars`, `shown` and `steps`, which are separate variables, so the
         // borrows don't overlap.
-        (algorithm.sort)(&mut order, &mut |pass| {
-            steps.extend(move_bars(&bars, &shown, pass, PASS));
-            shown.copy_from_slice(pass);
+        (algorithm.sort)(&mut order, &mut |current| {
+            if let Some(moves) =
+                move_bars(&bars, &shown, current, MOVE_TIME)
+            {
+                steps.push(moves);
+                steps.push(wait(PASS_HOLD));
+            }
+            shown.copy_from_slice(current);
         });
         debug_assert!(
             order.is_sorted(),

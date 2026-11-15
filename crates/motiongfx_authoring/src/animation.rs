@@ -477,9 +477,19 @@ where
                 }
             }
         }
-        Motion::Tween { over, ease } => action
-            .with_ease(ease.unwrap_or(context.defaults.ease))
-            .play(over.unwrap_or(context.defaults.duration)),
+        Motion::Tween { over, ease } => {
+            let duration = over.unwrap_or(context.defaults.duration);
+            // An instant change has no in-between to ease. Storing none
+            // saves its entry, and a sample at that exact time reaches the
+            // value even under an ease that doesn't end at 1.
+            if duration.is_zero() {
+                action.play(duration)
+            } else {
+                action
+                    .with_ease(ease.unwrap_or(context.defaults.ease))
+                    .play(duration)
+            }
+        }
     };
     // Remembered so `compile` can point an overlap at this line.
     context.actions.push((id, timing.location));

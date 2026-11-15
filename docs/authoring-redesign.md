@@ -140,7 +140,10 @@ type erasure and deferred resolution that raw core users do not need. Keep
   later. It builds `chain([wait(d), animation])`, so the delay counts towards
   the enclosing group's length.
 - **Instant changes:** `.set(..)`, `set_fill`, `set_content` are always zero
-  duration, regardless of defaults.
+  duration, regardless of defaults. Any zero-duration change (including
+  `.over(Duration::ZERO)`) is lowered without an ease: there is nothing to
+  ease, it saves the ease entry, and a sample at that exact time reaches the
+  value even under an ease that doesn't end at 1.
 - **Groups have no timing settings.** A group's length is what its children
   add up to. Share timing with ordinary variables:
 
