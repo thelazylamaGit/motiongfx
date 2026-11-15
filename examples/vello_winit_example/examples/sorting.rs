@@ -9,9 +9,11 @@
 //! 2. **Layout.** Small functions that turn a slot or a value into a
 //!    position, size or colour.
 //! 3. **The scene.** [`build_animation`] creates the bars, runs every sort
-//!    once, and turns each reported step into a short animation: the active
-//!    bar turns white, holds, then any bars the step swapped move and the
-//!    active bar returns to its colour.
+//!    once, and animates each reported step: the active bar turns white
+//!    for a moment, and any bars the step swapped start sliding to their
+//!    new slots at the same time. Slides never hold up the steps; a bar
+//!    that swaps again mid-slide turns towards its new slot from wherever
+//!    it is.
 //!
 //! The sorts run once, while the scene is built. Playback only samples the
 //! finished timeline, which is why scrubbing backwards works.
@@ -22,7 +24,7 @@
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
     Animation, Color, CompiledScene, Rectangle, RectangleHandle,
-    Scene, Scene2dExt, Text, all,
+    Scene, Scene2dExt, Text, all, chain,
     colors::{WHITE, hsl},
     wait,
 };
@@ -49,11 +51,11 @@ const MAX_HEIGHT: f64 = 540.0;
 /// The bars' shared bottom edge (y points up, 0 is the window's centre).
 const BASELINE: f64 = -310.0;
 
-/// How long the bars take to slide to their new slots after each step of a
-/// sort. `Duration::ZERO` makes them jump there instantly.
+/// How long a swapped bar takes to slide to its new slot. Slides run
+/// alongside the steps, so this doesn't lengthen the sort.
 const MOVE_TIME: Duration = ms(500);
-/// How long each step's active bar stays highlighted before the bars move.
-/// A sort of 128 bars takes several thousand steps, so keep this short.
+/// Time between steps: how long each step's active bar stays highlighted.
+/// A sort takes thousands of steps, so this sets its length.
 const STEP_HOLD: Duration = ms(20);
 /// Colour of the bar a step is looking at.
 const HIGHLIGHT: Color = WHITE;
@@ -261,21 +263,34 @@ fn build_animation() -> CompiledScene {
         steps.push(title.set_content(algorithm.name));
         steps.push(wait(PAUSE_BEFORE));
 
+        // Two lanes that run side by side: the cursor steps through the
+        // sort, and each swap's slide starts at the step that made it.
+        let mut cursor = Vec::new();
+        let mut slides = Vec::new();
+        // When the current step starts, from the start of the sort.
+        let mut clock = Duration::ZERO;
+
         // The sort owns `order` mutably for the call; the closure borrows
-        // `bars`, `shown` and `steps`, which are separate variables, so the
-        // borrows don't overlap.
+        // `bars`, `shown`, `cursor`, `slides` and `clock`, which are
+        // separate variables, so the borrows don't overlap.
         (algorithm.sort)(&mut order, &mut |current, active| {
             let value = current[active];
             let bar = bars[value];
-            // Highlight the active bar where it was, hold, move whatever
-            // this step swapped, then return the bar to its own colour.
-            steps.push(bar.set_fill(HIGHLIGHT));
-            steps.push(wait(STEP_HOLD));
-            steps
-                .extend(move_bars(&bars, &shown, current, MOVE_TIME));
-            steps.push(bar.set_fill(bar_color(value)));
+            cursor.extend([
+                bar.set_fill(HIGHLIGHT),
+                wait(STEP_HOLD),
+                bar.set_fill(bar_color(value)),
+            ]);
+            // A bar can swap again before its last slide ends; the new
+            // slide takes over from where it is instead of overlapping.
+            slides.extend(
+                move_bars(&bars, &shown, current, MOVE_TIME)
+                    .map(|moves| moves.delay(clock).interrupt()),
+            );
             shown.copy_from_slice(current);
+            clock += STEP_HOLD;
         });
+        steps.push(all([chain(cursor), all(slides)]));
         debug_assert!(
             order.is_sorted(),
             "{} left bars unsorted",
