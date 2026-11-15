@@ -165,8 +165,9 @@ all([
 
 Only an animation that started earlier is cut; two starting together still
 overlap. Animations of a point and one of its axes still overlap for now.
-Cutting doesn't change group timing. A cut spring hands over its position but
-not its speed. See [interruption](../../docs/interruption.md).
+Cutting doesn't change group timing. A cut hands over the value but not the
+speed, so give animations that interrupt often an ease-out curve
+(`cubic::ease_out`): with an ease-in curve they stall until the last one. See [interruption](../../docs/interruption.md).
 
 ## Spring changes
 

@@ -53,12 +53,15 @@ const BASELINE: f64 = -310.0;
 
 /// How long a swapped bar takes to slide to its new slot. Slides run
 /// alongside the steps, so this doesn't lengthen the sort.
-const MOVE_TIME: Duration = ms(500);
-/// Time between steps: how long each step's active bar stays highlighted.
-/// A sort takes thousands of steps, so this sets its length.
+const MOVE_TIME: Duration = ms(100);
+/// Time between steps. A sort takes thousands of steps, so this sets its
+/// length.
 const STEP_HOLD: Duration = ms(20);
 /// Colour of the bar a step is looking at.
 const HIGHLIGHT: Color = WHITE;
+/// How long a bar the cursor visited takes to fade back to its own colour,
+/// leaving a short trail behind the cursor.
+const FADE_TIME: Duration = ms(250);
 /// How long the bars take to scatter before the next algorithm.
 const SHUFFLE_TIME: Duration = ms(800);
 /// Pause before each sort starts.
@@ -203,8 +206,11 @@ fn move_bars(
 fn build_animation() -> CompiledScene {
     let mut scene = Scene::new();
     scene.set_background(Color::from_rgb8(12, 15, 23));
-    // Every move uses these unless it says otherwise with `.over(..)`.
-    scene.defaults(MOVE_TIME, ease::cubic::ease_in_out);
+    // Every move uses these unless it says otherwise. Ease-out starts at
+    // full speed: an interrupted slide restarts from rest, so with an
+    // ease-in curve a bar that keeps swapping would barely move until
+    // its last swap, then rush the whole way.
+    scene.defaults(MOVE_TIME, ease::cubic::ease_out);
 
     let title = scene.add(
         Text::new(ALGORITHMS[0].name)
@@ -263,8 +269,8 @@ fn build_animation() -> CompiledScene {
         steps.push(title.set_content(algorithm.name));
         steps.push(wait(PAUSE_BEFORE));
 
-        // Two lanes that run side by side: the cursor steps through the
-        // sort, and each swap's slide starts at the step that made it.
+        // Two lanes that run side by side, each change starting at the
+        // step that made it: the cursor's fades, and the swaps' slides.
         let mut cursor = Vec::new();
         let mut slides = Vec::new();
         // When the current step starts, from the start of the sort.
@@ -276,13 +282,20 @@ fn build_animation() -> CompiledScene {
         (algorithm.sort)(&mut order, &mut |current, active| {
             let value = current[active];
             let bar = bars[value];
-            cursor.extend([
-                bar.set_fill(HIGHLIGHT),
-                wait(STEP_HOLD),
-                bar.set_fill(bar_color(value)),
-            ]);
-            // A bar can swap again before its last slide ends; the new
-            // slide takes over from where it is instead of overlapping.
+            // The cursor lights the bar, which then fades back. If the
+            // cursor returns before the fade ends, it lights up again.
+            cursor.push(
+                chain([
+                    bar.set_fill(HIGHLIGHT),
+                    bar.fill_to(bar_color(value))
+                        .over(FADE_TIME)
+                        .ease(ease::cubic::ease_out),
+                ])
+                .delay(clock)
+                .interrupt(),
+            );
+            // Likewise, a bar can swap again before its last slide ends;
+            // the new slide takes over from where it is.
             slides.extend(
                 move_bars(&bars, &shown, current, MOVE_TIME)
                     .map(|moves| moves.delay(clock).interrupt()),
@@ -290,7 +303,7 @@ fn build_animation() -> CompiledScene {
             shown.copy_from_slice(current);
             clock += STEP_HOLD;
         });
-        steps.push(all([chain(cursor), all(slides)]));
+        steps.push(all([all(cursor), all(slides)]));
         debug_assert!(
             order.is_sorted(),
             "{} left bars unsorted",

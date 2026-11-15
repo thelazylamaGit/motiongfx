@@ -252,6 +252,11 @@ impl<M: 'static> Animation<M> {
     /// start at the same moment still overlap. An animation of `x` does
     /// not cut one of the whole `position`; that is still an overlap.
     ///
+    /// The value carries over at a cut, but not the speed: this animation
+    /// starts its curve from the beginning. For animations that interrupt
+    /// often, use an ease-out curve such as `cubic::ease_out`; an ease-in
+    /// curve starts so slowly that repeatedly interrupted motion stalls.
+    ///
     /// # Examples
     ///
     /// ```

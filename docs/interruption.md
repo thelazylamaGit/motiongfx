@@ -57,6 +57,23 @@ Rules:
    keeps its start value up to the cut, as its jump interpolation already
    does before the end.
 
+### Choose an ease-out curve for animations that interrupt often
+
+A cut keeps the value but not the speed: the interrupting animation starts
+its own curve from the beginning. With an ease-in curve (`ease_in_out`, the
+default `smooth`), that beginning is nearly at rest, so an animation that is
+interrupted again before it gets going barely moves. Found in the sorting
+example: a bar carried one slot per 20 ms step, with 500 ms
+`cubic::ease_in_out` slides, moved 4.5 units over 30 hops, then crossed all
+1125 units in its last slide. It looked like the bar stayed put and then
+snapped across.
+
+An ease-out curve (`cubic::ease_out`) starts at full speed, so each retarget
+moves at once: the same chain followed the hops at about one slot per step
+and slowed smoothly on landing. Linear also works. Keeping the speed across
+cuts (phase 3) would remove the need to choose, for springs on scalar
+properties.
+
 `.interrupt()` on a wait or marker returns it unchanged (there is nothing to
 cut with). Timing modifiers still work after it:
 `x.to(1.0).interrupt().over(ms(100))`.

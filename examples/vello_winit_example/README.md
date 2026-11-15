@@ -127,12 +127,13 @@ reshuffling between them; the title names the current algorithm. Bar hue
 follows height, so the sorted bars form a rainbow. Bars are sharp-cornered
 `Rectangle`s: one fill each, no stroke. Each sort is an ordinary generic
 function that calls `on_step` with the slice after every comparison or swap,
-plus the slot it is looking at. That bar turns white (`HIGHLIGHT`) for
-`STEP_HOLD`. Bars a step swapped start sliding to their new slots at the same
-time, over `MOVE_TIME`, without holding up the next step: the cursor and the
-slides are two lanes run with `all`, and each slide is marked `.interrupt()`
-so a bar that swaps again mid-slide turns towards its new slot from wherever
-it is. To add an algorithm, write another function with the same signature
+plus the slot it is looking at. Steps are `STEP_HOLD` apart. That bar turns
+white (`HIGHLIGHT`) and fades back to its colour over `FADE_TIME`, leaving a
+short trail behind the cursor. Bars a step swapped start sliding to their new
+slots at the same time, over `MOVE_TIME`, without holding up the next step:
+the fades and the slides are two lanes run with `all`, and each is marked
+`.interrupt()`, so a bar the cursor revisits lights up again and a bar that
+swaps again mid-slide turns towards its new slot from wherever it is. To add an algorithm, write another function with the same signature
 and list it in `ALGORITHMS`.
 
 Run from the workspace root:
