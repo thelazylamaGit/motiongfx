@@ -34,7 +34,7 @@ use vello_winit_motiongfx::Window;
 // ---------------------------------------------------------------------------
 
 /// Number of bars; any positive count works.
-const BAR_COUNT: usize = 128;
+const BAR_COUNT: usize = 32;
 /// Seed for the shuffles, so every run shows the same choreography.
 const SEED: u64 = 0x5EED;
 
@@ -51,10 +51,10 @@ const BASELINE: f64 = -310.0;
 
 /// How long the bars take to slide to their new slots after each step of a
 /// sort. `Duration::ZERO` makes them jump there instantly.
-const MOVE_TIME: Duration = Duration::ZERO;
+const MOVE_TIME: Duration = ms(500);
 /// How long each step's active bar stays highlighted before the bars move.
 /// A sort of 128 bars takes several thousand steps, so keep this short.
-const STEP_HOLD: Duration = ms(3);
+const STEP_HOLD: Duration = ms(20);
 /// Colour of the bar a step is looking at.
 const HIGHLIGHT: Color = WHITE;
 /// How long the bars take to scatter before the next algorithm.
