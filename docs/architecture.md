@@ -32,8 +32,9 @@ engine, build a complete editor, or introduce ECS.
 | [`motiongfx_2d`](../crates/motiongfx_2d/README.md) | Portable 2D objects/storage, geometry, styles, typed handles, attachments and camera semantics. Uses Kurbo/Peniko directly, not Vello/Winit. |
 | [`peniko_motiongfx`](../crates/peniko_motiongfx/README.md) | Geometry/color interpolation and path-related integration; not a window host or complete scene renderer. |
 | [`motiongfx_text`](../crates/motiongfx_text/README.md) | Shared Parley font/layout contexts, embedded/registered fonts, positioned glyphs, UTF-8 cluster ranges and layout bounds; no scene/window/GPU. |
+| [`motiongfx_audio`](../crates/motiongfx_audio/README.md) | Sound events (notes on synth/SoundFont instruments, sample plays) as `Animation`s, voices, mixing, offline rendering and live playback (`Player`/`Mixer`; cpal output behind a feature). Depends on authoring only; no window or graphics. |
 | [`vello_motiongfx`](../crates/vello_motiongfx/README.md) | Vello drawing and renderer-owned caches. Consumes portable sampled models; exports only renderer types (objects come from `motiongfx_2d`). |
-| [`vello_winit_motiongfx`](../crates/vello_winit_motiongfx/README.md) | Native window/GPU setup, resize/DPI handling, playback clock, play/pause and scrubbing controls. These are shared host facilities, not required scene objects. |
+| [`vello_winit_motiongfx`](../crates/vello_winit_motiongfx/README.md) | Native window/GPU setup, resize/DPI handling, playback clock, play/pause and scrubbing controls. These are shared host facilities, not required scene objects. With feature `audio`, `Window::audio()` drives `motiongfx_audio` from the clock. |
 | [`motiongfx_scene`](../crates/motiongfx_scene/README.md) | Serializable scene/timeline documents, named registries and compilation into core actions. Distinct from live `motiongfx_authoring::Scene<M>`; not currently a dependency of native authoring. |
 | [`bevy_motiongfx`](../crates/bevy_motiongfx/README.md) | Separate Bevy integration. The Vello/Winit authoring path does not require Bevy. |
 | [`velyst_motiongfx`](../crates/velyst_motiongfx/README.md) | Existing Bevy/Velyst/Typst integration, currently excluded from the workspace pending dependency compatibility. Not yet the text implementation for this Vello host. |
@@ -419,6 +420,20 @@ richer text/code transitions have been discussed as future capabilities. Their
 designs are not locked in by this document. Keep graphics effects associated
 with their owning object where appropriate, and preserve the core timeline
 instead of introducing a separate scheduler without a demonstrated need.
+
+## Sound events
+
+Sounds are part of the animation, not a host setting; see
+[audio.md](audio.md). Authoring has one generic leaf,
+`event(payload, length)`, for things that aren't property changes. Markers
+and events both lower to core **cues** (numbered points that core's
+combinators shift exactly like clips), so authoring never recomputes
+offsets. Core has no named markers; authoring maps each cue to its marker
+name or event payload after compiling, and `compiled.events::<E>()` reads
+events by payload type. `motiongfx_audio` makes the payloads (`note`,
+`play`), collects them with `Score::new(&compiled)`, renders offline, and
+plays live from the host clock. Sampling ignores events, so seeking and
+visual sampling are unchanged. Sound plays during forward playback only.
 
 ## Future options, not implemented commitments
 

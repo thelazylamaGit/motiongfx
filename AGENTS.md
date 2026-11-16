@@ -17,7 +17,8 @@ is the reference for working usage.
   and sampling as the foundation; don't add a competing timeline or evaluator.
 - Keep window/GPU setup and playback controls out of animation descriptions.
   `motiongfx_authoring` owns shared scene/sampling; `motiongfx_2d` owns portable
-  objects/geometry/styles; `motiongfx_text` owns font shaping/layout;
+  objects/geometry/styles; `motiongfx_text` owns font shaping/layout; `motiongfx_audio` owns sound
+  events, voices and audio output;
   `vello_motiongfx` owns rendering/caches; `vello_winit_motiongfx` owns the
   native preview host. See [the implemented separation](docs/backend-separation.md).
 - Prefer explicit object creation and understandable animated properties.
@@ -75,11 +76,14 @@ Build and test only the crates below. Never run workspace-wide commands
 slow and outside this work.
 
 ```sh
-P="-p motiongfx_text -p motiongfx_authoring -p motiongfx_2d -p vello_motiongfx -p vello_winit_motiongfx -p vello_winit_example"
+P="-p motiongfx_text -p motiongfx_authoring -p motiongfx_2d -p motiongfx_audio -p vello_motiongfx -p vello_winit_motiongfx -p vello_winit_example"
 cargo test $P --all-targets
-cargo test -p motiongfx_text -p motiongfx_authoring -p motiongfx_2d -p vello_motiongfx -p vello_winit_motiongfx --doc
+cargo test -p motiongfx_text -p motiongfx_authoring -p motiongfx_2d -p motiongfx_audio -p vello_motiongfx -p vello_winit_motiongfx --doc
 cargo clippy $P --all-targets -- -D warnings
 cargo fmt $P -- --check
+# Every audio backend and the host's audio feature:
+cargo test -p motiongfx_audio -p vello_winit_motiongfx --all-features --all-targets
+cargo clippy -p motiongfx_audio -p vello_winit_motiongfx --all-features --all-targets -- -D warnings
 ```
 
 When core crates change (`motiongfx`, `motiongfx_interp`, `peniko_motiongfx`),
@@ -89,7 +93,8 @@ and clippy core with `--features diagnostics`.
 Put meaningful engine/API tests in crate tests. Every example has a headless
 build-and-sample test; avoid adding assertions that merely repeat an example's
 authored sequence. Report whether windows were visually checked; compilation
-is not visual validation.
+is not visual validation; likewise, say whether audio was actually heard
+(offline renders and tests are not a listening check).
 
 The workspace excludes `velyst_motiongfx` pending compatible Bevy/Velyst
 dependencies; do not treat it as a working native Vello text integration.
