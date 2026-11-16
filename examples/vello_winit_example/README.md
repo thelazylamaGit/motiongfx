@@ -14,7 +14,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `lissajous` | Lissajous table | Procedural path construction, reactive reference dots, nested timing, one-time grid intro and a looping curve chapter |
 | `procedural_wave_low_level` | Custom host integration | Direct Vello drawing from preview time; no MotionGfx timeline, with shared pause/seek controls |
 | `insertion_sort` | Canvas Commons sorting | Procedural creation, nested position targets, moving text labels, discrete pass captions |
-| `sorting` | Sorting visualizer | 128 Oklch-coloured bars; bubble, selection and insertion sort run at build time and each pass becomes one step moving only the displaced bars |
+| `sorting` | Sorting visualizer | Coloured bars; different sorting algorithms run at build time and each pass becomes one step moving only the displaced bars |
 | `insertion_sort_low_level` | Previous annotated version | Same sorting choreography using raw MotionGfx and Vello calls |
 | `commit_graph` | Canvas Commons commit graph | A reusable circle/ring component, path reveal, staggered back easing, ordinary ring scale/opacity tracks |
 | `moving_square` | Manim `MovingAround` | Typed property handles, sequential translation, fill interpolation, relative scale, and rotation |
@@ -135,6 +135,20 @@ the fades and the slides are two lanes run with `all`, and each is marked
 `.interrupt()`, so a bar the cursor revisits lights up again and a bar that
 swaps again mid-slide turns towards its new slot from wherever it is. To add an algorithm, write another function with the same signature
 and list it in `ALGORITHMS`.
+
+Each step also plays a note (`motiongfx_audio`) whose pitch follows the
+active bar's height on a three-octave pentatonic scale, held for
+`NOTE_TIME`. Steps are 20 ms apart, so several notes overlap at once,
+often of the same pitch; each is its own voice. The interruption cuts the
+fade but never the note. The final left-to-right sweep climbs the scale.
+The notes use a fundsp sine synth; pass a SoundFont to hear it instead:
+
+```sh
+cargo run -p vello_winit_example --example sorting -- path/to/piano.sf2
+```
+
+Sound plays while time moves forwards and stops on a pause or seek
+(`Window::audio()`); no SoundFont is included in the repository.
 
 Run from the workspace root:
 

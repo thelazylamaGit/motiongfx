@@ -13,13 +13,18 @@
 //!    for a moment, and any bars the step swapped start sliding to their
 //!    new slots at the same time. Slides never hold up the steps; a bar
 //!    that swaps again mid-slide turns towards its new slot from wherever
-//!    it is.
+//!    it is. Each step also plays a short note whose pitch follows the
+//!    active bar's height.
 //!
 //! The sorts run once, while the scene is built. Playback only samples the
-//! finished timeline, which is why scrubbing backwards works.
+//! finished timeline, which is why scrubbing backwards works. Sound plays
+//! only while time moves forwards.
 //!
 //! To add an algorithm, write a function with the same signature as
 //! [`bubble_sort`] and add it to [`ALGORITHMS`].
+//!
+//! The notes use a built-in sine synth. To hear a SoundFont instead, pass
+//! its path: `cargo run --example sorting -- path/to/piano.sf2`.
 
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
@@ -28,6 +33,8 @@ use motiongfx_2d::{
     colors::{WHITE, hsl},
     wait,
 };
+use motiongfx_audio::fundsp::prelude32::{adsr_live, sine_hz};
+use motiongfx_audio::{Instrument, SoundFont};
 use std::time::Duration;
 use vello_winit_motiongfx::Window;
 
@@ -68,6 +75,17 @@ const SHUFFLE_TIME: Duration = ms(800);
 const PAUSE_BEFORE: Duration = ms(500);
 /// Pause to admire the sorted bars before moving on.
 const PAUSE_AFTER: Duration = ms(600);
+
+/// How long each step's note is held. Steps are `STEP_HOLD` apart, so
+/// several notes overlap; each rings out on its own.
+const NOTE_TIME: Duration = ms(80);
+/// Notes of the major pentatonic scale, in semitones above the octave's
+/// first note. Any two of them sound pleasant together.
+const PENTATONIC: [u8; 5] = [0, 2, 4, 7, 9];
+/// The shortest bar's note: C3, as a MIDI note number.
+const LOWEST_NOTE: u8 = 48;
+/// How many scale notes the bars span (three octaves).
+const SCALE_NOTES: usize = 15;
 
 // ---------------------------------------------------------------------------
 // The algorithms
@@ -177,6 +195,15 @@ fn bar_color(value: usize) -> Color {
     // oklch(0.7, 0.3, hue)
 }
 
+/// Note for `value`: taller bars play higher notes of the pentatonic
+/// scale. With more bars than scale notes, neighbouring values share one.
+fn bar_note(value: usize) -> u8 {
+    let degree = value * SCALE_NOTES / BAR_COUNT;
+    // `degree` is below `SCALE_NOTES`, so the octave fits in a `u8`.
+    let octave = (degree / PENTATONIC.len()) as u8;
+    LOWEST_NOTE + 12 * octave + PENTATONIC[degree % PENTATONIC.len()]
+}
+
 // ---------------------------------------------------------------------------
 // The scene
 // ---------------------------------------------------------------------------
@@ -204,7 +231,8 @@ fn move_bars(
     (!moves.is_empty()).then(|| all(moves))
 }
 
-fn build_animation() -> CompiledScene {
+/// Builds the scene, playing each step's note on `instrument`.
+fn build_animation(instrument: &Instrument) -> CompiledScene {
     let mut scene = Scene::new();
     scene.set_background(Color::from_rgb8(12, 15, 23));
     // Every move uses these unless it says otherwise. Ease-out starts at
@@ -283,14 +311,19 @@ fn build_animation() -> CompiledScene {
         (algorithm.sort)(&mut order, &mut |current, active| {
             let value = current[active];
             let bar = bars[value];
-            // The cursor lights the bar, which then fades back. If the
-            // cursor returns before the fade ends, it lights up again.
+            // The cursor lights the bar, which then fades back, and plays
+            // the bar's note. If the cursor returns before the fade ends,
+            // it lights up again; the interruption cuts the fade, never
+            // the note, which always rings out.
             cursor.push(
-                chain([
-                    bar.set_fill(HIGHLIGHT),
-                    bar.fill_to(bar_color(value))
-                        .over(FADE_TIME)
-                        .ease(ease::cubic::ease_out),
+                all([
+                    chain([
+                        bar.set_fill(HIGHLIGHT),
+                        bar.fill_to(bar_color(value))
+                            .over(FADE_TIME)
+                            .ease(ease::cubic::ease_out),
+                    ]),
+                    instrument.note(bar_note(value)).over(NOTE_TIME),
                 ])
                 .delay(clock)
                 .interrupt(),
@@ -313,7 +346,9 @@ fn build_animation() -> CompiledScene {
 
         steps.push(wait(ms(200)));
 
-        // Sorted now, so value order is left-to-right order: sweep across.
+        // Sorted now, so value order is left-to-right order: sweep across,
+        // climbing the scale. The `any` moves on after 15 ms while the
+        // fade and the note carry on.
         for (value, bar) in bars.iter().enumerate() {
             steps.extend([
                 bar.set_fill(HIGHLIGHT),
@@ -322,6 +357,7 @@ fn build_animation() -> CompiledScene {
                     bar.set_fill(bar_color(value))
                         .over(FADE_TIME)
                         .ease(ease::cubic::ease_out),
+                    instrument.note(bar_note(value)).over(NOTE_TIME),
                 ]),
             ]);
         }
@@ -355,10 +391,27 @@ impl SplitMix64 {
     }
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
-    let animation = build_animation();
+/// A soft sine: a quick attack, then it settles to 40% while held and
+/// fades over 100 ms once released. Scaled down because many notes
+/// overlap.
+fn sine_instrument() -> Instrument {
+    Instrument::synth(|hz| {
+        0.15 * (sine_hz(hz) * adsr_live(0.005, 0.05, 0.4, 0.1))
+    })
+}
 
-    Window::new("MotionGfx | Sorting", (1280.0, 720.0)).run(animation)
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // A SoundFont given on the command line, otherwise the sine synth.
+    let instrument = match std::env::args().nth(1) {
+        Some(path) => SoundFont::load(path)?.program(0),
+        None => sine_instrument(),
+    };
+    let animation = build_animation(&instrument);
+
+    Window::new("MotionGfx | Sorting", (1280.0, 720.0))
+        .audio()
+        .run(animation)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -367,5 +420,5 @@ mod headless;
 
 #[test]
 fn builds_and_samples_headlessly() {
-    headless::check(build_animation());
+    headless::check(build_animation(&sine_instrument()));
 }
