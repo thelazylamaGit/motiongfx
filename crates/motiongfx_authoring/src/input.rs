@@ -43,10 +43,37 @@ impl<M, T> Input<M, T> {
         }
     }
 }
-type Read<M, T> =
-    dyn Fn(&World<M>, &DerivedValues) -> Option<T> + Send + Sync;
-type Validate<M> =
-    dyn Fn(&World<M>) -> Result<(), BindingError> + Send + Sync;
+// A registered source plus its conversion: reads the converted value and
+// checks the source exists. One object for both, so a prepared reader holds
+// a single shared pointer.
+trait MappedRead<M, T>: Send + Sync {
+    fn read(
+        &self,
+        world: &World<M>,
+        values: &DerivedValues,
+    ) -> Option<T>;
+    fn validate(&self, world: &World<M>) -> Result<(), BindingError>;
+}
+struct Mapped<P, F> {
+    source: P,
+    convert: Arc<F>,
+}
+impl<M, T, P, F> MappedRead<M, T> for Mapped<P, F>
+where
+    P: BindingSource<World<M>>,
+    F: Fn(P::Value) -> T + Send + Sync,
+{
+    fn read(
+        &self,
+        world: &World<M>,
+        values: &DerivedValues,
+    ) -> Option<T> {
+        self.source.read(world, values).map(&*self.convert)
+    }
+    fn validate(&self, world: &World<M>) -> Result<(), BindingError> {
+        self.source.validate(world)
+    }
+}
 #[doc(hidden)]
 pub struct Reader<M, T> {
     register: Arc<Register<M, T>>,
@@ -66,15 +93,13 @@ type Register<M, T> = dyn Fn(
     + Sync;
 #[doc(hidden)]
 pub struct PreparedReader<M, T> {
-    read: Arc<Read<M, T>>,
-    validate: Arc<Validate<M>>,
+    reader: Arc<dyn MappedRead<M, T>>,
     dependencies: Vec<BindingDependency>,
 }
 impl<M, T> Clone for PreparedReader<M, T> {
     fn clone(&self) -> Self {
         Self {
-            read: self.read.clone(),
-            validate: self.validate.clone(),
+            reader: self.reader.clone(),
             dependencies: self.dependencies.clone(),
         }
     }
@@ -92,15 +117,11 @@ impl<M: 'static, T: Clone + PartialEq + ThreadSafe> Input<M, T> {
         Self::Reader(Reader {
             register: Arc::new(move |world, plan| {
                 let source = source.register(world, plan);
-                let validation_source = source.clone();
-                let convert = convert.clone();
                 PreparedReader {
                     dependencies: source.dependencies(),
-                    read: Arc::new(move |world, values| {
-                        source.read(world, values).map(&*convert)
-                    }),
-                    validate: Arc::new(move |world| {
-                        validation_source.validate(world)
+                    reader: Arc::new(Mapped {
+                        source,
+                        convert: convert.clone(),
                     }),
                 }
             }),
@@ -146,7 +167,7 @@ impl<M: 'static, T: Clone + PartialEq + ThreadSafe>
             Self::Fixed(value) => Some(value.clone()),
             Self::Signal(value) => value.read(world, values),
             Self::Computed(value) => value.read(world, values),
-            Self::Reader(value) => (value.read)(world, values),
+            Self::Reader(value) => value.reader.read(world, values),
         }
     }
     fn dependencies(&self) -> Vec<BindingDependency> {
@@ -169,7 +190,7 @@ impl<M: 'static, T: Clone + PartialEq + ThreadSafe>
         match self {
             Self::Fixed(_) | Self::Computed(_) => Ok(()),
             Self::Signal(value) => value.validate(world),
-            Self::Reader(value) => (value.validate)(world),
+            Self::Reader(value) => value.reader.validate(world),
         }
     }
 }
