@@ -53,13 +53,16 @@ impl TextLayout {
         fonts: &mut Option<FontSystem>,
         selections: &[TextSelection],
     ) {
-        if text.scale == 0.0 || text.opacity <= 0.0 {
+        if text.transform.scale == 0.0 || text.opacity <= 0.0 {
             return;
         }
         let transform = screen
-            * Affine::translate((text.position.x, -text.position.y))
-            * Affine::rotate(-text.rotation)
-            * Affine::scale(text.scale);
+            * Affine::translate((
+                text.transform.position.x,
+                -text.transform.position.y,
+            ))
+            * Affine::rotate(-text.transform.rotation)
+            * Affine::scale(text.transform.scale);
         self.fonts.get(
             fonts.get_or_insert_with(FontSystem::default),
             text.content.clone(),

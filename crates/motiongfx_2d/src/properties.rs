@@ -40,7 +40,22 @@ pub(crate) use fields;
 // A trailing `shared` marks a field whose handle getter comes from a
 // capability trait (`position` from `Transformable`, and so on), so no
 // separate getter is generated for it.
+//
+// A leading `transform(Circle.transform);` declares the five fields of a
+// `Transform` field at that path: position (with x and y), scale and
+// rotation.
 macro_rules! object {
+    ($state:ident, $id:ident; transform($($transform:tt)+);
+        $($rest:tt)*) => {
+        crate::properties::object!($state, $id;
+            set position: crate::Point => new($($transform)+.position) shared;
+            get position_x: f64 => new($($transform)+.position.x) shared;
+            get position_y: f64 => new($($transform)+.position.y) shared;
+            set scale: f64 => new($($transform)+.scale) shared;
+            set rotation: f64 => new($($transform)+.rotation) shared;
+            $($rest)*
+        );
+    };
     ($state:ident, $id:ident;
         $($(#[$attr:meta])* $kind:ident $name:ident: $value:ty => $method:ident($($path:tt)+) $($shared:ident)?;)*) => {
         crate::properties::fields!(fields, $state, $id;

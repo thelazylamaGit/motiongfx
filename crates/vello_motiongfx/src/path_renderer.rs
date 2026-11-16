@@ -50,9 +50,15 @@ impl PathGeometry {
             return;
         }
         let xf = screen
-            * Affine::translate((path.position.x, -path.position.y))
-            * Affine::rotate(-path.rotation)
-            * Affine::scale_non_uniform(path.scale, -path.scale);
+            * Affine::translate((
+                path.transform.position.x,
+                -path.transform.position.y,
+            ))
+            * Affine::rotate(-path.transform.rotation)
+            * Affine::scale_non_uniform(
+                path.transform.scale,
+                -path.transform.scale,
+            );
         scene.stroke(
             &Stroke::new(path.stroke_width)
                 .with_caps(path.line_cap)

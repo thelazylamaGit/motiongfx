@@ -21,7 +21,7 @@ fn objects_follow_a_simulation_forwards_and_backwards() {
         let circle = animation.get(dot);
         assert_eq!(circle.radius, expected, "radius at {time:?}");
         assert_eq!(
-            circle.position,
+            circle.transform.position,
             Point::new(expected, 0.0),
             "position at {time:?}"
         );

@@ -1,7 +1,7 @@
 //! [`Chevron`]: an open arrowhead outline.
 use crate::rounded_triangle::Geometry;
 use crate::{
-    Cap, Color, DrawObject, Handle, Join, Model2d, Object, Point,
+    Cap, Color, DrawObject, Handle, Join, Model2d, Object,
     SceneObject,
 };
 use kurbo::Affine;
@@ -17,12 +17,8 @@ pub struct Chevron {
     pub size: f64,
     /// Full opening angle at the apex, in radians.
     pub angle: f64,
-    /// Where the apex is, in canvas units (y up).
-    pub position: Point,
-    /// Rotation in radians, counterclockwise.
-    pub rotation: f64,
-    /// Uniform scale; 1 is normal size.
-    pub scale: f64,
+    /// Position, scale and rotation. The position is the where the apex is, in canvas units (y up).
+    pub transform: crate::Transform,
     /// 0 (invisible) to 1 (opaque).
     pub opacity: f64,
     /// Outline colour.
@@ -40,9 +36,7 @@ impl Default for Chevron {
         Self {
             size: 24.0,
             angle: std::f64::consts::FRAC_PI_3,
-            position: Point::ZERO,
-            rotation: 0.0,
-            scale: 1.0,
+            transform: crate::Transform::default(),
             opacity: 1.0,
             stroke: Color::WHITE,
             stroke_width: 2.0,
@@ -68,18 +62,14 @@ impl Chevron {
     /// line tip can trim the line to meet it.
     pub fn extent(&self) -> f64 {
         self.geometry().extent(
-            self.position,
-            self.rotation,
-            self.scale,
+            self.transform.position,
+            self.transform.rotation,
+            self.transform.scale,
         )
     }
     /// Where the chevron's local coordinates sit on the canvas.
     pub fn transform(&self) -> Affine {
-        crate::wedge::transform(
-            self.position,
-            self.rotation,
-            self.scale,
-        )
+        self.transform.affine()
     }
     /// Add the chevron and draw it in insertion order.
     pub(crate) fn insert<M: Model2d>(
@@ -133,17 +123,13 @@ crate::object::stroke_options!(Chevron);
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::object!(Chevron, ChevronId;
+transform(Chevron.transform);
 set size: f64 => new(Chevron.size);
 set angle: f64 => new(Chevron.angle);
-set position: Point => new(Chevron.position) shared;
-set rotation: f64 => new(Chevron.rotation) shared;
-set scale: f64 => new(Chevron.scale) shared;
 set opacity: f64 => new(Chevron.opacity) shared;
 get stroke: Color => new(Chevron.stroke) shared;
 set stroke_width: f64 => new(Chevron.stroke_width) shared;
 get line_cap: crate::Cap => discrete(Chevron.line_cap);
 get line_join: crate::Join => discrete(Chevron.line_join);
-get position_x: f64 => new(Chevron.position.x) shared;
-get position_y: f64 => new(Chevron.position.y) shared;
 );
 crate::capability::capabilities!(Chevron; Transformable, Strokable, Fadable);

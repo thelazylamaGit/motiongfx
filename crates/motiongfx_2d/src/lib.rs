@@ -15,7 +15,7 @@
 //! let mut animation = scene.compile([radius.to(20.0).ease(ease::linear)]);
 //! animation.sample(ms(500));
 //! assert_eq!(animation.get(circle).radius, 15.0);
-//! assert_eq!(animation.get(circle).position, Point::new(30.0, 0.0));
+//! assert_eq!(animation.get(circle).transform.position, Point::new(30.0, 0.0));
 //! ```
 #![warn(missing_docs)]
 pub use kurbo::{Affine, Cap, Join, Point, Rect, Size, Vec2};
@@ -95,6 +95,8 @@ mod rounded_triangle;
 mod style;
 mod text;
 mod text_selection;
+mod transform;
+pub use transform::Transform;
 mod tips;
 mod triangle;
 mod updates;

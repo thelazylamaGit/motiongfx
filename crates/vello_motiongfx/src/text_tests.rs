@@ -18,9 +18,9 @@ fn paint_and_transforms_reuse_layout_but_font_size_reshapes() {
     assert!(!frame.encoding().resources.glyphs.is_empty());
     text.fill = colors::RED;
     text.opacity = 0.5;
-    text.position = Point::new(20.0, 30.0);
-    text.scale = 1.5;
-    text.rotation = 0.2;
+    text.transform.position = Point::new(20.0, 30.0);
+    text.transform.scale = 1.5;
+    text.transform.rotation = 0.2;
     frame.reset();
     cache.render(
         &text,

@@ -1,7 +1,7 @@
 //! [`Triangle`]: a filled arrowhead, optionally with rounded corners.
 use crate::rounded_triangle::{self, Geometry};
 use crate::{
-    Cap, Color, DrawObject, Handle, Join, Model2d, Object, Point,
+    Cap, Color, DrawObject, Handle, Join, Model2d, Object,
     SceneObject,
 };
 use kurbo::Affine;
@@ -17,12 +17,8 @@ pub struct Triangle {
     pub angle: f64,
     /// Corner radius in canvas units, reduced if it doesn't fit.
     pub radius: f64,
-    /// Where the apex is, in canvas units (y up).
-    pub position: Point,
-    /// Rotation in radians, counterclockwise.
-    pub rotation: f64,
-    /// Uniform scale; 1 is normal size.
-    pub scale: f64,
+    /// Position, scale and rotation. The position is the where the apex is, in canvas units (y up).
+    pub transform: crate::Transform,
     /// 0 (invisible) to 1 (opaque).
     pub opacity: f64,
     /// Fill colour.
@@ -43,9 +39,7 @@ impl Default for Triangle {
             size: 24.0,
             angle: std::f64::consts::FRAC_PI_3,
             radius: 0.0,
-            position: Point::ZERO,
-            rotation: 0.0,
-            scale: 1.0,
+            transform: crate::Transform::default(),
             opacity: 1.0,
             fill: Color::WHITE,
             stroke: Color::TRANSPARENT,
@@ -72,11 +66,7 @@ impl Triangle {
     }
     /// Where the triangle's local coordinates sit on the canvas.
     pub fn transform(&self) -> Affine {
-        crate::wedge::transform(
-            self.position,
-            self.rotation,
-            self.scale,
-        )
+        self.transform.affine()
     }
     /// Add the triangle and draw it in insertion order.
     pub(crate) fn insert<M: Model2d>(
@@ -130,19 +120,15 @@ crate::object::stroke_options!(Triangle);
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::object!(Triangle, TriangleId;
+transform(Triangle.transform);
 set size: f64 => new(Triangle.size);
 set angle: f64 => new(Triangle.angle);
 set radius: f64 => new(Triangle.radius);
-set position: Point => new(Triangle.position) shared;
-set rotation: f64 => new(Triangle.rotation) shared;
-set scale: f64 => new(Triangle.scale) shared;
 set opacity: f64 => new(Triangle.opacity) shared;
 set fill: Color => new(Triangle.fill) shared;
 get stroke: Color => new(Triangle.stroke) shared;
 set stroke_width: f64 => new(Triangle.stroke_width) shared;
 get line_cap: crate::Cap => discrete(Triangle.line_cap);
 get line_join: crate::Join => discrete(Triangle.line_join);
-get position_x: f64 => new(Triangle.position.x) shared;
-get position_y: f64 => new(Triangle.position.y) shared;
 );
 crate::capability::capabilities!(Triangle; Transformable, Fillable, Strokable, Fadable);

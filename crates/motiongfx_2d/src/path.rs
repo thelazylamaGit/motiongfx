@@ -12,8 +12,8 @@ use std::sync::Arc;
 pub struct Path {
     /// The path's shape, shared between copies.
     pub geometry: Arc<BezPath>,
-    /// Offset of the path's coordinates, in canvas units (y up).
-    pub position: Point,
+    /// Position, scale and rotation. The position is the offset of the path's coordinates, in canvas units (y up).
+    pub transform: crate::Transform,
     /// Line colour.
     pub stroke: Color,
     /// Line width in canvas units.
@@ -24,10 +24,6 @@ pub struct Path {
     pub line_join: crate::Join,
     /// 0 (invisible) to 1 (opaque).
     pub opacity: f64,
-    /// Uniform scale; 1 is normal size.
-    pub scale: f64,
-    /// Rotation in radians, counterclockwise.
-    pub rotation: f64,
     /// Where the visible part starts, from 0 (path start) to 1 (end).
     pub start: f64,
     /// Where the visible part ends, from 0 (path start) to 1 (end).
@@ -118,14 +114,12 @@ impl Path {
     ) -> crate::Object<Self, M> {
         crate::Object::new(Self {
             geometry: Arc::new(geometry),
-            position: Point::ZERO,
+            transform: crate::Transform::default(),
             stroke: Color::WHITE,
             stroke_width: 1.0,
             line_cap: crate::Cap::Round,
             line_join: crate::Join::Round,
             opacity: 1.0,
-            scale: 1.0,
-            rotation: 0.0,
             start: 0.0,
             end: 1.0,
         })
@@ -178,18 +172,14 @@ crate::capability::stored_in!(Path, PathId, paths);
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::object!(Path, PathId;
-set position: Point => new(Path.position) shared;
+transform(Path.transform);
 set start: f64 => new(Path.start);
 set end: f64 => new(Path.end);
 set opacity: f64 => new(Path.opacity) shared;
-set scale: f64 => new(Path.scale) shared;
-set rotation: f64 => new(Path.rotation) shared;
 get stroke: Color => new(Path.stroke) shared;
 set stroke_width: f64 => new(Path.stroke_width) shared;
 get line_cap: crate::Cap => discrete(Path.line_cap);
 get line_join: crate::Join => discrete(Path.line_join);
 set geometry: Arc<BezPath> => discrete(Path.geometry);
-get position_x: f64 => new(Path.position.x) shared;
-get position_y: f64 => new(Path.position.y) shared;
 );
 crate::capability::capabilities!(Path; Transformable, Strokable, Fadable);

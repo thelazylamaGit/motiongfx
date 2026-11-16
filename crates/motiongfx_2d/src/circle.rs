@@ -1,7 +1,7 @@
 //! [`Circle`]: filled circles and, with a transparent fill, rings.
 use crate::Handle;
 
-use crate::{Color, DrawObject, Parent, Point, SceneObject};
+use crate::{Color, DrawObject, Parent, SceneObject};
 use kurbo::Affine;
 
 /// A circle. Create one with [`Circle::new`]; for a ring, use a
@@ -11,8 +11,8 @@ use kurbo::Affine;
 pub struct Circle {
     /// Radius in canvas units.
     pub radius: f64,
-    /// Centre, in canvas units (y up).
-    pub position: Point,
+    /// Position, scale and rotation. The position is the centre, in canvas units (y up).
+    pub transform: crate::Transform,
     /// Fill colour.
     pub fill: Color,
     /// Outline colour.
@@ -21,10 +21,6 @@ pub struct Circle {
     pub stroke_width: f64,
     /// 0 (invisible) to 1 (opaque).
     pub opacity: f64,
-    /// Uniform scale; 1 is normal size.
-    pub scale: f64,
-    /// Rotation in radians, counterclockwise.
-    pub rotation: f64,
     pub(crate) parent: Option<Parent>,
 }
 
@@ -35,13 +31,11 @@ impl Circle {
     ) -> crate::Object<Self, M> {
         crate::Object::new(Self {
             radius: 0.0,
-            position: Point::ZERO,
+            transform: crate::Transform::default(),
             fill: Color::WHITE,
             stroke: Color::TRANSPARENT,
             stroke_width: 0.0,
             opacity: 1.0,
-            scale: 1.0,
-            rotation: 0.0,
             parent: None,
         })
         .radius(radius)
@@ -49,9 +43,7 @@ impl Circle {
 
     /// Where the circle's local coordinates sit, relative to its parent.
     pub fn transform(&self) -> Affine {
-        Affine::translate((self.position.x, -self.position.y))
-            * Affine::rotate(-self.rotation)
-            * Affine::scale(self.scale)
+        self.transform.affine()
     }
 }
 
@@ -113,15 +105,11 @@ crate::capability::stored_in!(Circle, CircleId, circles);
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::object!(Circle, CircleId;
+transform(Circle.transform);
 set radius: f64 => new(Circle.radius);
 set fill: Color => new(Circle.fill) shared;
 get stroke: Color => new(Circle.stroke) shared;
 set stroke_width: f64 => new(Circle.stroke_width) shared;
 set opacity: f64 => new(Circle.opacity) shared;
-set scale: f64 => new(Circle.scale) shared;
-set rotation: f64 => new(Circle.rotation) shared;
-set position: Point => new(Circle.position) shared;
-get position_x: f64 => new(Circle.position.x) shared;
-get position_y: f64 => new(Circle.position.y) shared;
 );
 crate::capability::capabilities!(Circle; Transformable, Fillable, Strokable, Fadable);

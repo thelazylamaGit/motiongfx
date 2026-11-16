@@ -70,7 +70,7 @@ fn compact_fields_remain_sources_and_general_property_targets() {
     {
         animation.sample(ms(time));
         assert_eq!(animation.get(b).radius, radius);
-        assert_eq!(animation.get(b).position.x, x);
+        assert_eq!(animation.get(b).transform.position.x, x);
     }
 }
 

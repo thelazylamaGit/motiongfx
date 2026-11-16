@@ -7,8 +7,8 @@ use crate::*;
 pub struct Rectangle {
     /// Width and height in canvas units.
     pub size: Size,
-    /// Centre, in canvas units (y up).
-    pub position: Point,
+    /// Position, scale and rotation. The position is the centre, in canvas units (y up).
+    pub transform: crate::Transform,
     /// Fill colour.
     pub fill: Color,
     /// 0 (invisible) to 1 (opaque); multiplies the fill and outline alpha.
@@ -21,10 +21,6 @@ pub struct Rectangle {
     pub line_cap: crate::Cap,
     /// How stroke corners are drawn.
     pub line_join: crate::Join,
-    /// Uniform scale; 1 is normal size.
-    pub scale: f64,
-    /// Rotation in radians, counterclockwise.
-    pub rotation: f64,
     /// Corner radius in canvas units; 0 for sharp corners.
     pub radius: f64,
 }
@@ -33,15 +29,13 @@ impl Default for Rectangle {
     fn default() -> Self {
         Self {
             size: Size::new(100.0, 100.0),
-            position: Point::ZERO,
+            transform: crate::Transform::default(),
             fill: Color::WHITE,
             opacity: 1.0,
             stroke: Color::TRANSPARENT,
             stroke_width: 0.0,
             line_cap: crate::Cap::Round,
             line_join: crate::Join::Round,
-            scale: 1.0,
-            rotation: 0.0,
             radius: 0.0,
         }
     }
@@ -63,8 +57,7 @@ impl Rectangle {
     /// Where the rectangle's local coordinates sit on the canvas. Scale is
     /// applied to the size instead, so strokes keep their width.
     pub fn transform(&self) -> Affine {
-        Affine::translate((self.position.x, -self.position.y))
-            * Affine::rotate(-self.rotation)
+        self.transform.without_scale()
     }
 
     /// A white rectangle from a `(width, height)` tuple, `Vec2` or `Size`.
@@ -120,18 +113,14 @@ impl<M: Model2d> SceneObject<M> for Rectangle {
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::object!(Rectangle, RectangleId;
+transform(Rectangle.transform);
 set size: Size => new(Rectangle.size);
-set position: Point => new(Rectangle.position) shared;
 set fill: Color => new(Rectangle.fill) shared;
 set opacity: f64 => new(Rectangle.opacity) shared;
 set radius: f64 => new(Rectangle.radius);
-set scale: f64 => new(Rectangle.scale) shared;
-set rotation: f64 => new(Rectangle.rotation) shared;
 get stroke: Color => new(Rectangle.stroke) shared;
 set stroke_width: f64 => new(Rectangle.stroke_width) shared;
 get line_cap: crate::Cap => discrete(Rectangle.line_cap);
 get line_join: crate::Join => discrete(Rectangle.line_join);
-get position_x: f64 => new(Rectangle.position.x) shared;
-get position_y: f64 => new(Rectangle.position.y) shared;
 );
 crate::capability::capabilities!(Rectangle; Transformable, Fillable, Strokable, Fadable);

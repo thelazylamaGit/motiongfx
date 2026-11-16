@@ -9,6 +9,11 @@ a typed `Handle<T>`, such as `Handle<Circle>`, whose methods are all plain
 methods, so none need a trait import.
 After sampling, `compiled.get(handle)` returns that object's state, such as a
 `&Circle` for a circle's handle.
+Shapes, paths and text keep their position, scale and rotation together in a
+`transform: Transform` field (`compiled.get(dot).transform.position`); builders
+and handles still set and animate each part directly (`.position(..)`,
+`dot.rotation()`). The camera keeps its own fields, because its scale sizes the
+view rather than an object.
 The portable model makes no claim that every renderer already supports it.
 
 `Object<T, M>` and `Input<T, M>` are thin local adapters over shared authoring
@@ -561,7 +566,7 @@ let progress = signal(0.0);
 let dot = scene.add(Circle::new(6.4).fill(YELLOW));
 scene.update(dot, &progress, |circle, progress| {
     let angle = progress * std::f64::consts::TAU;
-    circle.position = Point::new(80.0 * angle.cos(), 80.0 * angle.sin());
+    circle.transform.position = Point::new(80.0 * angle.cos(), 80.0 * angle.sin());
 });
 ```
 

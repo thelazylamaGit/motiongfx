@@ -64,14 +64,14 @@ fn path_cache_handles_bezier_geometry_and_style_changes() {
         Point::new(10.0, 10.0)
     );
     let mut rendered = vello::Scene::new();
-    path.position = Point::new(20.0, 30.0);
+    path.transform.position = Point::new(20.0, 30.0);
     path.opacity = 0.5;
     path.stroke = colors::RED;
     path.stroke_width = 3.0;
     path.line_cap = Cap::Butt;
     path.line_join = Join::Miter;
-    path.scale = 2.0;
-    path.rotation = 0.4;
+    path.transform.scale = 2.0;
+    path.transform.rotation = 0.4;
     cache.render(&path, &mut rendered, Affine::IDENTITY);
     assert_eq!(cache.rebuilds, 1);
     path.geometry = Path::new::<Canvas, _>([(0.0, 0.0), (40.0, 0.0)])

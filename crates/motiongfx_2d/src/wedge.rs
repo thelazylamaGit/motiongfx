@@ -3,19 +3,6 @@
 //! open outline.
 
 use crate::Point;
-use kurbo::Affine;
-
-/// Where a shape at `position`, turned by `rotation` and scaled by `scale`,
-/// sits on the canvas (y up, so y is flipped for the renderer).
-pub(crate) fn transform(
-    position: Point,
-    rotation: f64,
-    scale: f64,
-) -> Affine {
-    Affine::translate((position.x, -position.y))
-        * Affine::rotate(-rotation)
-        * Affine::scale(scale)
-}
 
 pub(crate) fn vertices(size: f64, angle: f64) -> [Point; 3] {
     assert!(

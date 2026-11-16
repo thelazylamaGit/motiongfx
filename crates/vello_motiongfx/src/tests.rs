@@ -48,7 +48,7 @@ fn authored_square_matches_direct_motiongfx_at_arbitrary_times() {
     let mut registry = Registry::new();
     let mut b = registry.create_builder::<Baseline>();
     let shift = b
-        .act(square.id(), path!(Rectangle.position), |p| {
+        .act(square.id(), path!(Rectangle.transform.position), |p| {
             *p + (-80.0, 0.0)
         })
         .with_ease(smooth)
@@ -58,11 +58,15 @@ fn authored_square_matches_direct_motiongfx_at_arbitrary_times() {
         .with_ease(smooth)
         .play(s(1));
     let scale = b
-        .act(square.id(), path!(Rectangle.scale), |s| s * 0.3)
+        .act(square.id(), path!(Rectangle.transform.scale), |s| {
+            s * 0.3
+        })
         .with_ease(smooth)
         .play(s(1));
     let rotate = b
-        .act(square.id(), path!(Rectangle.rotation), |r| r + 0.4)
+        .act(square.id(), path!(Rectangle.transform.rotation), |r| {
+            r + 0.4
+        })
         .with_ease(smooth)
         .play(s(1));
     let mut timeline =
@@ -82,18 +86,27 @@ fn authored_square_matches_direct_motiongfx_at_arbitrary_times() {
         timeline.sample_queued_actions(&registry, &mut world);
         let actual = authored.get(square);
         let expected = &world.0;
-        assert_eq!(actual.position, expected.position);
+        assert_eq!(
+            actual.transform.position,
+            expected.transform.position
+        );
         assert_eq!(actual.fill, expected.fill);
-        assert_eq!(actual.scale, expected.scale);
-        assert_eq!(actual.rotation, expected.rotation);
+        assert_eq!(actual.transform.scale, expected.transform.scale);
+        assert_eq!(
+            actual.transform.rotation,
+            expected.transform.rotation
+        );
         assert_eq!(actual.stroke, blue);
         assert_eq!(actual.stroke_width, 4.0);
     }
     authored.sample(s(4));
     let final_square = authored.get(square);
-    assert_eq!(final_square.position, Point::new(-80.0, 0.0));
-    assert!((final_square.scale - 0.3).abs() < 1e-6);
-    assert!((final_square.rotation - 0.4).abs() < 1e-6);
+    assert_eq!(
+        final_square.transform.position,
+        Point::new(-80.0, 0.0)
+    );
+    assert!((final_square.transform.scale - 0.3).abs() < 1e-6);
+    assert!((final_square.transform.rotation - 0.4).abs() < 1e-6);
 }
 
 #[test]
@@ -113,17 +126,20 @@ fn relative_targets_waits_overrides_and_multiple_objects() {
     ]);
     assert_eq!(animation.duration(), ms(1800));
     animation.sample(ms(400));
-    assert_eq!(animation.get(left).position.x, 10.0);
+    assert_eq!(animation.get(left).transform.position.x, 10.0);
     animation.sample(ms(750));
-    assert!((animation.get(left).position.x - 11.25).abs() < 1e-6);
+    assert!(
+        (animation.get(left).transform.position.x - 11.25).abs()
+            < 1e-6
+    );
     animation.sample(ms(1400));
-    assert_eq!(animation.get(left).position.x, 15.0);
-    assert_eq!(animation.get(right).position, Point::ZERO);
-    assert_eq!(animation.get(left).scale, 2.0);
-    assert_eq!(animation.get(right).scale, 2.0);
+    assert_eq!(animation.get(left).transform.position.x, 15.0);
+    assert_eq!(animation.get(right).transform.position, Point::ZERO);
+    assert_eq!(animation.get(left).transform.scale, 2.0);
+    assert_eq!(animation.get(right).transform.scale, 2.0);
     animation.sample(Duration::ZERO);
-    assert_eq!(animation.get(left).position, Point::ZERO);
-    assert_eq!(animation.get(right).scale, 1.0);
+    assert_eq!(animation.get(left).transform.position, Point::ZERO);
+    assert_eq!(animation.get(right).transform.scale, 1.0);
 }
 
 #[test]
@@ -161,17 +177,32 @@ fn nested_axes_and_whole_position_operations_share_the_same_state() {
         shape.shift(5.0, -10.0),
     ]);
     animation.sample(ms(500));
-    assert_eq!(animation.get(shape).position, Point::new(20.0, 25.0));
-    assert_eq!(animation.get(title).position, Point::new(48.5, 27.0));
-    animation.sample(ms(1500));
-    assert_eq!(animation.get(shape).position, Point::new(32.5, 25.0));
     assert_eq!(
-        animation.get(title).position,
+        animation.get(shape).transform.position,
+        Point::new(20.0, 25.0)
+    );
+    assert_eq!(
+        animation.get(title).transform.position,
+        Point::new(48.5, 27.0)
+    );
+    animation.sample(ms(1500));
+    assert_eq!(
+        animation.get(shape).transform.position,
+        Point::new(32.5, 25.0)
+    );
+    assert_eq!(
+        animation.get(title).transform.position,
         Point::new(100.0, 50.0)
     );
     animation.sample(ms(0));
-    assert_eq!(animation.get(shape).position, Point::new(10.0, 20.0));
-    assert_eq!(animation.get(title).position, Point::new(-3.0, 4.0));
+    assert_eq!(
+        animation.get(shape).transform.position,
+        Point::new(10.0, 20.0)
+    );
+    assert_eq!(
+        animation.get(title).transform.position,
+        Point::new(-3.0, 4.0)
+    );
 }
 
 #[test]
@@ -210,11 +241,11 @@ fn text_style_animation_and_content_changes_are_seekable() {
     }
     animation.sample(ms(500));
     let text = animation.get(title);
-    assert_eq!(text.position.x, 50.0);
+    assert_eq!(text.transform.position.x, 50.0);
     assert_eq!(text.font_size, 21.0);
     assert_eq!(text.opacity, 0.75);
-    assert_eq!(text.scale, 1.5);
-    assert!((text.rotation - 0.2).abs() < 1e-6);
+    assert_eq!(text.transform.scale, 1.5);
+    assert!((text.transform.rotation - 0.2).abs() < 1e-6);
     animation.sample(s(1));
     for (a, b) in animation
         .get(title)
@@ -323,9 +354,12 @@ fn anchored_text_inherits_parent_motion_and_keeps_independent_local_animation()
         animation.sample(ms(time));
         let text = animation.get(label);
         let anchor = animation.model().text_parent_transform(text)
-            * Point::new(text.position.x, -text.position.y);
+            * Point::new(
+                text.transform.position.x,
+                -text.transform.position.y,
+            );
         assert!(anchor.distance(expected) < 1e-6);
-        assert_eq!(text.position.y, -10.0);
+        assert_eq!(text.transform.position.y, -10.0);
         rendered.reset();
         renderer.render(
             &animation,

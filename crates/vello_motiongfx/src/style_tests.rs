@@ -27,7 +27,7 @@ fn partial_styles_layer_without_resetting_unspecified_properties_or_retaining_th
     let animation = scene.compile([wait(s(1))]);
     let a = animation.get(a);
     assert_eq!(a.content.as_ref(), "Label");
-    assert_eq!(a.position, Point::new(10.0, 20.0));
+    assert_eq!(a.transform.position, Point::new(10.0, 20.0));
     assert_eq!(a.opacity, 0.5);
     assert_eq!(a.font_size, 30.0);
     assert!(a.align == TextAlign::Center);

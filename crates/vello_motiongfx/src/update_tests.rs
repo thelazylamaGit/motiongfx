@@ -22,7 +22,7 @@ fn updates_run_after_bindings_in_registration_order_on_every_sample()
     // Reads the just-sampled binding. This native callback itself is uncached.
     scene.update(b, a.position(), move |b, position| {
         counter.fetch_add(1, Ordering::Relaxed);
-        b.position = position + (0.0, 30.0);
+        b.transform.position = position + (0.0, 30.0);
     });
     scene.update(
         line,
@@ -56,7 +56,10 @@ fn updates_run_after_bindings_in_registration_order_on_every_sample()
     .enumerate()
     {
         animation.sample(ms(time));
-        assert_eq!(animation.get(b).position, Point::new(x, 30.0));
+        assert_eq!(
+            animation.get(b).transform.position,
+            Point::new(x, 30.0)
+        );
         assert_eq!(animation.get(line).start, Point::new(x, 30.0));
         assert_eq!(animation.get(line).end, Point::new(x, 80.0));
         assert_eq!(
@@ -80,10 +83,10 @@ fn grouped_targets_preserve_caller_order_and_borrow_disjoint_objects()
     let line = scene.add(Line::new(Point::ZERO, Point::ZERO));
     // Reverse storage order and mix object types in one tuple.
     scene.update((b, line, a), &amount, |(b, line, a), amount| {
-        b.position = Point::new(amount + 20.0, 0.0);
-        a.position = Point::new(amount + 10.0, 0.0);
-        line.start = a.position;
-        line.end = b.position;
+        b.transform.position = Point::new(amount + 20.0, 0.0);
+        a.transform.position = Point::new(amount + 10.0, 0.0);
+        line.start = a.transform.position;
+        line.end = b.transform.position;
     });
     let text = scene.add(Text::new(""));
     let rect = scene.add(Rectangle::new(10.0, 10.0));
@@ -92,8 +95,8 @@ fn grouped_targets_preserve_caller_order_and_borrow_disjoint_objects()
         (rect, text, camera),
         &amount,
         |(rect, text, camera), amount| {
-            rect.rotation = amount;
-            text.position = rect.position;
+            rect.transform.rotation = amount;
+            text.transform.position = rect.transform.position;
             camera.scale = 1.0 + amount;
         },
     );
@@ -102,7 +105,7 @@ fn grouped_targets_preserve_caller_order_and_borrow_disjoint_objects()
     animation.sample(ms(500));
     assert_eq!(animation.get(line).start, Point::new(10.5, 0.0));
     assert_eq!(animation.get(line).end, Point::new(20.5, 0.0));
-    assert_eq!(animation.get(rect).rotation, 0.5);
+    assert_eq!(animation.get(rect).transform.rotation, 0.5);
     assert_eq!(animation.model().camera().scale, 1.5);
 }
 
@@ -164,9 +167,10 @@ fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
         (&bend, &t),
         move |(a, b, q), (bend, t)| {
             let control = Point::new(0.0, 170.0 - bend);
-            a.position = start + (control - start) * t;
-            b.position = control + (end - control) * t;
-            q.position = a.position + (b.position - a.position) * t;
+            a.transform.position = start + (control - start) * t;
+            b.transform.position = control + (end - control) * t;
+            q.transform.position = a.transform.position
+                + (b.transform.position - a.transform.position) * t;
         },
     );
     scene.update(
@@ -203,14 +207,17 @@ fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
         let progress = (time as f64 / 1000.0).min(1.0) * 0.5;
         let expected =
             QuadBez::new(start, control, end).eval(progress);
-        assert!(animation.get(q).position.distance(expected) < 1e-8);
+        assert!(
+            animation.get(q).transform.position.distance(expected)
+                < 1e-8
+        );
         assert_eq!(
             animation.get(line).start,
-            animation.get(a).position
+            animation.get(a).transform.position
         );
         assert_eq!(
             animation.get(line).end,
-            animation.get(b).position
+            animation.get(b).transform.position
         );
         rendered.reset();
         let size = Size::new(1120.0, 800.0);

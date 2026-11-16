@@ -91,8 +91,8 @@ fn shared_computed_sources_drive_builders_and_skip_unchanged_inputs()
     ] {
         animation.sample(ms(time));
         let expected = Point::new(p * r, r);
-        assert_eq!(animation.get(a).position, expected);
-        assert_eq!(animation.get(b).position, expected);
+        assert_eq!(animation.get(a).transform.position, expected);
+        assert_eq!(animation.get(b).transform.position, expected);
         assert_eq!(animation.get(a).radius, r);
         assert_eq!(animation.get(a).opacity, 1.0 - p);
         assert_eq!(animation.get(line).end, expected);
@@ -134,7 +134,7 @@ fn point_signals_discrete_arrays_text_and_camera_use_the_same_source_model()
         (0, 0.0, 30.0, 0.0),
     ] {
         animation.sample(ms(time));
-        assert_eq!(animation.get(text).position.x, x);
+        assert_eq!(animation.get(text).transform.position.x, x);
         assert_eq!(animation.get(text).opacity, alpha);
         assert_eq!(animation.get(line).end.x, point_x);
         assert_eq!(animation.get(rect).size.width, 10.0 + x);
@@ -194,7 +194,8 @@ fn source_driven_quadratic_matches_math_and_preserves_render_caches()
                 .eval(t);
         assert!(actual.distance(expected) < 1e-8);
         assert!(
-            animation.get(dot).position.distance(expected) < 1e-8
+            animation.get(dot).transform.position.distance(expected)
+                < 1e-8
         );
         let size = Size::new(1120.0, 800.0);
         rendered.reset();
@@ -241,7 +242,7 @@ fn repeated_setters_replace_wiring_and_source_aware_fields_reject_timeline_write
     let mut second = Scene::new();
     let dot = second.add(Circle::new(1.0).position(standalone));
     let animation = second.try_compile([]).unwrap();
-    assert_eq!(animation.get(dot).position, Point::ZERO);
+    assert_eq!(animation.get(dot).transform.position, Point::ZERO);
 }
 
 #[test]
@@ -328,15 +329,33 @@ fn standalone_helpers_macro_and_shared_descriptions_have_independent_playback()
         second.compile([progress.to(2.0).ease(ease::linear)]);
     assert_eq!(calls.load(Ordering::Relaxed), 2);
     first.sample(ms(500));
-    assert_eq!(first.get(a).position, Point::new(5.0, 10.0));
-    assert_eq!(first.get(b).position, Point::new(50.0, 20.0));
+    assert_eq!(
+        first.get(a).transform.position,
+        Point::new(5.0, 10.0)
+    );
+    assert_eq!(
+        first.get(b).transform.position,
+        Point::new(50.0, 20.0)
+    );
     assert_eq!(first.get(c).radius, 6.0);
-    assert_eq!(second.get(other).position, Point::new(0.0, 10.0));
+    assert_eq!(
+        second.get(other).transform.position,
+        Point::new(0.0, 10.0)
+    );
     second.sample(s(1));
-    assert_eq!(second.get(other).position, Point::new(20.0, 10.0));
+    assert_eq!(
+        second.get(other).transform.position,
+        Point::new(20.0, 10.0)
+    );
     first.sample(ms(0));
-    assert_eq!(first.get(a).position, Point::new(0.0, 10.0));
-    assert_eq!(second.get(other).position, Point::new(20.0, 10.0));
+    assert_eq!(
+        first.get(a).transform.position,
+        Point::new(0.0, 10.0)
+    );
+    assert_eq!(
+        second.get(other).transform.position,
+        Point::new(20.0, 10.0)
+    );
 }
 
 #[test]

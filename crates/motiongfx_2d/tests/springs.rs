@@ -36,7 +36,12 @@ fn properties_positions_and_signals_use_core_spring_sampling() {
             );
             let expected = Point::new(amount * 100.0, amount * 50.0);
             assert!(
-                animation.get(b).position.distance(expected) < 0.0001
+                animation
+                    .get(b)
+                    .transform
+                    .position
+                    .distance(expected)
+                    < 0.0001
             );
         }
     }
@@ -87,13 +92,18 @@ fn relative_helpers_use_spring_timing_and_preserve_action_start_values()
         let amount = curve.sample(time).position;
         let state = animation.get(dot);
         assert!(
-            state.position.distance(Point::new(
+            state.transform.position.distance(Point::new(
                 20.0 + 100.0 * amount,
                 -10.0 + 50.0 * amount
             )) < 1e-4
         );
-        assert!((state.scale - (2.0 - amount)).abs() < 1e-4);
-        assert!((state.rotation - (0.2 + 0.4 * amount)).abs() < 1e-4);
+        assert!(
+            (state.transform.scale - (2.0 - amount)).abs() < 1e-4
+        );
+        assert!(
+            (state.transform.rotation - (0.2 + 0.4 * amount)).abs()
+                < 1e-4
+        );
     }
 }
 

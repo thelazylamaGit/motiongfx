@@ -32,7 +32,7 @@ pub trait Object2d: Clone + ThreadSafe {
 /// let label = scene.add(Text::new("Hi").opacity(0.0));
 /// let mut animation = scene.compile([rise_in(dot), rise_in(label)]);
 /// animation.sample(s(5));
-/// assert_eq!(animation.get(dot).position, Point::new(0.0, 20.0));
+/// assert_eq!(animation.get(dot).transform.position, Point::new(0.0, 20.0));
 /// assert_eq!(animation.get(label).opacity, 1.0);
 /// ```
 pub struct Handle<T: Object2d> {

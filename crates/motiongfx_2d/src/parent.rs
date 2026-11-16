@@ -34,7 +34,8 @@ impl Canvas {
         match parent {
             Some(Parent::Rectangle(id)) => {
                 let rectangle = &self.rectangles[id.0];
-                rectangle.transform() * Affine::scale(rectangle.scale)
+                rectangle.transform()
+                    * Affine::scale(rectangle.transform.scale)
             }
             Some(Parent::Circle(id)) => {
                 let circle = &self.circles[id.0];

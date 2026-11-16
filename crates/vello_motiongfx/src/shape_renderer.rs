@@ -22,11 +22,13 @@ impl RenderRectangle for Rectangle {
             return;
         }
         let xf = screen * self.transform();
-        let half_w = rectangle.size.width * rectangle.scale / 2.0;
-        let half_h = rectangle.size.height * rectangle.scale / 2.0;
+        let half_w =
+            rectangle.size.width * rectangle.transform.scale / 2.0;
+        let half_h =
+            rectangle.size.height * rectangle.transform.scale / 2.0;
         let shape = Rect::new(-half_w, -half_h, half_w, half_h)
             .to_rounded_rect(
-                rectangle.radius * rectangle.scale.abs(),
+                rectangle.radius * rectangle.transform.scale.abs(),
             );
         let fill = rectangle.fill;
         scene.fill(

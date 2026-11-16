@@ -2,7 +2,7 @@
 use crate::Handle;
 
 use crate::{
-    Color, FontStyle, FontWeight, Parent, Point, SceneObject,
+    Color, FontStyle, FontWeight, Parent, SceneObject,
     TextSelectionId,
 };
 use crate::{DrawObject, Model2d};
@@ -28,8 +28,8 @@ pub enum TextAlign {
 pub struct Text {
     /// The text shown.
     pub content: Arc<str>,
-    /// Top of the text block, in canvas units (y up); `align` sets which side.
-    pub position: Point,
+    /// Position, scale and rotation. The position is the top of the text block, in canvas units (y up); `align` sets which side.
+    pub transform: crate::Transform,
     /// Font size in canvas units.
     pub font_size: f64,
     /// Font family name; Fira Sans is embedded by default.
@@ -50,10 +50,6 @@ pub struct Text {
     pub fill: Color,
     /// 0 (invisible) to 1 (opaque).
     pub opacity: f64,
-    /// Uniform scale; 1 is normal size.
-    pub scale: f64,
-    /// Rotation in radians, counterclockwise.
-    pub rotation: f64,
     /// Which side of the block `position` anchors.
     pub align: TextAlign,
     pub(crate) parent: Option<Parent>,
@@ -67,7 +63,7 @@ impl Text {
     ) -> crate::Object<Self, M> {
         crate::Object::new(Self {
             content: Arc::from(""),
-            position: Point::ZERO,
+            transform: crate::Transform::default(),
             font_size: 24.0,
             font_family: "Fira Sans".into(),
             font_weight: FontWeight::NORMAL,
@@ -78,8 +74,6 @@ impl Text {
             wrap_width: 0.0,
             fill: Color::WHITE,
             opacity: 1.0,
-            scale: 1.0,
-            rotation: 0.0,
             align: TextAlign::Left,
             parent: None,
             selections: Vec::new(),
@@ -148,10 +142,8 @@ pub(crate) fn insert_text<M: Model2d>(
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::object!(Text, TextId;
+transform(Text.transform);
 set content: Arc<str> => discrete(Text.content);
-set position: Point => new(Text.position) shared;
-set scale: f64 => new(Text.scale) shared;
-set rotation: f64 => new(Text.rotation) shared;
 set font_size: f64 => new(Text.font_size);
 set font_family: Arc<str> => discrete(Text.font_family);
 set font_weight: FontWeight => new(Text.font_weight);
@@ -163,8 +155,6 @@ set wrap_width: f64 => new(Text.wrap_width);
 set fill: Color => new(Text.fill) shared;
 set opacity: f64 => new(Text.opacity) shared;
 set align: TextAlign => discrete(Text.align);
-get position_x: f64 => new(Text.position.x) shared;
-get position_y: f64 => new(Text.position.y) shared;
 );
 crate::capability::capabilities!(Text; Transformable, Fillable, Fadable);
 

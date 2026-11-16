@@ -50,7 +50,7 @@ fn chained_bindings_sort_dependencies_cache_inputs_and_seek() {
     ] {
         animation.sample(ms(time));
         let position = Point::new(radius * 2.0, radius * 3.0);
-        assert_eq!(animation.get(dot).position, position);
+        assert_eq!(animation.get(dot).transform.position, position);
         assert_eq!(animation.get(connector).start, position);
         assert_eq!(
             animation.get(connector).end,
@@ -95,7 +95,7 @@ fn shared_derived_values_compute_once_and_support_offsets_and_multiple_inputs()
     ] {
         animation.sample(ms(time));
         assert_eq!(
-            animation.get(dot).position,
+            animation.get(dot).transform.position,
             Point::new(expected, 0.0)
         );
         assert_eq!(
@@ -240,7 +240,7 @@ fn sine_geometry_and_bound_endpoints_agree_when_scrubbing() {
         );
         assert_eq!(
             animation.get(line).start,
-            animation.get(dot).position
+            animation.get(dot).transform.position
         );
         let visible =
             &renderer.path_geometry[curve.id().index()].visible;
@@ -255,6 +255,7 @@ fn sine_geometry_and_bound_endpoints_agree_when_scrubbing() {
     assert!(
         animation
             .get(dot)
+            .transform
             .position
             .distance(Point::new(-400.0, 0.0))
             < 1e-4

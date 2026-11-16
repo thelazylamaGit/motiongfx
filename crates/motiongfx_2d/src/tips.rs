@@ -87,15 +87,16 @@ impl EndpointTip {
         match self {
             Self::Circle(id) => {
                 let c = &graphics.circles[id.0];
-                (c.radius.max(0.0) * c.scale.abs() - c.position.x)
+                (c.radius.max(0.0) * c.transform.scale.abs()
+                    - c.transform.position.x)
                     .max(0.0)
             }
             Self::Triangle(id) => {
                 let triangle = &graphics.triangles[id.0];
                 triangle_geometry(id).extent(
-                    triangle.position,
-                    triangle.rotation,
-                    triangle.scale,
+                    triangle.transform.position,
+                    triangle.transform.rotation,
+                    triangle.transform.scale,
                 )
             }
             Self::Chevron(id) => graphics.chevrons[id.0].extent(),

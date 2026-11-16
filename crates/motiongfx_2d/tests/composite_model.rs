@@ -79,13 +79,13 @@ fn portable_objects_and_other_models_share_sources_schedule_and_backward_seeking
         animation.sample(time);
         let p = time.as_secs_f64().min(1.0);
         assert_eq!(
-            animation.get(dot).position,
+            animation.get(dot).transform.position,
             Point::new(p * 10.0, 0.0)
         );
         assert_eq!(animation.model().depth.z, p * 22.0);
         assert_eq!(animation.model().depth.opacity, p);
         assert_eq!(
-            animation.get(follower).position,
+            animation.get(follower).transform.position,
             Point::new(0.0, p * 22.0)
         );
     }
