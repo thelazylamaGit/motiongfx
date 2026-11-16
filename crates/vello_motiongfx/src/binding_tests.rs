@@ -50,10 +50,10 @@ fn chained_bindings_sort_dependencies_cache_inputs_and_seek() {
     ] {
         animation.sample(ms(time));
         let position = Point::new(radius * 2.0, radius * 3.0);
-        assert_eq!(animation.circle(dot).position, position);
-        assert_eq!(animation.line(connector).start, position);
+        assert_eq!(animation.get(dot).position, position);
+        assert_eq!(animation.get(connector).start, position);
         assert_eq!(
-            animation.line(connector).end,
+            animation.get(connector).end,
             Point::new(radius, position.y)
         );
         assert_eq!(calls.load(Ordering::Relaxed), expected_calls);
@@ -95,15 +95,15 @@ fn shared_derived_values_compute_once_and_support_offsets_and_multiple_inputs()
     ] {
         animation.sample(ms(time));
         assert_eq!(
-            animation.circle(dot).position,
+            animation.get(dot).position,
             Point::new(expected, 0.0)
         );
         assert_eq!(
-            animation.line(line).start,
+            animation.get(line).start,
             Point::new(expected, 0.0)
         );
         assert_eq!(
-            animation.line(line).end,
+            animation.get(line).end,
             Point::new(expected, 30.0)
         );
         assert_eq!(calls.load(Ordering::Relaxed), count);
@@ -120,7 +120,7 @@ fn binding_validation_rejects_feedback_and_cycles_through_derived_values()
     });
     assert!(matches!(
         scene.try_compile([]),
-        Err(SceneError::Binding(BindingError::Cycle))
+        Err(CompileError::Binding(BindingError::Cycle))
     ));
 
     let mut scene = Scene::new();
@@ -132,7 +132,7 @@ fn binding_validation_rejects_feedback_and_cycles_through_derived_values()
     scene.bind(b.position(), a.position(), |position| position);
     assert!(matches!(
         scene.try_compile([]),
-        Err(SceneError::Binding(BindingError::Cycle))
+        Err(CompileError::Binding(BindingError::Cycle))
     ));
 }
 
@@ -145,7 +145,9 @@ fn binding_validation_rejects_overlapping_writers_and_timeline_actions()
     scene.bind(dot.position_x(), dot.radius(), |r| r);
     assert!(matches!(
         scene.try_compile([]),
-        Err(SceneError::Binding(BindingError::ConflictingWriters(_)))
+        Err(CompileError::Binding(BindingError::ConflictingWriters(
+            _
+        )))
     ));
 
     let mut scene = Scene::new();
@@ -155,9 +157,9 @@ fn binding_validation_rejects_overlapping_writers_and_timeline_actions()
     let result = scene.try_compile([dot.position_y().to(10.0)]);
     assert!(matches!(
         result,
-        Err(SceneError::Binding(BindingError::AnimatedDestination(
-            _
-        )))
+        Err(CompileError::Binding(
+            BindingError::AnimatedDestination(_)
+        ))
     ));
 
     // Sibling axes are independent writers. Different subjects are too.
@@ -180,7 +182,7 @@ fn binding_validation_rejects_missing_properties_in_standalone_computations()
     second.bind(b.position_x(), &shared, |r| r);
     assert!(matches!(
         second.try_compile([]),
-        Err(SceneError::Binding(BindingError::MissingProperty(_)))
+        Err(CompileError::Binding(BindingError::MissingProperty(_)))
     ));
 
     let mut second = Scene::new();
@@ -188,7 +190,7 @@ fn binding_validation_rejects_missing_properties_in_standalone_computations()
     second.bind(rectangle.position_x(), a.radius(), |r| r);
     assert!(matches!(
         second.try_compile([]),
-        Err(SceneError::Binding(BindingError::MissingProperty(_)))
+        Err(CompileError::Binding(BindingError::MissingProperty(_)))
     ));
 }
 
@@ -237,8 +239,8 @@ fn sine_geometry_and_bound_endpoints_agree_when_scrubbing() {
             1.0,
         );
         assert_eq!(
-            animation.line(line).start,
-            animation.circle(dot).position
+            animation.get(line).start,
+            animation.get(dot).position
         );
         let visible =
             &renderer.path_geometry[curve.id().index()].visible;
@@ -246,13 +248,13 @@ fn sine_geometry_and_bound_endpoints_agree_when_scrubbing() {
             assert!(visible.is_empty());
         } else {
             let tip = visible.segments().last().unwrap().eval(1.0);
-            assert!(tip.distance(animation.line(line).end) < 0.003);
+            assert!(tip.distance(animation.get(line).end) < 0.003);
         }
     }
     animation.sample(s(2));
     assert!(
         animation
-            .circle(dot)
+            .get(dot)
             .position
             .distance(Point::new(-400.0, 0.0))
             < 1e-4
@@ -268,7 +270,7 @@ fn line_rendering_matches_direct_vello_with_camera_and_animated_endpoints()
         Line::new((-30.0, -10.0), (20.0, 40.0))
             .stroke(colors::BLUE, 3.0),
     );
-    scene.set_camera(Camera::new().scale(0.5).position((20.0, 30.0)));
+    scene.add(Camera::new().scale(0.5).position((20.0, 30.0)));
     let mut animation = scene.compile([all([
         line.start_x().to(10.0).ease(ease::linear),
         line.end().to_xy(60.0, 80.0).ease(ease::linear),

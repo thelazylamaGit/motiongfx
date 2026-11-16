@@ -3,7 +3,7 @@
 
 use motiongfx::prelude::s;
 use motiongfx_2d::{
-    Circle, Path, Scene, Scene2dExt as _, all,
+    Camera, Circle, Path, Scene, all,
     colors::{BLUE, TRANSPARENT, YELLOW},
     wait,
 };
@@ -19,7 +19,7 @@ fn build_animation() -> motiongfx_2d::CompiledScene {
             .stroke(YELLOW, 4.0),
     );
 
-    let camera = scene.camera();
+    let camera = scene.add(Camera::new());
     // Animate the frame's size, not magnification: 1/4 size means 4x
     // magnification. Position and size use the same smooth progress.
     scene.compile([

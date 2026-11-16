@@ -64,7 +64,7 @@ is cheap; compiling costs one allocation per change. See the
 
 A model can add its own kinds of change by implementing `Step<M>` and
 wrapping it with `Animation::from_step`. During `compile`, `Step::lower`
-receives a `SceneContext<M>`, which gives model access, construction-only
+receives a `CompileContext<M>`, which gives model access, construction-only
 caches and `report(error)`; most steps resolve their target, then call
 `lower_change`. Text selections in `motiongfx_2d` work this way.
 
@@ -135,8 +135,8 @@ See [headless shared model tests](tests/shared_scene.rs) and the
 
 ## Errors
 
-`try_compile` returns `SceneError::Binding(BindingError)` or
-`SceneError::Animation(Vec<AnimationError>)`. Each `AnimationError` has the
+`try_compile` returns `CompileError::Binding(BindingError)` or
+`CompileError::Animation(Vec<AnimationError>)`. Each `AnimationError` has the
 file and line of the animation and a `kind`:
 
 - `Spring(SpringError)`: invalid spring settings;
@@ -237,7 +237,7 @@ randomness and numerical validity are not statically checked.
 
 This is optional native binding support, not automatic dependency tracking or
 a scripting interpreter. The shared `Scene<M>` owns the plan and finalizes it
-during `try_compile` (returns `SceneError`) or `compile` (panics).
+during `try_compile` (returns `CompileError`) or `compile` (panics).
 
 ## Simulations
 

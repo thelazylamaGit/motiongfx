@@ -35,11 +35,11 @@ preparation. The 2D crate wraps these in local `Object<T, M>` / `Input<T, M>`
 types to provide inherent shape setters and geometry conversions legally under
 Rust's coherence/orphan rules. There is one binding evaluator and timeline.
 
-Advanced adapters now target `Source<World<Graphics>>` rather than the old
-concrete `Source<Graphics>` world. The standalone
+Advanced adapters now target `Source<World<Canvas>>` rather than the old
+concrete `Source<Canvas>` world. The standalone
 `BindingPlan<W>` API remains available for integrations using their own worlds.
 
-The 2D `Scene` / `CompiledScene` convenience aliases use `Graphics`. A composite
+The 2D `Scene` / `CompiledScene` convenience aliases use `Canvas`. A composite
 model implements `Model2d` and uses `motiongfx_authoring::Scene<MyModels>`.
 Its 2D objects can share signals, computed relationships and scheduled changes
 with other models. Source types usually infer the model from `scene.add`;
@@ -48,13 +48,14 @@ a completely detached descriptor may need an explicit `Object<Circle>` type.
 Shared callback execution uses `UpdateTargets<M>`. Safe borrowing of concrete
 storage stays in model adapters. The optional `UpdateStorage`/`UpdateHandle`
 contracts provide generic tuple/array scheduling; the current 2D collection
-adapter targets `Graphics`. Composite callback targets require their own safe
+adapter targets `Canvas`. Composite callback targets require their own safe
 borrowing adapter or specific `UpdateTargets` implementation. There is no
 implicit mixed-store callback ordering or aliasing scheme.
 
-2D setup/read conveniences are extension traits, imported through
-`motiongfx_2d::prelude::*`: `Scene2dExt` and `CompiledScene2dExt`. Ordinary lifecycle
-methods remain inherent shared methods. Handles retain the pre-existing scene
+Reads use the shared `compiled.get(handle)`; the camera is an ordinary unique
+object added with `scene.add`, and the background is set through authoring's
+`Background` model trait, so no 2D extension traits on the shared lifecycle
+types remain. Handles retain the pre-existing scene
 identity limitation: do not mix handles from different scenes.
 
 ## Sampling and rendering
@@ -75,7 +76,7 @@ Object handles now hold a single ID and expose getter methods such as
 Builders still accept fixed/signal/computed inputs. Relative helpers and
 `.to(value)` changes share the authoring `.spring(settings)` timing modifier;
 neither introduces a new playback evaluator.
-Deferred selection registration uses SceneContext memoization that is dropped
+Deferred selection registration uses CompileContext memoization that is dropped
 before playback. The renderer caches glyph paint-span associations separately
 from layout and animated paint. Rendering still records normal Vello commands.
 The native host samples the shared animation and then invokes that renderer.

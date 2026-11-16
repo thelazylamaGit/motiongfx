@@ -62,12 +62,12 @@ macro_rules! wedge {
             /// Add the shape and draw it in insertion order.
             pub(crate) fn insert<M:crate::Model2d>(self, scene: &mut motiongfx_authoring::Scene<M>) -> $handle {
                 let handle = self.insert_tip(scene);
-                scene.model_mut().graphics_mut().order.push(DrawObject::$shape(handle.id));
+                scene.model_mut().canvas_mut().order.push(DrawObject::$shape(handle.id));
                 handle
             }
             /// Add the shape without drawing it; its line draws it as a tip.
             pub(crate) fn insert_tip<M:crate::Model2d>(self, scene: &mut motiongfx_authoring::Scene<M>) -> $handle {
-                let storage = &mut scene.model_mut().graphics_mut().$storage;
+                let storage = &mut scene.model_mut().canvas_mut().$storage;
                 storage.push(self);
                 $handle { id: $id(storage.len() - 1) }
             }

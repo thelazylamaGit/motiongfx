@@ -1,7 +1,5 @@
 //! Where a line's visible shaft and tips go, for renderers to draw.
-use crate::{
-    EndpointTip, Geometry, Graphics, Line, Point, TriangleId,
-};
+use crate::{Canvas, EndpointTip, Geometry, Line, Point, TriangleId};
 
 /// Where to draw a line, after trimming, reveal and room for its tips, in
 /// canvas units (y up).
@@ -31,7 +29,7 @@ impl Line {
     /// line stops where a rounded triangle's edge actually is.
     pub fn layout(
         &self,
-        graphics: &Graphics,
+        graphics: &Canvas,
         triangle_geometry: impl Fn(TriangleId) -> Geometry,
     ) -> Option<LineLayout> {
         if self.reveal <= 0.0 {

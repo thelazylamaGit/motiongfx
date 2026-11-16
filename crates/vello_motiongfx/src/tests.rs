@@ -80,7 +80,7 @@ fn authored_square_matches_direct_motiongfx_at_arbitrary_times() {
         timeline.set_target_time(time);
         timeline.queue_actions();
         timeline.sample_queued_actions(&registry, &mut world);
-        let actual = authored.rectangle(square);
+        let actual = authored.get(square);
         let expected = &world.0;
         assert_eq!(actual.position, expected.position);
         assert_eq!(actual.fill, expected.fill);
@@ -90,7 +90,7 @@ fn authored_square_matches_direct_motiongfx_at_arbitrary_times() {
         assert_eq!(actual.stroke_width, 4.0);
     }
     authored.sample(s(4));
-    let final_square = authored.rectangle(square);
+    let final_square = authored.get(square);
     assert_eq!(final_square.position, Point::new(-80.0, 0.0));
     assert!((final_square.scale - 0.3).abs() < 1e-6);
     assert!((final_square.rotation - 0.4).abs() < 1e-6);
@@ -113,19 +113,17 @@ fn relative_targets_waits_overrides_and_multiple_objects() {
     ]);
     assert_eq!(animation.duration(), ms(1800));
     animation.sample(ms(400));
-    assert_eq!(animation.rectangle(left).position.x, 10.0);
+    assert_eq!(animation.get(left).position.x, 10.0);
     animation.sample(ms(750));
-    assert!(
-        (animation.rectangle(left).position.x - 11.25).abs() < 1e-6
-    );
+    assert!((animation.get(left).position.x - 11.25).abs() < 1e-6);
     animation.sample(ms(1400));
-    assert_eq!(animation.rectangle(left).position.x, 15.0);
-    assert_eq!(animation.rectangle(right).position, Point::ZERO);
-    assert_eq!(animation.rectangle(left).scale, 2.0);
-    assert_eq!(animation.rectangle(right).scale, 2.0);
+    assert_eq!(animation.get(left).position.x, 15.0);
+    assert_eq!(animation.get(right).position, Point::ZERO);
+    assert_eq!(animation.get(left).scale, 2.0);
+    assert_eq!(animation.get(right).scale, 2.0);
     animation.sample(Duration::ZERO);
-    assert_eq!(animation.rectangle(left).position, Point::ZERO);
-    assert_eq!(animation.rectangle(right).scale, 1.0);
+    assert_eq!(animation.get(left).position, Point::ZERO);
+    assert_eq!(animation.get(right).scale, 1.0);
 }
 
 #[test]
@@ -163,29 +161,17 @@ fn nested_axes_and_whole_position_operations_share_the_same_state() {
         shape.shift(5.0, -10.0),
     ]);
     animation.sample(ms(500));
-    assert_eq!(
-        animation.rectangle(shape).position,
-        Point::new(20.0, 25.0)
-    );
-    assert_eq!(
-        animation.text(title).position,
-        Point::new(48.5, 27.0)
-    );
+    assert_eq!(animation.get(shape).position, Point::new(20.0, 25.0));
+    assert_eq!(animation.get(title).position, Point::new(48.5, 27.0));
     animation.sample(ms(1500));
+    assert_eq!(animation.get(shape).position, Point::new(32.5, 25.0));
     assert_eq!(
-        animation.rectangle(shape).position,
-        Point::new(32.5, 25.0)
-    );
-    assert_eq!(
-        animation.text(title).position,
+        animation.get(title).position,
         Point::new(100.0, 50.0)
     );
     animation.sample(ms(0));
-    assert_eq!(
-        animation.rectangle(shape).position,
-        Point::new(10.0, 20.0)
-    );
-    assert_eq!(animation.text(title).position, Point::new(-3.0, 4.0));
+    assert_eq!(animation.get(shape).position, Point::new(10.0, 20.0));
+    assert_eq!(animation.get(title).position, Point::new(-3.0, 4.0));
 }
 
 #[test]
@@ -220,10 +206,10 @@ fn text_style_animation_and_content_changes_are_seekable() {
         (0, "First"),
     ] {
         animation.sample(ms(time));
-        assert_eq!(animation.text(title).content.as_ref(), content);
+        assert_eq!(animation.get(title).content.as_ref(), content);
     }
     animation.sample(ms(500));
-    let text = animation.text(title);
+    let text = animation.get(title);
     assert_eq!(text.position.x, 50.0);
     assert_eq!(text.font_size, 21.0);
     assert_eq!(text.opacity, 0.75);
@@ -231,7 +217,7 @@ fn text_style_animation_and_content_changes_are_seekable() {
     assert!((text.rotation - 0.2).abs() < 1e-6);
     animation.sample(s(1));
     for (a, b) in animation
-        .text(title)
+        .get(title)
         .fill
         .components
         .iter()
@@ -335,7 +321,7 @@ fn anchored_text_inherits_parent_motion_and_keeps_independent_local_animation()
         (0, Point::new(10.0, -10.0)),
     ] {
         animation.sample(ms(time));
-        let text = animation.text(label);
+        let text = animation.get(label);
         let anchor = animation.model().text_parent_transform(text)
             * Point::new(text.position.x, -text.position.y);
         assert!(anchor.distance(expected) < 1e-6);

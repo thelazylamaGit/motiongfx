@@ -82,8 +82,8 @@ fn reactive_caps_and_tip_joins_are_independent_discrete_seekable_styles()
         (0, Cap::Butt, Join::Miter),
     ] {
         animation.sample(ms(time));
-        assert_eq!(animation.line(line).line_cap, cap);
-        assert_eq!(animation.chevron(line.end_tip).line_join, join);
+        assert_eq!(animation.get(line).line_cap, cap);
+        assert_eq!(animation.get(line.end_tip).line_join, join);
         let mut actual = vello::Scene::new();
         renderer.render(&animation, &mut actual, size, size, 1.0);
         let mut expected = vello::Scene::new();
@@ -134,13 +134,13 @@ fn replacement_tips_drop_obsolete_wiring_and_grouped_updates_borrow_shapes_safel
         scene.compile([amount.to(1.0).ease(ease::linear)]);
     for (time, value) in [(500, 0.5), (1000, 1.0), (0, 0.0)] {
         animation.sample(ms(time));
-        assert_eq!(animation.line(line).end.y, value * 100.0);
+        assert_eq!(animation.get(line).end.y, value * 100.0);
         assert_eq!(
-            animation.triangle(line.start_tip).angle,
+            animation.get(line.start_tip).angle,
             0.6 + value * 0.2
         );
         assert_eq!(
-            animation.chevron(line.end_tip).stroke_width,
+            animation.get(line.end_tip).stroke_width,
             2.0 + value * 4.0
         );
     }
@@ -285,13 +285,13 @@ fn attached_shapes_retain_typed_reactive_properties_and_seek_independently()
         (0, 4.0, 20.0, 0.6, Point::new(100.0, 0.0)),
     ] {
         animation.sample(ms(time));
-        assert_eq!(animation.circle(line.start_tip).radius, r);
-        let tip = animation.triangle(line.end_tip);
+        assert_eq!(animation.get(line.start_tip).radius, r);
+        let tip = animation.get(line.end_tip);
         assert!((tip.size - size).abs() < 1e-6);
         assert!((tip.angle - angle).abs() < 1e-6);
-        assert_eq!(animation.line(line).end, end);
+        assert_eq!(animation.get(line).end, end);
     }
-    assert_eq!(animation.triangle(line.end_tip).fill, colors::BLUE);
+    assert_eq!(animation.get(line.end_tip).fill, colors::BLUE);
 }
 
 #[test]
@@ -372,7 +372,7 @@ fn rounded_tip_radius_is_reactive_seekable_and_geometry_cache_ignores_style_chan
         animation.sample(ms(time));
         rendered.reset();
         renderer.render(&animation, &mut rendered, size, size, 1.0);
-        assert_eq!(animation.triangle(line.end_tip).radius, radius);
+        assert_eq!(animation.get(line.end_tip).radius, radius);
         let cache =
             &renderer.triangle_geometry[line.end_tip.id().index()];
         assert_eq!(cache.rebuilds, rebuilds);
@@ -391,7 +391,7 @@ fn rounded_tip_radius_is_reactive_seekable_and_geometry_cache_ignores_style_chan
     let mut animation =
         scene.compile([triangle.radius().to(6.0).ease(ease::linear)]);
     animation.sample(ms(500));
-    assert_eq!(animation.triangle(triangle).radius, 3.0);
+    assert_eq!(animation.get(triangle).radius, 3.0);
 }
 
 #[test]
@@ -410,7 +410,7 @@ fn short_lines_fit_tips_and_open_chevrons_keep_the_shaft_to_the_apex()
     renderer.render(&animation, &mut rendered, size, size, 1.0);
     // Both tips fit at 1/4 scale; the shaft vanishes instead of reversing.
     assert_eq!(rendered.encoding().n_paths, 2);
-    assert_eq!(animation.circle(line.start_tip).radius, 20.0); // State isn't mutated to fit.
+    assert_eq!(animation.get(line.start_tip).radius, 20.0); // State isn't mutated to fit.
 
     let mut scene = Scene::new();
     let line =

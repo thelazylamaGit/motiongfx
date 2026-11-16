@@ -1,11 +1,11 @@
-//! [`Graphics`]: the 2D model that stores a scene's objects.
+//! [`Canvas`]: the 2D model that stores a scene's objects.
 use crate::*;
 /// The 2D model: every object in a scene, by type, plus the camera,
 /// background and draw order. `motiongfx_2d::Scene` uses it as its model;
 /// renderers read it through its accessor methods.
 #[derive(Default)]
-pub struct Graphics {
-    pub(crate) background: background::Background,
+pub struct Canvas {
+    pub(crate) background: background::BackgroundColor,
     pub(crate) camera: Camera,
     pub(crate) rectangles: Vec<Rectangle>,
     pub(crate) circles: Vec<Circle>,
@@ -18,7 +18,7 @@ pub struct Graphics {
     pub(crate) order: Vec<DrawObject>,
 }
 
-/// One entry in [`Graphics::draw_order`]: which object to draw next.
+/// One entry in [`Canvas::draw_order`]: which object to draw next.
 #[derive(Clone, Copy, Debug)]
 pub enum DrawObject {
     /// A triangle.

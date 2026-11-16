@@ -1,7 +1,7 @@
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
-    AnimationErrorKind, Circle, CircleHandle, CompiledScene2dExt,
-    Fillable, Scene, SceneError, TextHandle, all, wait,
+    AnimationErrorKind, Circle, CircleHandle, CompileError, Fillable,
+    Scene, TextHandle, all, wait,
 };
 use std::mem::{needs_drop, size_of};
 
@@ -61,8 +61,8 @@ fn immediate_helpers_preserve_timeline_time_and_backward_seeks() {
         (0, "Start", colors::WHITE),
     ] {
         animation.sample(ms(time));
-        assert_eq!(animation.text(label).content.as_ref(), content);
-        assert_eq!(animation.text(label).fill, fill);
+        assert_eq!(animation.get(label).content.as_ref(), content);
+        assert_eq!(animation.get(label).fill, fill);
     }
     let mut scene = Scene::new();
     let dot = scene.add(Circle::new(1.0));
@@ -84,8 +84,8 @@ fn compact_fields_remain_sources_and_general_property_targets() {
         [(500, 15.0, 50.0), (1000, 20.0, 100.0), (0, 10.0, 0.0)]
     {
         animation.sample(ms(time));
-        assert_eq!(animation.circle(b).radius, radius);
-        assert_eq!(animation.circle(b).position.x, x);
+        assert_eq!(animation.get(b).radius, radius);
+        assert_eq!(animation.get(b).position.x, x);
     }
 }
 
@@ -102,7 +102,7 @@ fn position_and_its_axis_overlap_but_separate_axes_do_not() {
             dot.position_x().to(3.0),
         ]),
     ]);
-    let Err(SceneError::Animation(errors)) = result else {
+    let Err(CompileError::Animation(errors)) = result else {
         panic!("expected an overlap error");
     };
     assert!(matches!(

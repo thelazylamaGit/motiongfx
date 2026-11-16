@@ -4,6 +4,7 @@ use crate::{Input, Property, Scene, SceneObject, World};
 use motiongfx::prelude::{Path, SubjectSource, ThreadSafe};
 use motiongfx::subject::SubjectId;
 use std::{
+    any::TypeId,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -27,12 +28,16 @@ pub struct ObjectDefinition<T: SceneObject<M>, M> {
         motiongfx::field_path::field::UntypedField,
         Register<T, M>,
     )>,
+    // For objects a scene has one of: the key their bindings are
+    // registered under, so adding another replaces them.
+    unique: Option<TypeId>,
 }
 impl<T: SceneObject<M> + Clone, M> Clone for ObjectDefinition<T, M> {
     fn clone(&self) -> Self {
         Self {
             state: self.state.clone(),
             bindings: self.bindings.clone(),
+            unique: self.unique,
         }
     }
 }
@@ -42,6 +47,18 @@ impl<T: SceneObject<M>, M: 'static> ObjectDefinition<T, M> {
         Self {
             state,
             bindings: Vec::new(),
+            unique: None,
+        }
+    }
+    /// Start from `state` for an object a scene has only one of, such as
+    /// its camera. Adding another replaces it, including any fields the
+    /// earlier one bound to signals. `K` names the kind of object, usually
+    /// its ID type.
+    pub fn unique<K: 'static>(state: T) -> Self {
+        Self {
+            state,
+            bindings: Vec::new(),
+            unique: Some(TypeId::of::<K>()),
         }
     }
     /// Run `register` when the object is added, replacing any earlier hook
@@ -62,11 +79,22 @@ impl<T: SceneObject<M>, M: 'static> ObjectDefinition<T, M> {
         insert: impl FnOnce(T, &mut Scene<M>) -> T::Handle,
     ) -> T::Handle
     where
-        T::Handle: Copy,
+        T::Handle: Copy + ThreadSafe,
     {
         let handle = insert(self.state, scene);
-        for (_, register) in self.bindings {
-            register(scene, handle);
+        match self.unique {
+            // Deferred under the object's key, so a later one's (possibly
+            // empty) bindings replace these instead of conflicting.
+            Some(key) => scene.prepare_keyed(key, move |scene| {
+                for (_, register) in self.bindings {
+                    register(scene, handle);
+                }
+            }),
+            None => {
+                for (_, register) in self.bindings {
+                    register(scene, handle);
+                }
+            }
         }
         handle
     }
@@ -120,7 +148,7 @@ impl<T: SceneObject<M>, M> DerefMut for ObjectDefinition<T, M> {
 impl<T: SceneObject<M>, M: 'static> SceneObject<M>
     for ObjectDefinition<T, M>
 where
-    T::Handle: Copy,
+    T::Handle: Copy + ThreadSafe,
 {
     type Handle = T::Handle;
     fn insert_into(self, scene: &mut Scene<M>) -> Self::Handle {

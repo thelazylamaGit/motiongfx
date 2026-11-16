@@ -1,10 +1,10 @@
 //! [`Camera`]: the scene's view, which can pan, zoom, turn and follow.
 
-use crate::{Graphics, Parent, Point};
+use crate::{Canvas, Parent, Point};
 use kurbo::Affine;
 
-/// The scene's view. Every scene has one; get it with `scene.camera()`, or
-/// set its starting state with `scene.set_camera(Camera::new()..)`.
+/// The scene's view. Every scene has one; add a `Camera` to set its
+/// starting state and get a handle to animate it. The last one added wins.
 #[derive(Clone)]
 pub struct Camera {
     /// Point at the centre of the view, in canvas units (y up).
@@ -30,7 +30,7 @@ impl Default for Camera {
 impl Camera {
     /// A camera at the origin, unscaled and unrotated.
     pub fn new<M: crate::Model2d>() -> crate::Object<Self, M> {
-        crate::Object::new(Self::default())
+        crate::Object::unique::<CameraId>(Self::default())
     }
 }
 
@@ -45,7 +45,7 @@ impl<M: crate::Model2d> crate::Object<Camera, M> {
 }
 
 impl Camera {
-    fn view_transform(&self, graphics: &Graphics) -> Affine {
+    fn view_transform(&self, graphics: &Canvas) -> Affine {
         assert!(
             self.scale.is_finite() && self.scale > 0.0,
             "camera scale must be finite and greater than zero"
@@ -75,8 +75,8 @@ impl Camera {
 )]
 pub struct CameraId;
 
-/// The scene's camera, from `scene.camera()`. Its methods return fields to
-/// animate.
+/// The scene's camera, from `scene.add(Camera::new())`. Its methods return
+/// fields to animate.
 #[derive(Clone, Copy, Debug)]
 pub struct CameraHandle {
     pub(crate) id: CameraId,
@@ -91,12 +91,12 @@ impl<M: crate::Model2d> crate::SceneObject<M> for Camera {
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
     ) -> CameraHandle {
-        scene.model_mut().graphics_mut().camera = self;
+        scene.model_mut().canvas_mut().camera = self;
         camera_handle()
     }
 }
 
-impl Graphics {
+impl Canvas {
     /// The transform from canvas to view coordinates for the camera as last
     /// sampled, including any object it follows.
     pub fn camera_transform(&self) -> Affine {
@@ -108,13 +108,13 @@ impl<M: crate::Model2d> motiongfx_authoring::WorldObject<CameraId, M>
     for Camera
 {
     fn get(world: &crate::World<M>, _: CameraId) -> Option<&Self> {
-        Some(&world.model().graphics().camera)
+        Some(&world.model().canvas().camera)
     }
     fn get_mut(
         world: &mut crate::World<M>,
         _: CameraId,
     ) -> Option<&mut Self> {
-        Some(&mut world.model_mut().graphics_mut().camera)
+        Some(&mut world.model_mut().canvas_mut().camera)
     }
 }
 

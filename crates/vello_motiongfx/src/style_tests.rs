@@ -25,15 +25,15 @@ fn partial_styles_layer_without_resetting_unspecified_properties_or_retaining_th
     let b =
         scene.add(Text::new("Other").style(&base).style(&emphasis));
     let animation = scene.compile([wait(s(1))]);
-    let a = animation.text(a);
+    let a = animation.get(a);
     assert_eq!(a.content.as_ref(), "Label");
     assert_eq!(a.position, Point::new(10.0, 20.0));
     assert_eq!(a.opacity, 0.5);
     assert_eq!(a.font_size, 30.0);
     assert!(a.align == TextAlign::Center);
     assert_eq!(a.fill, colors::RED);
-    assert_eq!(animation.text(b).fill, colors::BLUE);
-    assert_eq!(animation.text(b).font_size, 40.0);
+    assert_eq!(animation.get(b).fill, colors::BLUE);
+    assert_eq!(animation.get(b).font_size, 40.0);
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn style_signals_and_computations_share_existing_caches_and_rewind() {
     ] {
         animation.sample(ms(time));
         for text in [a, b] {
-            let text = animation.text(text);
+            let text = animation.get(text);
             assert_eq!(text.font_size, size);
             assert_eq!(text.opacity, size / 48.0);
             assert!(text.align == align);
@@ -99,7 +99,7 @@ fn later_style_or_direct_setter_removes_obsolete_reactive_wiring() {
         .unwrap();
     for (time, size) in [(500, 35.0), (1000, 40.0), (0, 30.0)] {
         animation.sample(ms(time));
-        assert_eq!(animation.text(a).font_size, size);
-        assert_eq!(animation.text(b).font_size, size);
+        assert_eq!(animation.get(a).font_size, size);
+        assert_eq!(animation.get(b).font_size, size);
     }
 }

@@ -106,7 +106,7 @@ impl Circle {
         scene: &mut motiongfx_authoring::Scene<M>,
     ) -> CircleHandle {
         let handle = self.insert_tip(scene);
-        let graphics = scene.model_mut().graphics_mut();
+        let graphics = scene.model_mut().canvas_mut();
         graphics.order.push(DrawObject::Circle(handle.id));
         handle
     }
@@ -115,7 +115,7 @@ impl Circle {
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
     ) -> CircleHandle {
-        let circles = &mut scene.model_mut().graphics_mut().circles;
+        let circles = &mut scene.model_mut().canvas_mut().circles;
         circles.push(self);
         CircleHandle {
             id: CircleId(circles.len() - 1),

@@ -3,24 +3,25 @@
 Objects, styles, geometry, attachments, and 2D camera semantics live here. This
 crate depends on Kurbo/Peniko directly, not Vello, Winit, or a GPU. The
 `Scene` and `CompiledScene` names are convenience aliases for the shared
-`motiongfx_authoring::Scene<Graphics>` / `CompiledScene<Graphics>` lifecycle.
-Import `motiongfx_2d::prelude::*` for objects and the 2D extension traits
-(`Scene2dExt` for camera/background setup, `CompiledScene2dExt` for sampled reads).
+`motiongfx_authoring::Scene<Canvas>` / `CompiledScene<Canvas>` lifecycle.
+Import `motiongfx_2d::prelude::*` for objects and the capability traits.
+After sampling, `compiled.get(handle)` returns that object's state, such as a
+`&Circle` for a circle's handle.
 The portable model makes no claim that every renderer already supports it.
 
 `Object<T, M>` and `Input<T, M>` are thin local adapters over shared authoring
 preparation. They supply shape setters and tuple/geometry conversions without
 reimplementing the timeline or dependency evaluator. The default model is
-`Graphics`. Constructors normally infer it from `scene.add(...)`; a detached
+`Canvas`. Constructors normally infer it from `scene.add(...)`; a detached
 builder used without a scene may need `let shape: Object<Circle> = ...`.
 Components can construct builders without borrowing a scene.
 
 For composite models use `motiongfx_authoring::Scene<MyModels>` and implement
-`Model2d` to expose a contained `Graphics` store. The same shapes, signals,
+`Model2d` to expose a contained `Canvas` store. The same shapes, signals,
 computed descriptions and typed core properties work in that shared scene.
 See [the headless composite model test](tests/composite_model.rs).
 Collection callbacks use the shared `UpdateStorage`/`UpdateHandle` contracts;
-the provided 2D collection adapters currently target `Graphics`. A composite
+the provided 2D collection adapters currently target `Canvas`. A composite
 model supplies its own safe borrowing adapter or specific `UpdateTargets`
 implementation. It does not need another timeline.
 
@@ -35,9 +36,9 @@ state and returns typed authoring properties. Shape constructors produce
 registers any driven fields. Handles belong to the scene
 that created them; do not mix handles between scenes.
 
-`scene.set_background(color)` sets the renderer's clear/base color, without creating
-geometry. It accepts a fixed `Color`, signal, or computed color; the last call
-wins. The default remains RGB(28, 28, 46). For a fixed initial color, retain the
+`scene.set_background(color)` sets the renderer's clear/base color,
+without creating geometry. It accepts a fixed `Color`, signal, or computed
+color; the last call wins, including over an earlier call's signal. The default remains RGB(28, 28, 46). For a fixed initial color, retain the
 returned property to animate it with ordinary changes. When using a signal,
 animate that signal. The shared Winit host reads `CompiledScene::background()` after
 sampling and passes it to `RenderParams::base_color`. Other rendering hosts
@@ -179,8 +180,9 @@ sampled state, and rebuilt only when the source or visible range changes.
 Moving, fading or changing the stroke style of a path reuses its geometry.
 
 Every scene has one camera, initially centered with frame scale 1 and rotation 0.
-`scene.camera()` returns its typed `position` (and `position_x`/`position_y`),
-`scale` and `rotation` targets. Animate them like any other property, for
+`scene.add(Camera::new())` replaces it and returns a handle with typed
+`position` (and `position_x`/`position_y`), `scale` and `rotation` targets;
+as with the background, the last camera added wins. Animate them like any other property, for
 example together inside `all([..])`. Frame scale 0.25 shows a quarter of the normal
 width/height, giving four times the magnification. Positive
 camera rotation is counterclockwise, so the world rotates clockwise.
@@ -191,7 +193,7 @@ receive it, while the host's playback controls remain in screen space.
 For an attached view, configure initial state before `compile`:
 
 ```rust
-let camera = scene.set_camera(
+let camera = scene.add(
     Camera::new().relative_to(circle).position((0.0, 80.0)),
 );
 ```
@@ -233,7 +235,7 @@ let animation = scene.compile([second.fill().to(ORANGE)]);
 ```
 
 Only used selections register; missing literals/invalid UTF-8 byte ranges produce
-`SceneError::Animation` from `try_compile`, with source/query/call-site details
+`CompileError::Animation` from `try_compile`, with source/query/call-site details
 (the error's `Target` kind downcasts to `SelectionTargetError`, whose `cause()`
 is the `SelectionError`). `compile` panics before playback for the same error. `TextRange` itself remains
 a separately checked range utility returning `SelectionError`.
@@ -531,7 +533,7 @@ For a shared calculation use `let orbit = curve.end.map(function)`;
 then `scene.bind(dot.position(), &orbit, |position| position)`. Its output is cached
 once per changed input for all consumers. Tuples support one to five sources.
 
-`scene.try_compile(..)` returns `Result<CompiledScene, SceneError>` and rejects
+`scene.try_compile(..)` returns `Result<CompiledScene, CompileError>` and rejects
 cycles, overlapping binding destinations, and timeline writes to bound fields.
 `scene.compile(..)` panics on these errors during construction. Both initialize the sampled animation and bindings at
 time zero. Bound fields can feed other bindings; execution order is prepared

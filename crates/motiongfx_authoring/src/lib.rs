@@ -16,6 +16,8 @@ use std::ops::{Add, Mul};
 use std::time::Duration;
 
 mod animation;
+mod background;
+pub use background::{Background, BackgroundId, BackgroundProperty};
 pub mod bindings;
 mod input;
 pub use animation::{
@@ -29,8 +31,9 @@ pub use input::{Input, PreparedInput};
 pub use object::{ObjectDefinition, Register};
 mod values;
 pub use scene::{
-    CompiledScene, NativeUpdate, Scene, SceneContext, SceneError,
-    SceneObject, UpdateTargets, World, WorldObject,
+    CompileContext, CompileError, CompiledScene, NativeUpdate,
+    ObjectHandle, Scene, SceneObject, UpdateTargets, World,
+    WorldObject,
 };
 pub use values::SampleTime;
 mod signals;

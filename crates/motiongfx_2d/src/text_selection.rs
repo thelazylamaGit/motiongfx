@@ -3,8 +3,8 @@
 use crate::*;
 use motiongfx::prelude::{ThreadSafe, TrackFragment};
 use motiongfx_authoring::{
-    AnimationError, AnimationErrorKind, Field, Property,
-    SceneContext, Step, Timing, lower_change,
+    AnimationError, AnimationErrorKind, CompileContext, Field,
+    Property, Step, Timing, lower_change,
 };
 use std::{
     collections::HashMap, marker::PhantomData, ops::Range,
@@ -27,7 +27,7 @@ pub struct TextSelection {
 )]
 pub struct TextSelectionId(usize);
 impl TextSelectionId {
-    /// Its position in [`Graphics::text_selections`].
+    /// Its position in [`Canvas::text_selections`].
     pub fn index(self) -> usize {
         self.0
     }
@@ -148,7 +148,7 @@ impl TextHandle {
 impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
     fn resolve<M: Model2d>(
         &self,
-        context: &mut SceneContext<'_, M>,
+        context: &mut CompileContext<'_, M>,
     ) -> Result<
         Property<TextSelectionId, TextSelection, T>,
         SelectionTargetError,
@@ -158,7 +158,7 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
         {
             return Ok(F::property(id));
         }
-        let graphics = context.model().graphics();
+        let graphics = context.model().canvas();
         let text = graphics.texts.get(self.query.text.index()).ok_or_else(|| {
             SelectionTargetError {
                 description: format!("text selection {:?}: text object does not exist ({})", self.query, self.location),
@@ -194,7 +194,7 @@ impl<T, F: Field<TextSelection, T>> SelectionProperty<T, F> {
         let id = if let Some(id) = existing {
             id
         } else {
-            let graphics = context.model_mut().graphics_mut();
+            let graphics = context.model_mut().canvas_mut();
             let id = TextSelectionId(graphics.text_selections.len());
             graphics.text_selections.push(TextSelection {
                 range,
@@ -315,7 +315,7 @@ where
 {
     fn lower(
         &self,
-        context: &mut SceneContext<'_, M>,
+        context: &mut CompileContext<'_, M>,
         timing: &Timing,
     ) -> TrackFragment {
         match self.property.resolve(context) {

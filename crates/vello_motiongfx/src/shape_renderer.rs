@@ -96,7 +96,7 @@ pub(crate) trait RenderLine {
         &self,
         scene: &mut vello::Scene,
         screen: Affine,
-        graphics: &Graphics,
+        graphics: &Canvas,
         triangle_geometry: &[CachedTriangle],
     );
     fn draw_shaft(
@@ -113,7 +113,7 @@ impl RenderLine for Line {
         &self,
         scene: &mut vello::Scene,
         screen: Affine,
-        graphics: &Graphics,
+        graphics: &Canvas,
         triangle_geometry: &[CachedTriangle],
     ) {
         let opacity = self.opacity.clamp(0.0, 1.0) as f32;
@@ -189,7 +189,7 @@ impl RenderLine for Line {
 trait RenderTip {
     fn render(
         self,
-        graphics: &Graphics,
+        graphics: &Canvas,
         triangle_geometry: &[CachedTriangle],
         scene: &mut vello::Scene,
         transform: Affine,
@@ -199,7 +199,7 @@ trait RenderTip {
 impl RenderTip for EndpointTip {
     fn render(
         self,
-        graphics: &Graphics,
+        graphics: &Canvas,
         triangle_geometry: &[CachedTriangle],
         scene: &mut vello::Scene,
         transform: Affine,
@@ -329,8 +329,8 @@ impl Renderer {
         canvas: Size,
         dpi: f64,
     ) {
-        self.render_graphics(
-            animation.model().graphics(),
+        self.render_canvas(
+            animation.model().canvas(),
             scene,
             viewport,
             canvas,
@@ -338,9 +338,9 @@ impl Renderer {
         );
     }
     /// Like [`render`](Self::render), from the 2D objects directly.
-    pub fn render_graphics(
+    pub fn render_canvas(
         &mut self,
-        graphics: &Graphics,
+        graphics: &Canvas,
         scene: &mut vello::Scene,
         viewport: Size,
         canvas: Size,

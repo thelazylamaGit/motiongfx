@@ -87,7 +87,7 @@ fn word_paint_seeks_and_source_changes_do_not_use_stale_ranges() {
         .over(s(1))
         .ease(ease::linear)]);
     animation.sample(ms(500));
-    assert_eq!(animation.text(text).font_weight.value(), 550.0);
+    assert_eq!(animation.get(text).font_weight.value(), 550.0);
 }
 
 #[test]

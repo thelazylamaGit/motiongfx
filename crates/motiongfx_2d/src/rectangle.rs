@@ -90,13 +90,12 @@ fn insert_rectangle<M: Model2d>(
     scene: &mut motiongfx_authoring::Scene<M>,
     rectangle: Rectangle,
 ) -> RectangleHandle {
-    let id = RectangleId(
-        scene.model_mut().graphics_mut().rectangles.len(),
-    );
-    scene.model_mut().graphics_mut().rectangles.push(rectangle);
+    let id =
+        RectangleId(scene.model_mut().canvas_mut().rectangles.len());
+    scene.model_mut().canvas_mut().rectangles.push(rectangle);
     scene
         .model_mut()
-        .graphics_mut()
+        .canvas_mut()
         .order
         .push(DrawObject::Rectangle(id));
     RectangleHandle { id }

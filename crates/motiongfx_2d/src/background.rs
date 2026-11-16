@@ -1,39 +1,27 @@
-//! The scene's background colour, which renderers clear the frame with.
+//! The canvas's background colour, which renderers clear each frame with.
+//! Set it with `scene.set_background(..)`.
 
-use crate::Color;
-use motiongfx::prelude::path;
-use motiongfx_authoring::Property;
+use crate::{Canvas, Color};
+use motiongfx::prelude::Interpolation;
+use peniko_motiongfx::Peniko;
 
-pub(crate) struct Background(pub Color);
-impl Default for Background {
+/// Stores the colour with its default.
+pub(crate) struct BackgroundColor(pub(crate) Color);
+impl Default for BackgroundColor {
     fn default() -> Self {
         Self(Color::from_rgb8(28, 28, 46))
     }
 }
 
-/// Identifies the scene's background colour.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
-)]
-pub struct BackgroundId;
-
-pub(crate) fn property() -> Property<BackgroundId, Color, Color> {
-    Property::new(BackgroundId, path!(Color))
-}
-
-impl<M: crate::Model2d>
-    motiongfx_authoring::WorldObject<BackgroundId, M> for Color
-{
-    fn get(
-        world: &crate::World<M>,
-        _: BackgroundId,
-    ) -> Option<&Self> {
-        Some(&world.model().graphics().background.0)
+impl motiongfx_authoring::Background for Canvas {
+    type Color = Color;
+    fn background(&self) -> &Color {
+        &self.background.0
     }
-    fn get_mut(
-        world: &mut crate::World<M>,
-        _: BackgroundId,
-    ) -> Option<&mut Self> {
-        Some(&mut world.model_mut().graphics_mut().background.0)
+    fn background_mut(&mut self) -> &mut Color {
+        &mut self.background.0
+    }
+    fn blend(start: &Color, end: &Color, t: f32) -> Color {
+        <Color as Interpolation<Peniko>>::interp(start, end, t)
     }
 }

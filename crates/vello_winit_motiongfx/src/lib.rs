@@ -34,7 +34,6 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window as WinitWindow;
 
-use motiongfx_2d::CompiledScene2dExt;
 pub use vello_motiongfx::lettering as labels;
 pub mod playback;
 use playback::PlaybackControls;
@@ -146,7 +145,7 @@ impl VelloDemo for AnimationDemo {
             .with_mode(self.playback_mode)
     }
     fn background(&self) -> Color {
-        self.animation.background()
+        *self.animation.background()
     }
     fn rebuild_scene(
         &mut self,

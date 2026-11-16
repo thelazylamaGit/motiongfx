@@ -173,11 +173,11 @@ impl<M: crate::Model2d> SceneObject<M> for Path {
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
     ) -> Self::Handle {
-        let id = PathId(scene.model_mut().graphics_mut().paths.len());
-        scene.model_mut().graphics_mut().paths.push(self);
+        let id = PathId(scene.model_mut().canvas_mut().paths.len());
+        scene.model_mut().canvas_mut().paths.push(self);
         scene
             .model_mut()
-            .graphics_mut()
+            .canvas_mut()
             .order
             .push(DrawObject::Path(id));
         PathHandle { id }

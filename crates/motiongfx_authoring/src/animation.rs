@@ -9,7 +9,7 @@
 //! representation and its costs.
 
 use crate::{
-    Field, Interp, Property, SceneContext, Spring, SpringError,
+    CompileContext, Field, Interp, Property, Spring, SpringError,
     Target, World,
 };
 use motiongfx::prelude::*;
@@ -152,7 +152,7 @@ pub trait Step<M>: Send + Sync + 'static {
     /// empty fragment.
     fn lower(
         &self,
-        context: &mut SceneContext<'_, M>,
+        context: &mut CompileContext<'_, M>,
         timing: &Timing,
     ) -> TrackFragment;
 }
@@ -287,7 +287,7 @@ impl<M: 'static> Animation<M> {
     /// fragments stream straight into core's combinators.
     pub(crate) fn lower(
         &self,
-        context: &mut SceneContext<'_, M>,
+        context: &mut CompileContext<'_, M>,
     ) -> TrackFragment {
         match &self.0 {
             Node::Step(step, timing) => step.lower(context, timing),
@@ -324,7 +324,7 @@ impl<M: 'static> Animation<M> {
 fn lower_flow<M: 'static>(
     interval: Duration,
     children: &[Animation<M>],
-    context: &mut SceneContext<'_, M>,
+    context: &mut CompileContext<'_, M>,
 ) -> TrackFragment {
     let last_slot = children
         .iter()
@@ -491,7 +491,7 @@ where
 {
     fn lower(
         &self,
-        context: &mut SceneContext<'_, M>,
+        context: &mut CompileContext<'_, M>,
         timing: &Timing,
     ) -> TrackFragment {
         let property = self.source.property();
@@ -517,7 +517,7 @@ where
 /// falling back to the scene defaults. Problems are reported with the
 /// change's location.
 pub fn lower_change<M, I, S, T>(
-    context: &mut SceneContext<'_, M>,
+    context: &mut CompileContext<'_, M>,
     property: Property<I, S, T>,
     target: impl Action<T>,
     timing: &Timing,
@@ -578,7 +578,7 @@ where
 
 /// Record a problem with one change; it adds no time to the timeline.
 fn report<M: 'static>(
-    context: &mut SceneContext<'_, M>,
+    context: &mut CompileContext<'_, M>,
     timing: &Timing,
     kind: AnimationErrorKind,
 ) -> TrackFragment {

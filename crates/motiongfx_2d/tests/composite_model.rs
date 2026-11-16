@@ -1,21 +1,20 @@
 //! A portable 2D store and a second model share the actual authoring lifecycle.
 use motiongfx::prelude::*;
 use motiongfx_2d::{
-    Circle, CompiledScene2dExt, Graphics, Model2d, Point, all,
-    computed, signal, wait,
+    Canvas, Circle, Model2d, Point, all, computed, signal, wait,
 };
 use motiongfx_authoring::{Property, Scene, SceneObject, World};
 
 #[derive(Default)]
 struct Models {
-    graphics: Graphics,
+    graphics: Canvas,
     depth: Depth,
 }
 impl Model2d for Models {
-    fn graphics(&self) -> &Graphics {
+    fn canvas(&self) -> &Canvas {
         &self.graphics
     }
-    fn graphics_mut(&mut self) -> &mut Graphics {
+    fn canvas_mut(&mut self) -> &mut Canvas {
         &mut self.graphics
     }
 }
@@ -80,13 +79,13 @@ fn portable_objects_and_other_models_share_sources_schedule_and_backward_seeking
         animation.sample(time);
         let p = time.as_secs_f64().min(1.0);
         assert_eq!(
-            animation.circle(dot).position,
+            animation.get(dot).position,
             Point::new(p * 10.0, 0.0)
         );
         assert_eq!(animation.model().depth.z, p * 22.0);
         assert_eq!(animation.model().depth.opacity, p);
         assert_eq!(
-            animation.circle(follower).position,
+            animation.get(follower).position,
             Point::new(0.0, p * 22.0)
         );
     }

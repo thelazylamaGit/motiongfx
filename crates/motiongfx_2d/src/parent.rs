@@ -2,7 +2,7 @@
 //! turning and scaling with it.
 
 use crate::{
-    CircleHandle, CircleId, Graphics, RectangleHandle, RectangleId,
+    Canvas, CircleHandle, CircleId, RectangleHandle, RectangleId,
 };
 use kurbo::Affine;
 
@@ -27,7 +27,7 @@ impl From<CircleHandle> for Parent {
     }
 }
 
-impl Graphics {
+impl Canvas {
     /// The transform a child of `parent` inherits, including the parent's
     /// own parents; identity for `None`.
     pub fn parent_transform(&self, parent: Option<Parent>) -> Affine {

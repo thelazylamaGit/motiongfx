@@ -11,7 +11,7 @@ fn camera_pan_zoom_rotation_render_and_reverse_seek() {
     let mut renderer = Renderer::default();
     let mut scene = Scene::new();
     let dot = scene.add(Circle::new(10.0));
-    let camera = scene.camera();
+    let camera = scene.add(Camera::new());
     scene.defaults(s(1), ease::linear);
     let mut animation = scene.compile([
         all([
@@ -47,7 +47,7 @@ fn camera_pan_zoom_rotation_render_and_reverse_seek() {
             2.0,
         );
         let mut expected = vello::Scene::new();
-        animation.circle(dot).render(
+        animation.get(dot).render(
             &mut expected,
             Affine::scale(2.0)
                 * Affine::translate((200.0, 150.0))
@@ -68,8 +68,8 @@ fn camera_pan_zoom_rotation_render_and_reverse_seek() {
 
 #[test]
 fn scale_pan_approaches_target_monotonically_and_retraces_on_seek() {
-    let scene = Scene::new();
-    let camera = scene.camera();
+    let mut scene = Scene::new();
+    let camera = scene.add(Camera::new());
     let mut animation = scene.compile([
         all([
             camera.scale().to(0.25).over(s(2)),
@@ -94,7 +94,7 @@ fn scale_pan_approaches_target_monotonically_and_retraces_on_seek() {
     // Midpoint: half-sized progress, not halfway magnification.
     // A 0.625 frame gives 1.6x magnification and a 240px offset.
     animation.sample(ms(1000));
-    assert!((animation.camera().scale - 0.625).abs() < 1e-6);
+    assert!((animation.model().camera().scale - 0.625).abs() < 1e-6);
     let midpoint = animation.model().camera_transform() * tangent;
     assert!((midpoint.y + 240.0).abs() < 1e-4);
 
@@ -130,9 +130,8 @@ fn follow_uses_nested_world_position_but_not_target_scale_or_rotation()
             .scale(3.0)
             .rotation(0.8),
     );
-    let camera = scene.set_camera(
-        Camera::new().relative_to(target).position((5.0, 6.0)),
-    );
+    let camera = scene
+        .add(Camera::new().relative_to(target).position((5.0, 6.0)));
     scene.defaults(s(1), ease::linear);
     let mut animation = scene.compile([all([
         parent.shift_x(100.0),
@@ -158,6 +157,6 @@ fn follow_uses_nested_world_position_but_not_target_scale_or_rotation()
 )]
 fn invalid_scale_is_rejected_before_rendering() {
     let mut scene = Scene::new();
-    scene.set_camera(Camera::new().scale(0.0));
+    scene.add(Camera::new().scale(0.0));
     scene.model().camera_transform();
 }

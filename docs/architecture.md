@@ -69,24 +69,32 @@ without its own `where World<M>: SubjectSource<..>` clause: the trait already
 tells the compiler the scene can store that object.
 Shared code never enumerates graphics/3D types or invokes a renderer.
 
-The 2D convenience aliases specialise that lifecycle to `Graphics`. Local
+The 2D convenience aliases specialise that lifecycle to `Canvas`. Local
 `Object<T, M>` and `Input<T, M>` wrappers add inherent builders and geometry
 conversions over generic `ObjectDefinition` / `Input` preparation in authoring.
 They satisfy Rust's inherent-implementation/orphan rules while keeping one
 preparation implementation. Detached builders may need an explicit
 `Object<Circle>` type when no scene provides inference.
 
-`Model2d` exposes a contained Graphics store in composite models. Ordinary
+`Model2d` exposes a contained Canvas store in composite models. Ordinary
 2D objects and another model can share signals, computed relationships and one
 core schedule. This is tested with actual 2D objects plus a small second model.
 There is no 3D renderer or automatic Bevy adapter. Custom mixed callback targets
 still require a safe model adapter; provided 2D array/tuple borrowing targets
-Graphics. No ECS or general dynamic world registry is introduced.
+Canvas. No ECS or general dynamic world registry is introduced.
 
-2D-only helpers are extension traits imported by `motiongfx_2d::prelude::*`:
-`Scene2dExt` for camera/background setup, `CompiledScene2dExt` for sampled reads.
-The inherent lifecycle methods (`add`, `compile`, `bind`, `update`, `sample`)
-remain shared.
+There are no 2D extension traits on `Scene`/`CompiledScene`. Sampled state
+is read with the shared `compiled.get(handle)`, typed by the authoring
+`ObjectHandle` trait that 2D handles implement. The camera is an ordinary
+object (`scene.add(Camera::new())`) created with `ObjectDefinition::unique`, so
+adding another replaces the earlier one, including its signal bindings.
+
+The background is a model setting, not an object: the colour a renderer clears
+with. Authoring's `Background` trait lets a model name its colour type (and
+how to blend it); `Canvas` uses Peniko's. Scenes whose model implements it get
+`scene.set_background(..)` (fixed, signal or computed; the last call wins; the
+result animates with `.to(..)`) and `compiled.background()` as ordinary
+methods, so authoring stays free of graphics types.
 
 ## Construction, sampling, rendering
 
@@ -312,7 +320,7 @@ There is no arrival-based continuation or spring-specific overlap policy.
 Track compilation is unchanged; authoring turns the clips core would drop for
 overlapping a later write into `compile` errors with both lines.
 Invalid spring settings are reported by Scene::try_compile as
-SceneError::Animation, with the animation's file and line.
+CompileError::Animation, with the animation's file and line.
 
 Rest delta/speed are normalized (0.001 and 0.01/s), deliberately independent of
 start-to-target distance so existing ordering can schedule before target baking.
@@ -385,9 +393,9 @@ paint associations are cached, and what to revisit with future dynamic effects.
 Typed literal/byte-range selections animate fill/opacity without independent draw
 nodes. `text.select("word")`, `select_nth` and `select_range` now return deferred
 descriptions; only used selections register while lowering actions. Lowering
-receives a SceneContext with model access, signal registration and
+receives a CompileContext with model access, signal registration and
 construction-only typed memoization. These registration maps drop before playback.
-Missing/invalid queries report SceneError::Animation with query/source/call location
+Missing/invalid queries report CompileError::Animation with query/source/call location
 before baking or sampling. Equivalent resolved ranges reuse the same target;
 distinct overlaps use registration order (first scheduled use), later wins.
 Selection descriptions share one query allocation across their paint fields;

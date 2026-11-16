@@ -24,7 +24,7 @@ mod sealed {
 }
 /// A shape that can be a line tip: a circle, triangle or chevron
 /// description, or [`NoTip`]. Sealed: other types can't implement it.
-pub trait LineTip<M: Model2d = Graphics>: sealed::Sealed {
+pub trait LineTip<M: Model2d = Canvas>: sealed::Sealed {
     /// The tip's handle, such as a `CircleHandle`, to animate it.
     type Handle: Copy + ThreadSafe;
     #[doc(hidden)]
@@ -81,7 +81,7 @@ attach!(Chevron, ChevronHandle);
 impl EndpointTip {
     pub(crate) fn extent(
         self,
-        graphics: &Graphics,
+        graphics: &Canvas,
         triangle_geometry: impl FnOnce(TriangleId) -> Geometry,
     ) -> f64 {
         match self {
@@ -114,7 +114,7 @@ impl EndpointTip {
 /// A line description with tips, from `Line::new(..).start_tip(..)`.
 /// Pass it to `scene.add` to get a [`LineTipHandle`].
 #[derive(Clone)]
-pub struct LineWithTips<S = NoTip, E = NoTip, M: Model2d = Graphics> {
+pub struct LineWithTips<S = NoTip, E = NoTip, M: Model2d = Canvas> {
     line: Object<Line, M>,
     start_tip: S,
     end_tip: E,
@@ -125,7 +125,7 @@ impl<M: Model2d> Object<Line, M> {
     ///
     /// ```
     /// use motiongfx::prelude::s;
-    /// use motiongfx_2d::{CompiledScene2dExt,Circle, Line, Scene, Triangle};
+    /// use motiongfx_2d::{Circle, Line, Scene, Triangle};
     /// let mut scene = Scene::new();
     /// let line = scene.add(Line::new((0.0, 0.0), (200.0, 0.0))
     ///     .start_tip(Circle::new(6.0))
@@ -137,12 +137,12 @@ impl<M: Model2d> Object<Line, M> {
     ///     line.reveal().to(0.5),
     /// ]);
     /// animation.sample(s(3));
-    /// assert_eq!(animation.circle(line.start_tip).radius, 10.0);
-    /// assert_eq!(animation.line(line).reveal, 0.5);
+    /// assert_eq!(animation.get(line.start_tip).radius, 10.0);
+    /// assert_eq!(animation.get(line).reveal, 0.5);
     /// ```
     /// Tip-specific properties are checked at compile time:
     /// ```compile_fail
-    /// use motiongfx_2d::{CompiledScene2dExt,Circle, Line, Scene};
+    /// use motiongfx_2d::{Circle, Line, Scene};
     /// let mut scene = Scene::new();
     /// let line = scene.add(Line::new((0.0, 0.0), (200.0, 0.0))
     ///     .start_tip(Circle::new(6.0)));
@@ -254,10 +254,9 @@ impl<M: Model2d, S: LineTip<M>, E: LineTip<M>> SceneObject<M>
         let line = self.line.insert_into(scene);
         let (start_tip, start) = self.start_tip.attach(scene);
         let (end_tip, end) = self.end_tip.attach(scene);
-        scene.model_mut().graphics_mut().lines[line.id.0].start_tip =
+        scene.model_mut().canvas_mut().lines[line.id.0].start_tip =
             start;
-        scene.model_mut().graphics_mut().lines[line.id.0].end_tip =
-            end;
+        scene.model_mut().canvas_mut().lines[line.id.0].end_tip = end;
         LineTipHandle {
             line,
             start_tip,

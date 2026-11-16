@@ -22,7 +22,7 @@ renderer.render(&animation, &mut frame, size, size, 1.0);
 ```
 
 `Renderer::render` reads a shared `CompiledScene<M>` where `M: Model2d`.
-`Renderer::render_graphics` accepts the sampled `Graphics` view directly.
+`Renderer::render_canvas` accepts the sampled `Canvas` view directly.
 These record commands; the caller resets/owns the Vello Scene and submits it
 through Vello's GPU renderer. Viewport/canvas fitting, DPI and the portable
 camera transform are applied here. The preview host handles submission.

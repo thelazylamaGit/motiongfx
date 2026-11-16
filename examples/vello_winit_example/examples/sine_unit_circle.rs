@@ -21,7 +21,7 @@ const CONNECTOR_COLOR: Color = Color::from_rgb8(255, 241, 182);
 const CURVE_COLOR: Color = Color::from_rgb8(244, 211, 69);
 
 fn build_animation()
--> Result<motiongfx_2d::CompiledScene, motiongfx_2d::SceneError> {
+-> Result<motiongfx_2d::CompiledScene, motiongfx_2d::CompileError> {
     let mut scene = Scene::new();
     let progress = signal(0.0);
     let orbit = progress.map(|progress| {

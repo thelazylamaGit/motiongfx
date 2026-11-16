@@ -4,9 +4,9 @@
 
 use motiongfx::prelude::*;
 use motiongfx_authoring::{
-    Animation, AnimationError, AnimationErrorKind, Property, Scene,
-    SceneError, Spring, World, all, any, chain, flow, marker, signal,
-    wait,
+    Animation, AnimationError, AnimationErrorKind, CompileError,
+    Property, Scene, Spring, World, all, any, chain, flow, marker,
+    signal, wait,
 };
 use std::time::Duration;
 
@@ -269,7 +269,7 @@ fn interrupting_changes_starting_together_still_overlap() {
         x(0).to(10.0),
         x(0).to(20.0).interrupt(),
     ])]);
-    let Err(SceneError::Animation(errors)) = result else {
+    let Err(CompileError::Animation(errors)) = result else {
         panic!("expected an overlap error");
     };
     assert!(
@@ -299,11 +299,11 @@ fn signals_register_when_compiled_and_can_spring() {
     for time in 0..=500 {
         animation.sample(ms(time));
         peak = peak
-            .max(*animation.state().signal_value(&progress).unwrap());
+            .max(*animation.world().signal_value(&progress).unwrap());
     }
     assert!(peak > 1.0, "a bouncy spring overshoots its target");
-    close(*animation.state().signal_value(&progress).unwrap(), 1.0);
-    assert_eq!(animation.state().signal_value(&label).unwrap(), "go");
+    close(*animation.world().signal_value(&progress).unwrap(), 1.0);
+    assert_eq!(animation.world().signal_value(&label).unwrap(), "go");
 }
 
 #[test]
@@ -313,7 +313,7 @@ fn every_problem_is_reported_with_its_location() {
         caption().to("b".to_string()).spring(Spring::physical()),
         x(0).to(1.0).spring(Spring::physical().mass(-1.0)),
     ]);
-    let Err(SceneError::Animation(errors)) = result else {
+    let Err(CompileError::Animation(errors)) = result else {
         panic!("expected animation errors");
     };
     assert!(matches!(
@@ -333,7 +333,7 @@ fn every_problem_is_reported_with_its_location() {
         assert!(error.location.file().ends_with("animation.rs"));
         assert_eq!(error.location.line(), line + offset);
     }
-    let message = SceneError::Animation(errors).to_string();
+    let message = CompileError::Animation(errors).to_string();
     assert_eq!(message.lines().count(), 2);
     assert!(message.contains("animation.rs:"));
 }
@@ -467,7 +467,7 @@ fn duplicate_marker_names_report_both_locations() {
         repeated.clone(),
         repeated,
     ]);
-    let Err(SceneError::Animation(errors)) = result else {
+    let Err(CompileError::Animation(errors)) = result else {
         panic!("expected duplicate marker errors");
     };
     assert_eq!(errors.len(), 2);
@@ -494,7 +494,7 @@ fn overlapping_changes_to_one_property_report_both_lines() {
         x(1).to(2.0),
         flow(ms(50), [x(2).to(1.0), x(2).to(2.0)]),
     ]);
-    let Err(SceneError::Animation(errors)) = result else {
+    let Err(CompileError::Animation(errors)) = result else {
         panic!("expected overlap errors");
     };
     let mut found: Vec<_> = errors

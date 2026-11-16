@@ -1,6 +1,6 @@
 use motiongfx::prelude::{ease, ms, s};
 use motiongfx_2d::{
-    AnimationErrorKind, Scene, SceneError, SelectionError,
+    AnimationErrorKind, CompileError, Scene, SelectionError,
     SelectionTargetError, Text, colors,
 };
 
@@ -41,7 +41,7 @@ fn invalid_used_queries_return_helpful_preparation_errors() {
             .fill()
             .to(colors::RED)]);
         match result {
-            Err(error @ SceneError::Animation(_)) => {
+            Err(error @ CompileError::Animation(_)) => {
                 let message = error.to_string();
                 assert!(message.contains(query));
                 assert!(message.contains("hello"));
@@ -53,7 +53,7 @@ fn invalid_used_queries_return_helpful_preparation_errors() {
     // The typed cause survives: here a range splitting a UTF-8 character.
     let mut scene = Scene::new();
     let title = scene.add(Text::new("café"));
-    let Err(SceneError::Animation(errors)) = scene
+    let Err(CompileError::Animation(errors)) = scene
         .try_compile([title.select_range(3..4).opacity().to(0.0)])
     else {
         panic!("expected an animation error");

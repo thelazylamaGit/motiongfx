@@ -1,12 +1,12 @@
 //! Typed model builders delegate common property wiring to authoring.
-use crate::{Graphics, Input, Model2d, SceneObject, World};
+use crate::{Canvas, Input, Model2d, SceneObject, World};
 use motiongfx::prelude::{Path, SubjectSource, ThreadSafe};
 use motiongfx::subject::SubjectId;
 use motiongfx_authoring::{ObjectDefinition, Property};
 use std::ops::{Deref, DerefMut};
 /// An object description being built, such as `Circle::new(10.0).fill(..)`.
 #[must_use = "an object is only drawn after it is passed to `scene.add(..)`"]
-pub struct Object<T: SceneObject<M>, M: Model2d = Graphics>(
+pub struct Object<T: SceneObject<M>, M: Model2d = Canvas>(
     ObjectDefinition<T, M>,
 );
 impl<T: SceneObject<M> + Clone, M: Model2d> Clone for Object<T, M> {
@@ -18,6 +18,10 @@ impl<T: SceneObject<M>, M: Model2d> Object<T, M> {
     pub(crate) fn new(state: T) -> Self {
         Self(ObjectDefinition::new(state))
     }
+    /// An object a scene has one of: adding another replaces it.
+    pub(crate) fn unique<K: 'static>(state: T) -> Self {
+        Self(ObjectDefinition::unique::<K>(state))
+    }
     pub(crate) fn insert_with(
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
@@ -27,7 +31,7 @@ impl<T: SceneObject<M>, M: Model2d> Object<T, M> {
         ) -> T::Handle,
     ) -> T::Handle
     where
-        T::Handle: Copy,
+        T::Handle: Copy + ThreadSafe,
     {
         self.0.insert_with(scene, insert)
     }
@@ -46,7 +50,7 @@ impl<T: SceneObject<M>, M: Model2d> Object<T, M> {
     ) -> Self
     where
         T: 'static,
-        T::Handle: Copy,
+        T::Handle: Copy + ThreadSafe,
         I: SubjectId,
         V: Clone + PartialEq + ThreadSafe,
         World<M>: SubjectSource<I, T>,
@@ -67,7 +71,7 @@ impl<T: SceneObject<M>, M: Model2d> DerefMut for Object<T, M> {
 }
 impl<T: SceneObject<M>, M: Model2d> SceneObject<M> for Object<T, M>
 where
-    T::Handle: Copy,
+    T::Handle: Copy + ThreadSafe,
 {
     type Handle = T::Handle;
     fn insert_into(

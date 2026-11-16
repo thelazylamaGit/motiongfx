@@ -9,7 +9,7 @@ fn revealed_path_is_seekable_and_movement_does_not_rebuild_geometry()
     let mut renderer = Renderer::default();
     let mut scene = Scene::new();
     let path = scene.add(
-        Path::new::<Graphics, _>([
+        Path::new::<Canvas, _>([
             (0.0, 0.0),
             (10.0, 0.0),
             (30.0, 0.0),
@@ -71,10 +71,9 @@ fn path_cache_handles_bezier_geometry_and_style_changes() {
     path.rotation = 0.4;
     cache.render(&path, &mut rendered, Affine::IDENTITY);
     assert_eq!(cache.rebuilds, 1);
-    path.geometry =
-        Path::new::<Graphics, _>([(0.0, 0.0), (40.0, 0.0)])
-            .geometry
-            .clone();
+    path.geometry = Path::new::<Canvas, _>([(0.0, 0.0), (40.0, 0.0)])
+        .geometry
+        .clone();
     rendered.reset();
     cache.render(&path, &mut rendered, Affine::IDENTITY);
     assert_eq!(

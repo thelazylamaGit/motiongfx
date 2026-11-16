@@ -1,8 +1,8 @@
 use motiongfx::prelude::{ms, s};
 use motiongfx_2d::{
     Animation, AnimationError, AnimationErrorKind, Circle, Color,
-    CompiledScene2dExt, Fillable, Point, Scene, SceneError, Spring,
-    Text, Transformable, all, signal, wait,
+    CompileError, Fillable, Point, Scene, Spring, Text,
+    Transformable, all, signal, wait,
 };
 
 #[test]
@@ -31,14 +31,13 @@ fn properties_positions_and_signals_use_core_spring_sampling() {
             animation.sample(time);
             let amount = curve.sample(time).position;
             assert!(
-                (animation.circle(a).radius - (2.0 + 10.0 * amount))
+                (animation.get(a).radius - (2.0 + 10.0 * amount))
                     .abs()
                     < 0.0001
             );
             let expected = Point::new(amount * 100.0, amount * 50.0);
             assert!(
-                animation.circle(b).position.distance(expected)
-                    < 0.0001
+                animation.get(b).position.distance(expected) < 0.0001
             );
         }
     }
@@ -48,10 +47,11 @@ fn properties_positions_and_signals_use_core_spring_sampling() {
 fn checked_preparation_reports_invalid_spring_options() {
     let mut scene = Scene::new();
     let dot = scene.add(Circle::new(2.0));
-    let Err(SceneError::Animation(errors)) = scene.try_compile([dot
-        .position_x()
-        .to(100.0)
-        .spring(Spring::physical().mass(-1.0))])
+    let Err(CompileError::Animation(errors)) =
+        scene.try_compile([dot
+            .position_x()
+            .to(100.0)
+            .spring(Spring::physical().mass(-1.0))])
     else {
         panic!("invalid spring settings must be reported");
     };
@@ -86,7 +86,7 @@ fn relative_helpers_use_spring_timing_and_preserve_action_start_values()
     for time in [ms(0), ms(250), ms(500), ms(100), ms(0)] {
         animation.sample(time);
         let amount = curve.sample(time).position;
-        let state = animation.circle(dot);
+        let state = animation.get(dot);
         assert!(
             state.position.distance(Point::new(
                 20.0 + 100.0 * amount,
@@ -110,13 +110,13 @@ fn colors_can_spring_overshoot_and_settle() {
     let mut peak = 0.0_f32;
     for time in 0..=500 {
         animation.sample(ms(time));
-        peak = peak.max(animation.circle(dot).fill.components[0]);
+        peak = peak.max(animation.get(dot).fill.components[0]);
     }
     assert!(
         peak > 1.0,
         "red channel should overshoot, peaked at {peak}"
     );
-    assert_eq!(animation.circle(dot).fill, Color::WHITE);
+    assert_eq!(animation.get(dot).fill, Color::WHITE);
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn handle_helpers_report_the_callers_location() {
         text.content().to("b").spring(Spring::physical()),
         text.shift(1.0, 0.0).spring(Spring::physical().mass(-1.0)),
     ]);
-    let Err(SceneError::Animation(errors)) = result else {
+    let Err(CompileError::Animation(errors)) = result else {
         panic!("expected animation errors");
     };
     assert!(matches!(

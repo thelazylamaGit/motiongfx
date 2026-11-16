@@ -47,7 +47,7 @@ with a 20px top inset replacing the source's text padding. The radius line
 uses reusable native dash/arrow/endpoint-trim support, with its tip 8px inside
 the circle. Authored Text uses embedded Fira Sans through Parley/Vello; metrics can differ
 from the source scene font.
-`scene.set_background(...)` selects a light clear color without a background
+`scene.set_background(..)` selects a light clear color without a background
 rectangle, making the supplied red/dark annotation colors easy to inspect.
 No explicit bindings or update callbacks are needed in the example.
 

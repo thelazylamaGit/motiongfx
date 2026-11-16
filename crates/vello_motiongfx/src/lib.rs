@@ -29,7 +29,7 @@ mod binding_tests;
 #[cfg(test)]
 mod camera_tests;
 #[cfg(test)]
-mod graphics_tests;
+mod canvas_tests;
 #[cfg(test)]
 mod line_tests;
 #[cfg(test)]

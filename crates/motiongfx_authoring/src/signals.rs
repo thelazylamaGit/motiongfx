@@ -233,7 +233,7 @@ where
 {
     fn lower(
         &self,
-        context: &mut crate::SceneContext<'_, M>,
+        context: &mut crate::CompileContext<'_, M>,
         timing: &crate::Timing,
     ) -> TrackFragment {
         let id = context.signals().register(&self.signal);

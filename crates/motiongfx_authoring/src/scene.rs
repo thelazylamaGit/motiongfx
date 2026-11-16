@@ -16,19 +16,19 @@ use std::{any::TypeId, time::Duration};
 /// Problems found while compiling a scene.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub enum SceneError {
+pub enum CompileError {
     /// An invalid binding, such as a cycle or two bindings writing one field.
     Binding(BindingError),
     /// Every problem found in the animations, each with the file and line
     /// of the animation that caused it.
     Animation(Vec<crate::AnimationError>),
 }
-impl From<BindingError> for SceneError {
+impl From<BindingError> for CompileError {
     fn from(e: BindingError) -> Self {
         Self::Binding(e)
     }
 }
-impl std::fmt::Display for SceneError {
+impl std::fmt::Display for CompileError {
     fn fmt(
         &self,
         f: &mut std::fmt::Formatter<'_>,
@@ -47,7 +47,7 @@ impl std::fmt::Display for SceneError {
         }
     }
 }
-impl std::error::Error for SceneError {
+impl std::error::Error for CompileError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         // Displays its inner error, so it forwards that error's source.
         match self {
@@ -98,10 +98,11 @@ impl<M> SignalWorld for World<M> {
 /// a 2D model's circles under `CircleId`. Implementing it makes the type
 /// animatable in every world with that model.
 ///
-/// It replaces implementing core's `SubjectSource<I, Self>` for
-/// `World<M>` directly: as a bound on the object type, it can be required
-/// by traits, so generic code over "any object with a position" can
-/// animate that position without repeating world bounds.
+/// Implement this rather than core's `SubjectSource<I, Self>` for
+/// `World<M>`: a blanket impl provides that, and because this is a bound
+/// on the object type, traits such as [`ObjectHandle`] can require it. A
+/// function generic over handles can then animate their fields without
+/// its own `where World<M>: SubjectSource<..>` clause.
 pub trait WorldObject<I, M>: Sized + 'static {
     /// The object `id`, if `world` has it.
     fn get(world: &World<M>, id: I) -> Option<&Self>;
@@ -131,10 +132,23 @@ impl<M, T: ThreadSafe> WorldObject<SignalId, M> for T {
     }
 }
 
+/// A handle to an object in a scene, as returned by `scene.add`: it names
+/// the object's ID and the type of its state, so
+/// [`CompiledScene::get`] can return a `&Circle` for a circle's handle.
+/// Model crates build traits for shared fields, such as a position, on it.
+pub trait ObjectHandle<M>: Copy {
+    /// The object's ID type, such as `CircleId`.
+    type Id: SubjectId;
+    /// The object's state, such as `Circle`.
+    type State: WorldObject<Self::Id, M> + Clone + ThreadSafe;
+    /// The object's ID.
+    fn id(self) -> Self::Id;
+}
+
 /// What a [`Step`](crate::Step) can use while the scene compiles: the
 /// model, caches and error reporting. Steps add their changes to the
 /// timeline with [`lower_change`](crate::lower_change).
-pub struct SceneContext<'a, M> {
+pub struct CompileContext<'a, M> {
     world: &'a mut World<M>,
     pub(crate) builder: TimelineBuilder<'a, World<M>>,
     pub(crate) defaults: crate::AnimationDefaults,
@@ -149,7 +163,7 @@ pub struct SceneContext<'a, M> {
     >,
     caches: std::collections::HashMap<TypeId, Box<dyn std::any::Any>>,
 }
-impl<M> SceneContext<'_, M> {
+impl<M> CompileContext<'_, M> {
     /// The model being compiled.
     pub fn model(&self) -> &M {
         self.world.model()
@@ -424,7 +438,13 @@ impl<M: 'static> Scene<M> {
         &mut self,
         prepare: impl FnOnce(&mut Self) + ThreadSafe,
     ) {
-        let key = TypeId::of::<K>();
+        self.prepare_keyed(TypeId::of::<K>(), prepare);
+    }
+    pub(crate) fn prepare_keyed(
+        &mut self,
+        key: TypeId,
+        prepare: impl FnOnce(&mut Self) + ThreadSafe,
+    ) {
         self.preparation.retain(|(previous, _)| *previous != key);
         self.preparation.push((key, Box::new(prepare)));
     }
@@ -508,18 +528,18 @@ impl<M: 'static> Scene<M> {
     ///
     /// # Errors
     ///
-    /// [`SceneError::Animation`] with every animation problem found (each
-    /// with its file and line), or [`SceneError::Binding`] for an invalid
+    /// [`CompileError::Animation`] with every animation problem found (each
+    /// with its file and line), or [`CompileError::Binding`] for an invalid
     /// binding.
     pub fn try_compile(
         mut self,
         steps: impl IntoIterator<Item = crate::Animation<M>>,
-    ) -> Result<CompiledScene<M>, SceneError> {
+    ) -> Result<CompiledScene<M>, CompileError> {
         for (_, prepare) in std::mem::take(&mut self.preparation) {
             prepare(&mut self);
         }
         let mut registry = Registry::new();
-        let mut context = SceneContext {
+        let mut context = CompileContext {
             world: &mut self.world,
             builder: registry.create_builder(),
             defaults: self.defaults,
@@ -533,7 +553,7 @@ impl<M: 'static> Scene<M> {
             .into_iter()
             .map(|step| step.lower(&mut context))
             .ord_chain();
-        let SceneContext {
+        let CompileContext {
             builder,
             mut errors,
             actions,
@@ -542,7 +562,7 @@ impl<M: 'static> Scene<M> {
         let track = fragment.compile();
         errors.extend(overlaps(&track, &actions));
         if !errors.is_empty() {
-            return Err(SceneError::Animation(errors));
+            return Err(CompileError::Animation(errors));
         }
         let mut timeline = builder.compile(track);
         self.bindings.prepare(&self.world, &timeline)?;
@@ -617,8 +637,20 @@ impl<M: 'static> std::fmt::Debug for CompiledScene<M> {
 }
 impl<M: 'static> CompiledScene<M> {
     /// The world as last sampled, including signal values and time.
-    pub fn state(&self) -> &World<M> {
+    pub fn world(&self) -> &World<M> {
         &self.world
+    }
+    /// The object `handle` refers to, as last sampled: a `&Circle` for a
+    /// circle's handle, and so on.
+    ///
+    /// # Panics
+    ///
+    /// If the handle is from another scene that has more objects of its
+    /// type. A handle from a scene with fewer objects reads the wrong one.
+    #[track_caller]
+    pub fn get<H: ObjectHandle<M>>(&self, handle: H) -> &H::State {
+        H::State::get(&self.world, handle.id())
+            .expect("the handle is from another scene")
     }
     /// The objects as last sampled.
     pub fn model(&self) -> &M {

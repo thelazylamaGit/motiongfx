@@ -145,10 +145,10 @@ colour space suited to overshoot.
 ## Errors and compatibility
 
 `SpringError` covers invalid spring settings. Core track compilation is unchanged.
-`Scene::try_compile` returns `SceneError`:
+`Scene::try_compile` returns `CompileError`:
 
-- `SceneError::Binding(BindingError)` for existing relationship diagnostics.
-- `SceneError::Animation(Vec<AnimationError>)` for invalid spring settings
+- `CompileError::Binding(BindingError)` for existing relationship diagnostics.
+- `CompileError::Animation(Vec<AnimationError>)` for invalid spring settings
   (`AnimationErrorKind::Spring(SpringError)`) and springs on discrete
   properties, each with the animation's file and line.
 

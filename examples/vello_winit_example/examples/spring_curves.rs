@@ -6,7 +6,7 @@
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
     BezPath, Circle, Color, CompiledScene, Line, Path, Point, Scene,
-    Scene2dExt, Spring, SpringCurve, Text, TextAlign, TextStyle, all,
+    Spring, SpringCurve, Text, TextAlign, TextStyle, all,
     colors::{TRANSPARENT, WHITE},
     computed, signal, wait,
 };

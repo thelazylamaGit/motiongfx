@@ -78,7 +78,7 @@ enum Motion {
 /// model access, construction caches and error reporting; `lower_change`
 /// registers the core action.
 pub trait Step<M>: Send + Sync + 'static {
-    fn lower(&self, context: &mut SceneContext<'_, M>, timing: &Timing) -> TrackFragment;
+    fn lower(&self, context: &mut CompileContext<'_, M>, timing: &Timing) -> TrackFragment;
 }
 ```
 
@@ -100,7 +100,7 @@ before these rules were applied).
   constructor; users never write `Box` or `.into()`.
 - **Generic over the model, hidden by an alias.** Turning a change into core
   actions needs the world type, and 2D handles work with any `Model2d`, so the
-  type is `Animation<M>`. `motiongfx_2d` exports `pub type Animation = Animation<Graphics>`,
+  type is `Animation<M>`. `motiongfx_2d` exports `pub type Animation = Animation<Canvas>`,
   the same pattern as `Scene`. User code writes `Animation`.
 - **`Arc` steps, `Vec` children.** `Arc` makes `.clone()` a reference-count
   increment, so reusing an animation is cheap. Children come from `collect()`;
@@ -266,14 +266,14 @@ Mistakes visible while building panic immediately at the caller's line
 - `.over()`/`.ease()`/`.spring()` on a group or `wait`.
 
 Mistakes that need the scene are reported by `compile` as
-`SceneError::Animation(Vec<AnimationError>)` (all collected, not just the
+`CompileError::Animation(Vec<AnimationError>)` (all collected, not just the
 first; each with the file and line of the animation):
 - springing a discrete property,
 - invalid spring settings, missing or invalid text selections,
 - duplicate marker names; overlapping changes to one property (or a point
   and its axis).
 
-Binding errors keep their existing `SceneError` variants.
+Binding errors keep their existing `CompileError` variants.
 
 Typestate (one type per timing state, as before) was considered: it keeps
 these as compiler errors at no runtime cost, but mixed lists need one type, so
@@ -389,13 +389,13 @@ deferred.
 5. **Headless test that builds every example's animation** *(done: `support/headless.rs` samples forwards and backwards and renders a frame; one test per example)*.
 6. **Remove the old API** and migrate remaining tests and doc examples
    *(done)*. Review follow-ups made at the same time:
-   - `SceneContext` is the lowering context, so `Step` no longer sees the
+   - `CompileContext` is the lowering context, so `Step` no longer sees the
      public builder (it held the core builder and defaults directly);
    - `Property` stores `Interp::{Smooth, Discrete}` instead of an interpolation
      plus a separate `discrete` flag;
    - property/target change methods carry shared bounds on the `impl` block;
      `spring_to` removed, `map_target` renamed `to_with`;
-   - `AnimationErrorKind`/`SceneError` are `#[non_exhaustive]`; text
+   - `AnimationErrorKind`/`CompileError` are `#[non_exhaustive]`; text
      selection failures keep their `SelectionError` (`SelectionTargetError`);
    - `scene.update` panics at the caller's line; `Debug` for `Animation`,
      `Scene`, `CompiledScene`, `Signal`, `Property` and `Target`;
@@ -480,7 +480,7 @@ sizes.
 
 After phase 1. `Animation` code does not change when handles switch to nodes.
 
-**Why:** `Graphics` keeps a `Vec` per shape type plus a flat draw order.
+**Why:** `Canvas` keeps a `Vec` per shape type plus a flat draw order.
 Position/scale/rotation are duplicated per type, and parenting is inconsistent:
 `Parent` covers only rectangles and circles; a rectangle parent applies its
 scale while the rectangle itself scales size but not stroke, and a circle's
@@ -573,8 +573,8 @@ Review notes to resolve during phase 2:
 
 - **`Animation`** is the description (one change, group or wait), matching
   Manim's term. **`CompiledScene`** is the result of `scene.compile(..)`: the
-  scene with its baked timeline, sampleable at any time (`CompiledScene2dExt`
-  reads 2D objects from it). Core's `Timeline`, `Sequence` and `Action`, and
+  scene with its baked timeline, sampleable at any time (`get(handle)` reads
+  objects from it). Core's `Timeline`, `Sequence` and `Action`, and
   the host's `Playback*` types, already name other things, so those names
   were not reused.
 - `motiongfx_authoring::Scene` and `motiongfx_scene::Scene` share a name; if

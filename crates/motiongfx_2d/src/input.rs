@@ -1,6 +1,6 @@
 //! [`Input`]: what 2D builder setters accept.
 use crate::{
-    Computed, Graphics, Model2d, Point, Signal, Size, Vec2, World,
+    Canvas, Computed, Model2d, Point, Signal, Size, Vec2, World,
 };
 use motiongfx::prelude::{SubjectSource, ThreadSafe};
 use motiongfx::subject::SubjectId;
@@ -9,7 +9,7 @@ use std::sync::Arc;
 /// A value for a builder setter: fixed (`10.0`, `(1.0, 2.0)`, a colour)
 /// or a source to follow (`&signal`, a computed value or another object's
 /// property). Setters take `impl Into<Input<..>>`, so you rarely name it.
-pub struct Input<T, M = Graphics>(
+pub struct Input<T, M = Canvas>(
     pub(crate) motiongfx_authoring::Input<M, T>,
 );
 impl<M> From<f64> for Input<crate::FontWeight, M> {

@@ -17,7 +17,7 @@ pub struct ObjectSpec {
 pub struct Layout<const N: usize>([ObjectSpec; N]);
 impl<const N: usize> Layout<N> {
     #[track_caller]
-    fn new(mut specs: [ObjectSpec; N], world: &Graphics) -> Self {
+    fn new(mut specs: [ObjectSpec; N], world: &Canvas) -> Self {
         specs.sort_unstable();
         for (i, spec) in specs.iter().enumerate() {
             let lengths = [
@@ -45,7 +45,7 @@ impl<const N: usize> Layout<N> {
     }
     fn borrow<'a>(
         &self,
-        world: &'a mut Graphics,
+        world: &'a mut Canvas,
     ) -> ObjectBatch<'a, N> {
         ObjectBatch {
             rectangles: select(&self.0, 0, &mut world.rectangles),
@@ -93,7 +93,7 @@ pub struct ObjectBatch<'a, const N: usize> {
 }
 macro_rules! update_handle {
     ($handle:ty, $object:ty, $field:ident, $kind:literal, $index:expr) => {
-        impl UpdateHandle<Graphics> for $handle {
+        impl UpdateHandle<Canvas> for $handle {
             type Object = $object;
             fn spec(self, slot: usize) -> ObjectSpec {
                 ObjectSpec {
@@ -103,7 +103,7 @@ macro_rules! update_handle {
                 }
             }
             fn take<'a, const N: usize>(
-                batch: &mut <Graphics as UpdateStorage>::Batch<'a, N>,
+                batch: &mut <Canvas as UpdateStorage>::Batch<'a, N>,
                 slot: usize,
             ) -> &'a mut Self::Object {
                 batch.$field[slot]
@@ -111,17 +111,17 @@ macro_rules! update_handle {
                     .expect("typed update target")
             }
         }
-        impl UpdateTargets<Graphics> for $handle {
+        impl UpdateTargets<Canvas> for $handle {
             type Objects<'a> = &'a mut $object;
             #[track_caller]
             fn callback<S, F>(
                 self,
                 source: S,
                 mut update: F,
-                world: &World<Graphics>,
-            ) -> NativeUpdate<Graphics>
+                world: &World<Canvas>,
+            ) -> NativeUpdate<Canvas>
             where
-                S: BindingSource<World<Graphics>>,
+                S: BindingSource<World<Canvas>>,
                 F: for<'a> FnMut(Self::Objects<'a>, S::Value)
                     + ThreadSafe,
             {
@@ -168,22 +168,22 @@ update_handle!(
     |h: ChevronHandle| h.id.0
 );
 
-impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe>
-    UpdateHandle<Graphics> for LineTipHandle<S, E>
+impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe> UpdateHandle<Canvas>
+    for LineTipHandle<S, E>
 {
     type Object = Line;
     fn spec(self, slot: usize) -> ObjectSpec {
         self.line.spec(slot)
     }
     fn take<'a, const N: usize>(
-        batch: &mut <Graphics as UpdateStorage>::Batch<'a, N>,
+        batch: &mut <Canvas as UpdateStorage>::Batch<'a, N>,
         slot: usize,
     ) -> &'a mut Line {
         LineHandle::take(batch, slot)
     }
 }
-impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe>
-    UpdateTargets<Graphics> for LineTipHandle<S, E>
+impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe> UpdateTargets<Canvas>
+    for LineTipHandle<S, E>
 {
     type Objects<'a> = &'a mut Line;
     #[track_caller]
@@ -191,10 +191,10 @@ impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe>
         self,
         source: I,
         update: F,
-        world: &World<Graphics>,
-    ) -> NativeUpdate<Graphics>
+        world: &World<Canvas>,
+    ) -> NativeUpdate<Canvas>
     where
-        I: BindingSource<World<Graphics>>,
+        I: BindingSource<World<Canvas>>,
         F: for<'a> FnMut(&'a mut Line, I::Value) + ThreadSafe,
     {
         self.line.callback(source, update, world)
@@ -204,7 +204,7 @@ update_handle!(PathHandle, Path, paths, 3, |h: PathHandle| h.id.0);
 update_handle!(TextHandle, Text, texts, 4, |h: TextHandle| h.id.0);
 update_handle!(CameraHandle, Camera, cameras, 5, |_: CameraHandle| 0);
 
-impl UpdateStorage for Graphics {
+impl UpdateStorage for Canvas {
     type Spec = ObjectSpec;
     type Layout<const N: usize> = Layout<N>;
     type Batch<'a, const N: usize> = ObjectBatch<'a, N>;

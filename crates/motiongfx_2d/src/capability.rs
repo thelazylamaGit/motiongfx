@@ -1,22 +1,7 @@
 //! Traits for what several kinds of objects share, such as a position or
 //! a fill, so one function can animate any object that has it.
-use crate::{Color, Graphics, Model2d, Point};
-use motiongfx::prelude::ThreadSafe;
-use motiongfx::subject::SubjectId;
-use motiongfx_authoring::{Animation, Field, Target, WorldObject};
-
-/// An object in a scene, as returned by `scene.add`: a circle, a line, the
-/// camera, and so on. The traits below build on it.
-///
-/// `M` is the scene's model; leave it out for ordinary 2D scenes.
-pub trait ObjectHandle<M: Model2d = Graphics>: Copy {
-    /// The object's ID type, such as `CircleId`.
-    type Id: SubjectId;
-    /// The object's state, such as [`Circle`](crate::Circle).
-    type State: WorldObject<Self::Id, M> + Clone + ThreadSafe;
-    /// The object's ID.
-    fn id(self) -> Self::Id;
-}
+use crate::{Canvas, Color, Model2d, Point};
+use motiongfx_authoring::{Animation, Field, ObjectHandle, Target};
 
 /// The field of `H` identified by marker `F`.
 type FieldOf<H, M, T, F> = Target<
@@ -46,10 +31,10 @@ type FieldOf<H, M, T, F> = Target<
 /// let label = scene.add(Text::new("Hi").opacity(0.0));
 /// let mut animation = scene.compile([rise_in(dot), rise_in(label)]);
 /// animation.sample(s(5));
-/// assert_eq!(animation.circle(dot).position, Point::new(0.0, 20.0));
-/// assert_eq!(animation.text(label).opacity, 1.0);
+/// assert_eq!(animation.get(dot).position, Point::new(0.0, 20.0));
+/// assert_eq!(animation.get(label).opacity, 1.0);
 /// ```
-pub trait Transformable<M: Model2d = Graphics>:
+pub trait Transformable<M: Model2d = Canvas>:
     ObjectHandle<M>
 {
     /// Marker for the position field.
@@ -111,7 +96,7 @@ pub trait Transformable<M: Model2d = Graphics>:
 }
 
 /// Objects with a fill colour: closed shapes and text.
-pub trait Fillable<M: Model2d = Graphics>: ObjectHandle<M> {
+pub trait Fillable<M: Model2d = Canvas>: ObjectHandle<M> {
     /// Marker for the fill field.
     type Fill: Field<Self::State, Color>;
 
@@ -132,7 +117,7 @@ pub trait Fillable<M: Model2d = Graphics>: ObjectHandle<M> {
 }
 
 /// Objects with an outline: shapes, lines and paths.
-pub trait Strokable<M: Model2d = Graphics>: ObjectHandle<M> {
+pub trait Strokable<M: Model2d = Canvas>: ObjectHandle<M> {
     /// Marker for the stroke colour field.
     type Stroke: Field<Self::State, Color>;
     /// Marker for the stroke width field.
@@ -151,7 +136,7 @@ pub trait Strokable<M: Model2d = Graphics>: ObjectHandle<M> {
 }
 
 /// Objects that can fade: every drawn object.
-pub trait Fadable<M: Model2d = Graphics>: ObjectHandle<M> {
+pub trait Fadable<M: Model2d = Canvas>: ObjectHandle<M> {
     /// Marker for the opacity field.
     type Opacity: Field<Self::State, f64>;
 
@@ -192,7 +177,7 @@ macro_rules! handle_traits {
     };
     (@ ObjectHandle [$($generics:tt)*] $handle:ty => $state:ty, $id:ty,
         $($field:ident).+) => {
-        impl<M: crate::Model2d, $($generics)*> crate::ObjectHandle<M> for $handle {
+        impl<M: crate::Model2d, $($generics)*> motiongfx_authoring::ObjectHandle<M> for $handle {
             type Id = $id;
             type State = $state;
             fn id(self) -> $id {
@@ -213,7 +198,7 @@ macro_rules! handle_traits {
 }
 pub(crate) use handle_traits;
 
-// Stores objects of type `$state` in `Graphics::$storage`, indexed by
+// Stores objects of type `$state` in `Canvas::$storage`, indexed by
 // `$id`, which makes them animatable in any world with a 2D model.
 macro_rules! stored_in {
     ($state:ty, $id:ty, $storage:ident) => {
@@ -224,17 +209,13 @@ macro_rules! stored_in {
                 world: &crate::World<M>,
                 id: $id,
             ) -> Option<&Self> {
-                world.model().graphics().$storage.get(id.0)
+                world.model().canvas().$storage.get(id.0)
             }
             fn get_mut(
                 world: &mut crate::World<M>,
                 id: $id,
             ) -> Option<&mut Self> {
-                world
-                    .model_mut()
-                    .graphics_mut()
-                    .$storage
-                    .get_mut(id.0)
+                world.model_mut().canvas_mut().$storage.get_mut(id.0)
             }
         }
     };

@@ -56,17 +56,17 @@ fn updates_run_after_bindings_in_registration_order_on_every_sample()
     .enumerate()
     {
         animation.sample(ms(time));
-        assert_eq!(animation.circle(b).position, Point::new(x, 30.0));
-        assert_eq!(animation.line(line).start, Point::new(x, 30.0));
-        assert_eq!(animation.line(line).end, Point::new(x, 80.0));
+        assert_eq!(animation.get(b).position, Point::new(x, 30.0));
+        assert_eq!(animation.get(line).start, Point::new(x, 30.0));
+        assert_eq!(animation.get(line).end, Point::new(x, 80.0));
         assert_eq!(
-            animation.text(clock_label).content.as_ref(),
+            animation.get(clock_label).content.as_ref(),
             time.to_string()
         );
         assert_eq!(calls.load(Ordering::Relaxed), index + 2);
     }
     animation.sample(s(10));
-    assert_eq!(animation.text(clock_label).content.as_ref(), "4000");
+    assert_eq!(animation.get(clock_label).content.as_ref(), "4000");
 }
 
 #[test]
@@ -87,7 +87,7 @@ fn grouped_targets_preserve_caller_order_and_borrow_disjoint_objects()
     });
     let text = scene.add(Text::new(""));
     let rect = scene.add(Rectangle::new(10.0, 10.0));
-    let camera = scene.camera();
+    let camera = scene.add(Camera::new());
     scene.update(
         (rect, text, camera),
         &amount,
@@ -100,10 +100,10 @@ fn grouped_targets_preserve_caller_order_and_borrow_disjoint_objects()
     let mut animation =
         scene.compile([amount.to(1.0).ease(ease::linear)]);
     animation.sample(ms(500));
-    assert_eq!(animation.line(line).start, Point::new(10.5, 0.0));
-    assert_eq!(animation.line(line).end, Point::new(20.5, 0.0));
-    assert_eq!(animation.rectangle(rect).rotation, 0.5);
-    assert_eq!(animation.camera().scale, 1.5);
+    assert_eq!(animation.get(line).start, Point::new(10.5, 0.0));
+    assert_eq!(animation.get(line).end, Point::new(20.5, 0.0));
+    assert_eq!(animation.get(rect).rotation, 0.5);
+    assert_eq!(animation.model().camera().scale, 1.5);
 }
 
 #[test]
@@ -128,9 +128,9 @@ fn array_targets_preserve_order_and_support_empty_arrays() {
     let mut animation =
         scene.compile([amount.to(10.0).ease(ease::linear)]);
     animation.sample(ms(500));
-    assert_eq!(animation.line(lines[2]).end.x, 5.0);
-    assert_eq!(animation.line(lines[0]).end.x, 6.0);
-    assert_eq!(animation.line(lines[1]).end.x, 7.0);
+    assert_eq!(animation.get(lines[2]).end.x, 5.0);
+    assert_eq!(animation.get(lines[0]).end.x, 6.0);
+    assert_eq!(animation.get(lines[1]).end.x, 7.0);
 }
 
 #[test]
@@ -184,11 +184,11 @@ fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
                 .map(|offset| bend.offset(offset).ease(ease::linear)),
         ),
     ]);
-    let initial_geometry = animation.path(curve).geometry.clone();
+    let initial_geometry = animation.get(curve).geometry.clone();
     animation.sample(ms(500));
     assert!(Arc::ptr_eq(
         &initial_geometry,
-        &animation.path(curve).geometry
+        &animation.get(curve).geometry
     ));
     let mut rendered = vello::Scene::new();
     for (time, expected_bend) in [
@@ -203,21 +203,19 @@ fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
         let progress = (time as f64 / 1000.0).min(1.0) * 0.5;
         let expected =
             QuadBez::new(start, control, end).eval(progress);
-        assert!(
-            animation.circle(q).position.distance(expected) < 1e-8
+        assert!(animation.get(q).position.distance(expected) < 1e-8);
+        assert_eq!(
+            animation.get(line).start,
+            animation.get(a).position
         );
         assert_eq!(
-            animation.line(line).start,
-            animation.circle(a).position
-        );
-        assert_eq!(
-            animation.line(line).end,
-            animation.circle(b).position
+            animation.get(line).end,
+            animation.get(b).position
         );
         rendered.reset();
         let size = Size::new(1120.0, 800.0);
         renderer.render(&animation, &mut rendered, size, size, 1.0);
-        let geometry = animation.path(curve).geometry.clone();
+        let geometry = animation.get(curve).geometry.clone();
         let rebuilds =
             renderer.path_geometry[curve.id().index()].rebuilds;
         animation.sample(ms(time));
@@ -225,7 +223,7 @@ fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
         renderer.render(&animation, &mut rendered, size, size, 1.0);
         assert!(Arc::ptr_eq(
             &geometry,
-            &animation.path(curve).geometry
+            &animation.get(curve).geometry
         ));
         assert_eq!(
             renderer.path_geometry[curve.id().index()].rebuilds,

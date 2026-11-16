@@ -148,11 +148,11 @@ pub(crate) fn insert_text<M: Model2d>(
     scene: &mut motiongfx_authoring::Scene<M>,
     text: Text,
 ) -> TextHandle {
-    let id = TextId(scene.model_mut().graphics_mut().texts.len());
-    scene.model_mut().graphics_mut().texts.push(text);
+    let id = TextId(scene.model_mut().canvas_mut().texts.len());
+    scene.model_mut().canvas_mut().texts.push(text);
     scene
         .model_mut()
-        .graphics_mut()
+        .canvas_mut()
         .order
         .push(DrawObject::Text(id));
     TextHandle { id }

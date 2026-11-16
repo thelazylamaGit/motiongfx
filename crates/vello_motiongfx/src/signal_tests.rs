@@ -26,7 +26,7 @@ fn background_sources_sample_without_geometry_and_last_configuration_wins()
         assert!((actual - expected).abs() < 1e-6);
     }
     animation.sample(ms(0));
-    assert_eq!(animation.background(), colors::BLUE);
+    assert_eq!(*animation.background(), colors::BLUE);
     let mut rendered = vello::Scene::new();
     let size = Size::new(100.0, 100.0);
     renderer.render(&animation, &mut rendered, size, size, 1.0);
@@ -41,9 +41,9 @@ fn background_sources_sample_without_geometry_and_last_configuration_wins()
     let mut animation =
         scene.try_compile([background.to(colors::BLACK)]).unwrap();
     animation.sample(s(1));
-    assert_eq!(animation.background(), colors::BLACK);
+    assert_eq!(*animation.background(), colors::BLACK);
     animation.sample(ms(0));
-    assert_eq!(animation.background(), colors::WHITE);
+    assert_eq!(*animation.background(), colors::WHITE);
 }
 
 #[test]
@@ -91,15 +91,12 @@ fn shared_computed_sources_drive_builders_and_skip_unchanged_inputs()
     ] {
         animation.sample(ms(time));
         let expected = Point::new(p * r, r);
-        assert_eq!(animation.circle(a).position, expected);
-        assert_eq!(animation.circle(b).position, expected);
-        assert_eq!(animation.circle(a).radius, r);
-        assert_eq!(animation.circle(a).opacity, 1.0 - p);
-        assert_eq!(animation.line(line).end, expected);
-        assert_eq!(
-            animation.line(line).stroke,
-            animation.circle(a).fill
-        );
+        assert_eq!(animation.get(a).position, expected);
+        assert_eq!(animation.get(b).position, expected);
+        assert_eq!(animation.get(a).radius, r);
+        assert_eq!(animation.get(a).opacity, 1.0 - p);
+        assert_eq!(animation.get(line).end, expected);
+        assert_eq!(animation.get(line).stroke, animation.get(a).fill);
         assert_eq!(calls.load(Ordering::Relaxed), expected_calls);
     }
 }
@@ -123,7 +120,7 @@ fn point_signals_discrete_arrays_text_and_camera_use_the_same_source_model()
     let line = scene.add(Line::new(&center, selected));
     let size = computed(&center, |p| Size::new(10.0 + p.x, 20.0));
     let rect = scene.add(Rectangle::new(10.0, 20.0).size(size));
-    scene.set_camera(Camera::new().position(&center));
+    scene.add(Camera::new().position(&center));
     let mut animation = scene.compile([
         center.to((100.0, 50.0)).ease(ease::linear),
         visible.set(true),
@@ -137,13 +134,13 @@ fn point_signals_discrete_arrays_text_and_camera_use_the_same_source_model()
         (0, 0.0, 30.0, 0.0),
     ] {
         animation.sample(ms(time));
-        assert_eq!(animation.text(text).position.x, x);
-        assert_eq!(animation.text(text).opacity, alpha);
-        assert_eq!(animation.line(line).end.x, point_x);
-        assert_eq!(animation.rectangle(rect).size.width, 10.0 + x);
-        assert_eq!(animation.camera().position.x, x);
+        assert_eq!(animation.get(text).position.x, x);
+        assert_eq!(animation.get(text).opacity, alpha);
+        assert_eq!(animation.get(line).end.x, point_x);
+        assert_eq!(animation.get(rect).size.width, 10.0 + x);
+        assert_eq!(animation.model().camera().position.x, x);
         assert_eq!(
-            animation.text(text).content.as_ref(),
+            animation.get(text).content.as_ref(),
             format!("{x} {}", point_x - 20.0)
         );
     }
@@ -172,7 +169,7 @@ fn source_driven_quadratic_matches_math_and_preserves_render_caches()
                 .map(|offset| bend.offset(offset).ease(ease::linear)),
         ),
     ]);
-    let initial = animation.path(curve).geometry.clone();
+    let initial = animation.get(curve).geometry.clone();
     let mut rendered = vello::Scene::new();
     for (time, bend) in [
         (500, 0.0),
@@ -186,32 +183,29 @@ fn source_driven_quadratic_matches_math_and_preserves_render_caches()
         if time == 500 {
             assert!(Arc::ptr_eq(
                 &initial,
-                &animation.path(curve).geometry
+                &animation.get(curve).geometry
             ));
         }
         let t = (time as f64 / 1000.0).min(1.0) * 0.5;
-        let geometry = &animation.path(curve).geometry;
+        let geometry = &animation.get(curve).geometry;
         let actual = geometry.segments().next().unwrap().eval(t);
         let expected =
             QuadBez::new(start, Point::new(0.0, 170.0 - bend), end)
                 .eval(t);
         assert!(actual.distance(expected) < 1e-8);
         assert!(
-            animation.circle(dot).position.distance(expected) < 1e-8
+            animation.get(dot).position.distance(expected) < 1e-8
         );
         let size = Size::new(1120.0, 800.0);
         rendered.reset();
         renderer.render(&animation, &mut rendered, size, size, 1.0);
-        let source = animation.path(curve).geometry.clone();
+        let source = animation.get(curve).geometry.clone();
         let rebuilds =
             renderer.path_geometry[curve.id().index()].rebuilds;
         animation.sample(ms(time));
         rendered.reset();
         renderer.render(&animation, &mut rendered, size, size, 1.0);
-        assert!(Arc::ptr_eq(
-            &source,
-            &animation.path(curve).geometry
-        ));
+        assert!(Arc::ptr_eq(&source, &animation.get(curve).geometry));
         assert_eq!(
             renderer.path_geometry[curve.id().index()].rebuilds,
             rebuilds
@@ -230,16 +224,16 @@ fn repeated_setters_replace_wiring_and_source_aware_fields_reject_timeline_write
         .try_compile([dot.radius().to(20.0).ease(ease::linear)])
         .unwrap();
     animation.sample(ms(500));
-    assert_eq!(animation.circle(dot).radius, 12.5);
+    assert_eq!(animation.get(dot).radius, 12.5);
 
     let mut scene = Scene::new();
     let radius = signal(10.0);
     let dot = scene.add(Circle::new(&radius));
     assert!(matches!(
         scene.try_compile([dot.radius().to(20.0),]),
-        Err(SceneError::Binding(BindingError::AnimatedDestination(
-            _
-        )))
+        Err(CompileError::Binding(
+            BindingError::AnimatedDestination(_)
+        ))
     ));
 
     let source = signal(0.0);
@@ -247,7 +241,7 @@ fn repeated_setters_replace_wiring_and_source_aware_fields_reject_timeline_write
     let mut second = Scene::new();
     let dot = second.add(Circle::new(1.0).position(standalone));
     let animation = second.try_compile([]).unwrap();
-    assert_eq!(animation.circle(dot).position, Point::ZERO);
+    assert_eq!(animation.get(dot).position, Point::ZERO);
 }
 
 #[test]
@@ -334,15 +328,15 @@ fn standalone_helpers_macro_and_shared_descriptions_have_independent_playback()
         second.compile([progress.to(2.0).ease(ease::linear)]);
     assert_eq!(calls.load(Ordering::Relaxed), 2);
     first.sample(ms(500));
-    assert_eq!(first.circle(a).position, Point::new(5.0, 10.0));
-    assert_eq!(first.circle(b).position, Point::new(50.0, 20.0));
-    assert_eq!(first.circle(c).radius, 6.0);
-    assert_eq!(second.circle(other).position, Point::new(0.0, 10.0));
+    assert_eq!(first.get(a).position, Point::new(5.0, 10.0));
+    assert_eq!(first.get(b).position, Point::new(50.0, 20.0));
+    assert_eq!(first.get(c).radius, 6.0);
+    assert_eq!(second.get(other).position, Point::new(0.0, 10.0));
     second.sample(s(1));
-    assert_eq!(second.circle(other).position, Point::new(20.0, 10.0));
+    assert_eq!(second.get(other).position, Point::new(20.0, 10.0));
     first.sample(ms(0));
-    assert_eq!(first.circle(a).position, Point::new(0.0, 10.0));
-    assert_eq!(second.circle(other).position, Point::new(20.0, 10.0));
+    assert_eq!(first.get(a).position, Point::new(0.0, 10.0));
+    assert_eq!(second.get(other).position, Point::new(20.0, 10.0));
 }
 
 #[test]
@@ -363,7 +357,7 @@ fn roots_used_only_by_actions_register_and_unused_computations_do_not_run()
         animation.sample(ms(time));
 
         assert_eq!(
-            animation.state().signal_value(&input),
+            animation.world().signal_value(&input),
             Some(&expected)
         );
     }

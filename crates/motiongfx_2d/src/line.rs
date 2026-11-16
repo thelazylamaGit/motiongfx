@@ -103,11 +103,11 @@ impl<M: crate::Model2d> SceneObject<M> for Line {
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
     ) -> LineHandle {
-        let id = LineId(scene.model_mut().graphics_mut().lines.len());
-        scene.model_mut().graphics_mut().lines.push(self);
+        let id = LineId(scene.model_mut().canvas_mut().lines.len());
+        scene.model_mut().canvas_mut().lines.push(self);
         scene
             .model_mut()
-            .graphics_mut()
+            .canvas_mut()
             .order
             .push(DrawObject::Line(id));
         LineHandle { id }

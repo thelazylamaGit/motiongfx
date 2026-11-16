@@ -1,6 +1,6 @@
 //! 2D objects follow simulations, directly and through `.map`.
 use motiongfx::prelude::{ms, s};
-use motiongfx_2d::{Circle, CompiledScene2dExt, Point, Scene, wait};
+use motiongfx_2d::{Circle, Point, Scene, wait};
 
 #[test]
 fn objects_follow_a_simulation_forwards_and_backwards() {
@@ -18,7 +18,7 @@ fn objects_follow_a_simulation_forwards_and_backwards() {
         [(ms(0), 1.0), (ms(500), 6.0), (s(1), 11.0), (ms(200), 3.0)]
     {
         animation.sample(time);
-        let circle = animation.circle(dot);
+        let circle = animation.get(dot);
         assert_eq!(circle.radius, expected, "radius at {time:?}");
         assert_eq!(
             circle.position,
