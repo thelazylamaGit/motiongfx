@@ -127,17 +127,20 @@ reshuffling between them; the title names the current algorithm. Bar hue
 follows height, so the sorted bars form a rainbow. Bars are sharp-cornered
 `Rectangle`s: one fill each, no stroke. Each sort is an ordinary generic
 function that calls `on_step` with the slice after every comparison or swap,
-plus the slot it is looking at. Steps are `STEP_HOLD` apart. That bar turns
-white (`HIGHLIGHT`) and fades back to its colour over `FADE_TIME`, leaving a
-short trail behind the cursor. Bars a step swapped start sliding to their new
+plus a `Step`: the slot it is working on (`active`: the value being carried,
+scanned or inserted) and the slot it compared it with (`compared`). Each
+algorithm decides which is which; every step is shown the same way. Steps
+are `STEP_HOLD` apart. The active bar turns white (`HIGHLIGHT`) and the
+compared bar slate (`COMPARED`), then both fade back to their colours over
+`FADE_TIME`, leaving a short trail behind the cursor. Bars a step swapped start sliding to their new
 slots at the same time, over `MOVE_TIME`, without holding up the next step:
 the fades and the slides are two lanes run with `all`, and each is marked
 `.interrupt()`, so a bar the cursor revisits lights up again and a bar that
 swaps again mid-slide turns towards its new slot from wherever it is. To add an algorithm, write another function with the same signature
 and list it in `ALGORITHMS`.
 
-Each step also plays a note (`motiongfx_audio`) whose pitch follows the
-active bar's height on a three-octave pentatonic scale, held for
+Each step also plays a note (`motiongfx_audio`) for both bars, whose pitch
+follows each bar's height on a three-octave pentatonic scale, held for
 `NOTE_TIME`. Steps are 20 ms apart, so several notes overlap at once,
 often of the same pitch; each is its own voice. The interruption cuts the
 fade but never the note. The final left-to-right sweep climbs the scale.

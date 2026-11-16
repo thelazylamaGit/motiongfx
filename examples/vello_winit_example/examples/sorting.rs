@@ -4,17 +4,16 @@
 //! The file reads top to bottom in three parts:
 //!
 //! 1. **The algorithms.** Each is ordinary Rust that sorts a slice in place
-//!    and calls `on_step` after every comparison or swap, with the slot it
-//!    is looking at. They know nothing about animation.
+//!    and calls `on_step` after every comparison or swap, with the two
+//!    slots involved. They know nothing about animation.
 //! 2. **Layout.** Small functions that turn a slot or a value into a
 //!    position, size or colour.
 //! 3. **The scene.** [`build_animation`] creates the bars, runs every sort
-//!    once, and animates each reported step: the active bar turns white
-//!    for a moment, and any bars the step swapped start sliding to their
-//!    new slots at the same time. Slides never hold up the steps; a bar
-//!    that swaps again mid-slide turns towards its new slot from wherever
-//!    it is. Each step also plays a short note whose pitch follows the
-//!    active bar's height.
+//!    once, and animates each reported step: both bars turn white for a
+//!    moment and play a short note whose pitch follows their height, and
+//!    any bars the step swapped start sliding to their new slots at the
+//!    same time. Slides never hold up the steps; a bar that swaps again
+//!    mid-slide turns towards its new slot from wherever it is.
 //!
 //! The sorts run once, while the scene is built. Playback only samples the
 //! finished timeline, which is why scrubbing backwards works. Sound plays
@@ -43,7 +42,7 @@ use vello_winit_motiongfx::Window;
 // ---------------------------------------------------------------------------
 
 /// Number of bars; any positive count works.
-const BAR_COUNT: usize = 32;
+const BAR_COUNT: usize = 64;
 /// Seed for the shuffles, so every run shows the same choreography.
 const SEED: u64 = 0x5EED;
 
@@ -64,8 +63,11 @@ const MOVE_TIME: Duration = ms(100);
 /// Time between steps. A sort takes thousands of steps, so this sets its
 /// length.
 const STEP_HOLD: Duration = ms(20);
-/// Colour of the bar a step is looking at.
+/// Colour of the bar a step is working on.
 const HIGHLIGHT: Color = WHITE;
+/// Colour of the bar it is compared with: a neutral slate, so it stands
+/// apart from both the white highlight and the rainbow of bar colours.
+const COMPARED: Color = Color::from_rgb8(110, 120, 140);
 /// How long a bar the cursor visited takes to fade back to its own colour,
 /// leaving a short trail behind the cursor.
 const FADE_TIME: Duration = ms(250);
@@ -91,14 +93,26 @@ const SCALE_NOTES: usize = 15;
 // The algorithms
 // ---------------------------------------------------------------------------
 
-/// The callback a sort calls after each comparison or swap, with the whole
-/// slice in its current order and the slot it is looking at (its "active"
-/// slot, which the animation highlights).
+/// The two slots one step of a sort looked at, after any swap. Each
+/// algorithm decides which is which; the animation shows every step the
+/// same way.
+#[derive(Clone, Copy)]
+struct Step {
+    /// The slot holding the value the algorithm is working on: the one
+    /// being carried, scanned or inserted.
+    active: usize,
+    /// The slot it was compared with. Equal to `active` when a value is
+    /// swapped with itself.
+    compared: usize,
+}
+
+/// The callback a sort calls after each comparison (and its swap, if any),
+/// with the whole slice in its current order and the [`Step`].
 ///
 /// It is a mutable reference to a closure (`&mut dyn FnMut`) rather than a
 /// generic `impl FnMut` so every sort has the same concrete type and can be
 /// stored as a plain function pointer in [`Algorithm`].
-type OnStep<'a, T> = &'a mut dyn FnMut(&[T], usize);
+type OnStep<'a, T> = &'a mut dyn FnMut(&[T], Step);
 
 /// A sorting algorithm and the name shown while it runs.
 struct Algorithm {
@@ -124,8 +138,8 @@ const ALGORITHMS: &[Algorithm] = &[
 
 /// Sweeps adjacent pairs, swapping those out of order; each sweep carries
 /// the largest remaining value to the end. Stops after a sweep with no
-/// swaps. Reports every comparison, with the larger value of the pair
-/// active.
+/// swaps. Reports every comparison: the larger of the pair, which the
+/// sweep carries on, is active.
 fn bubble_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
     for end in (1..values.len()).rev() {
         let mut swapped = false;
@@ -135,7 +149,13 @@ fn bubble_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
                 swapped = true;
             }
             // Swapped or not, the larger of the pair is now at `i + 1`.
-            on_step(values, i + 1);
+            on_step(
+                values,
+                Step {
+                    active: i + 1,
+                    compared: i,
+                },
+            );
         }
         if !swapped {
             break;
@@ -144,31 +164,65 @@ fn bubble_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
 }
 
 /// Scans for the smallest remaining value and swaps it into the next slot.
-/// Reports each slot the scan looks at, then the swap.
+/// Reports each slot the scan looks at (active) against the smallest so far
+/// (compared), then the swap: the slot being filled is active.
 fn selection_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
     for i in 0..values.len() {
         let mut smallest = i;
         for j in i + 1..values.len() {
-            on_step(values, j);
+            on_step(
+                values,
+                Step {
+                    active: j,
+                    compared: smallest,
+                },
+            );
             if values[j] < values[smallest] {
                 smallest = j;
             }
         }
         values.swap(i, smallest);
-        on_step(values, i);
+        // Both slots are `i` when the smallest was already in place.
+        on_step(
+            values,
+            Step {
+                active: i,
+                compared: smallest,
+            },
+        );
     }
 }
 
 /// Takes each value in turn and moves it left past the larger values before
-/// it. Reports picking the value up, then each step it takes.
+/// it. Reports every comparison with its left neighbour: the value being
+/// inserted is active, compared with each larger value it passes, then
+/// with the one that stops it.
 fn insertion_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
     for i in 1..values.len() {
-        on_step(values, i);
         let mut j = i;
-        while j > 0 && values[j - 1] > values[j] {
-            values.swap(j - 1, j);
+        while j > 0 {
+            let out_of_order = values[j - 1] > values[j];
+            if out_of_order {
+                values.swap(j - 1, j);
+            }
+            // After a swap the inserted value is at `j - 1`, and the
+            // larger value it passed at `j`.
+            let step = if out_of_order {
+                Step {
+                    active: j - 1,
+                    compared: j,
+                }
+            } else {
+                Step {
+                    active: j,
+                    compared: j - 1,
+                }
+            };
+            on_step(values, step);
+            if !out_of_order {
+                break;
+            }
             j -= 1;
-            on_step(values, j);
         }
     }
 }
@@ -308,26 +362,38 @@ fn build_animation(instrument: &Instrument) -> CompiledScene {
         // The sort owns `order` mutably for the call; the closure borrows
         // `bars`, `shown`, `cursor`, `slides` and `clock`, which are
         // separate variables, so the borrows don't overlap.
-        (algorithm.sort)(&mut order, &mut |current, active| {
-            let value = current[active];
-            let bar = bars[value];
-            // The cursor lights the bar, which then fades back, and plays
-            // the bar's note. If the cursor returns before the fade ends,
-            // it lights up again; the interruption cuts the fade, never
-            // the note, which always rings out.
-            cursor.push(
-                all([
-                    chain([
-                        bar.set_fill(HIGHLIGHT),
-                        bar.fill_to(bar_color(value))
-                            .over(FADE_TIME)
-                            .ease(ease::cubic::ease_out),
-                    ]),
-                    instrument.note(bar_note(value)).over(NOTE_TIME),
-                ])
-                .delay(clock)
-                .interrupt(),
-            );
+        (algorithm.sort)(&mut order, &mut |current, step| {
+            let lit =
+                [(step.active, HIGHLIGHT), (step.compared, COMPARED)];
+            // A slot swapped with itself shows only as active.
+            let lit = if step.active == step.compared {
+                &lit[..1]
+            } else {
+                &lit[..]
+            };
+            for &(slot, highlight) in lit {
+                let value = current[slot];
+                let bar = bars[value];
+                // The cursor lights the bar, which then fades back, and
+                // plays the bar's note. If the cursor returns before the
+                // fade ends, it lights up again; the interruption cuts
+                // the fade, never the note, which always rings out.
+                cursor.push(
+                    all([
+                        chain([
+                            bar.set_fill(highlight),
+                            bar.fill_to(bar_color(value))
+                                .over(FADE_TIME)
+                                .ease(ease::cubic::ease_out),
+                        ]),
+                        instrument
+                            .note(bar_note(value))
+                            .over(NOTE_TIME),
+                    ])
+                    .delay(clock)
+                    .interrupt(),
+                );
+            }
             // Likewise, a bar can swap again before its last slide ends;
             // the new slide takes over from where it is.
             slides.extend(
