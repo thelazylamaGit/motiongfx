@@ -42,7 +42,7 @@ use vello_winit_motiongfx::Window;
 // ---------------------------------------------------------------------------
 
 /// Number of bars; any positive count works.
-const BAR_COUNT: usize = 64;
+const BAR_COUNT: usize = 128;
 /// Seed for the shuffles, so every run shows the same choreography.
 const SEED: u64 = 0x5EED;
 
@@ -63,14 +63,24 @@ const MOVE_TIME: Duration = ms(100);
 /// Time between steps. A sort takes thousands of steps, so this sets its
 /// length.
 const STEP_HOLD: Duration = ms(20);
-/// Colour of the bar a step is working on.
-const HIGHLIGHT: Color = WHITE;
-/// Colour of the bar it is compared with: a neutral slate, so it stands
-/// apart from both the white highlight and the rainbow of bar colours.
-const COMPARED: Color = Color::from_rgb8(110, 120, 140);
+/// How a bar looks normally: its hue at full saturation, mid lightness.
+const BAR: Shade = Shade {
+    saturation: 1.0,
+    lightness: 0.5,
+};
+/// The bar a step is working on: its own hue, much lighter.
+const ACTIVE: Shade = Shade {
+    saturation: 1.0,
+    lightness: 1.0,
+};
+/// The bar it is compared with: its own hue, mostly greyed out.
+const COMPARED: Shade = Shade {
+    saturation: 1.0,
+    lightness: 1.0,
+};
 /// How long a bar the cursor visited takes to fade back to its own colour,
 /// leaving a short trail behind the cursor.
-const FADE_TIME: Duration = ms(250);
+const FADE_TIME: Duration = ms(500);
 /// How long the bars take to scatter before the next algorithm.
 const SHUFFLE_TIME: Duration = ms(800);
 /// Pause before each sort starts.
@@ -133,6 +143,10 @@ const ALGORITHMS: &[Algorithm] = &[
     Algorithm {
         name: "Insertion sort",
         sort: insertion_sort,
+    },
+    Algorithm {
+        name: "Comb sort",
+        sort: comb_sort,
     },
 ];
 
@@ -227,6 +241,39 @@ fn insertion_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
     }
 }
 
+/// Bubble sort with a shrinking gap: compares values `gap` slots apart and
+/// swaps those out of order, so small values near the end jump forward
+/// instead of creeping one slot per sweep. The gap starts at the slice's
+/// length and shrinks by about 1.3 each sweep; at 1 it is a bubble sort,
+/// and it stops after a sweep with no swaps. Reports every comparison: the
+/// larger of the pair, which moves on, is active.
+fn comb_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
+    let mut gap = values.len();
+    let mut swapped = true;
+    while gap > 1 || swapped {
+        // Dividing by 1.3 works well in practice; integer maths avoids
+        // rounding a float back to a slot count.
+        gap = (gap * 10 / 13).max(1);
+        swapped = false;
+        // Saturating, so an empty slice has no pairs instead of
+        // underflowing.
+        for i in 0..values.len().saturating_sub(gap) {
+            if values[i] > values[i + gap] {
+                values.swap(i, i + gap);
+                swapped = true;
+            }
+            // Swapped or not, the larger of the pair is now at `i + gap`.
+            on_step(
+                values,
+                Step {
+                    active: i + gap,
+                    compared: i,
+                },
+            );
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------
@@ -242,10 +289,19 @@ fn bar_height(value: usize) -> f64 {
     (value + 1) as f64 / BAR_COUNT as f64 * MAX_HEIGHT
 }
 
-/// Colour for `value`: hue follows height, so sorted bars form a rainbow.
-fn bar_color(value: usize) -> Color {
+/// The saturation and lightness of a bar's colour; its hue always comes
+/// from its value. Highlights are shades of the bar's own colour.
+#[derive(Clone, Copy)]
+struct Shade {
+    saturation: f32,
+    lightness: f32,
+}
+
+/// Colour for `value` in `shade`: hue follows height, so sorted bars form
+/// a rainbow.
+fn bar_color(value: usize, shade: Shade) -> Color {
     let hue = 360.0 * value as f32 / BAR_COUNT as f32;
-    hsl(hue, 1.0, 0.5)
+    hsl(hue, shade.saturation, shade.lightness)
     // oklch(0.7, 0.3, hue)
 }
 
@@ -315,7 +371,7 @@ fn build_animation(instrument: &Instrument) -> CompiledScene {
     rng.shuffle(&mut order);
 
     // `order` maps slot -> value; creating the bars needs value -> slot.
-    let mut start_slot = vec![0; BAR_COUNT];
+    let mut start_slot = [0; BAR_COUNT];
     for (slot, &value) in order.iter().enumerate() {
         start_slot[value] = slot;
     }
@@ -328,7 +384,7 @@ fn build_animation(instrument: &Instrument) -> CompiledScene {
             scene.add(
                 Rectangle::new(BAR_WIDTH, height)
                     .position((slot_x(slot), BASELINE + height / 2.0))
-                    .fill(bar_color(value)),
+                    .fill(bar_color(value, BAR)),
             )
         })
         .collect();
@@ -364,14 +420,14 @@ fn build_animation(instrument: &Instrument) -> CompiledScene {
         // separate variables, so the borrows don't overlap.
         (algorithm.sort)(&mut order, &mut |current, step| {
             let lit =
-                [(step.active, HIGHLIGHT), (step.compared, COMPARED)];
+                [(step.active, ACTIVE), (step.compared, COMPARED)];
             // A slot swapped with itself shows only as active.
             let lit = if step.active == step.compared {
                 &lit[..1]
             } else {
                 &lit[..]
             };
-            for &(slot, highlight) in lit {
+            for &(slot, shade) in lit {
                 let value = current[slot];
                 let bar = bars[value];
                 // The cursor lights the bar, which then fades back, and
@@ -381,8 +437,8 @@ fn build_animation(instrument: &Instrument) -> CompiledScene {
                 cursor.push(
                     all([
                         chain([
-                            bar.set_fill(highlight),
-                            bar.fill_to(bar_color(value))
+                            bar.set_fill(bar_color(value, shade)),
+                            bar.fill_to(bar_color(value, BAR))
                                 .over(FADE_TIME)
                                 .ease(ease::cubic::ease_out),
                         ]),
@@ -417,10 +473,10 @@ fn build_animation(instrument: &Instrument) -> CompiledScene {
         // fade and the note carry on.
         for (value, bar) in bars.iter().enumerate() {
             steps.extend([
-                bar.set_fill(HIGHLIGHT),
+                bar.set_fill(bar_color(value, ACTIVE)),
                 any([
                     wait(ms(15)),
-                    bar.set_fill(bar_color(value))
+                    bar.set_fill(bar_color(value, BAR))
                         .over(FADE_TIME)
                         .ease(ease::cubic::ease_out),
                     instrument.note(bar_note(value)).over(NOTE_TIME),
