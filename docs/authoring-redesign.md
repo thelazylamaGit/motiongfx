@@ -22,7 +22,7 @@ it as each step lands.
 1. **One animation type, `Animation`.** Property changes, signal changes, text
    selection changes, waits, markers and groups are all `Animation`, so arrays,
    `Vec`s, iterators and `if`/`match` branches mix them freely.
-2. **Groups:** `chain`, `all`, `flow(interval, ..)` take any
+2. **Groups:** `chain`, `all`, `any`, `flow(interval, ..)` take any
    `IntoIterator<Item = Animation>`. Steps: `wait(d)`, `marker("name")`.
 3. **Modifiers on any `Animation`:** `.over(d)`, `.ease(e)`, `.spring(s)`,
    `.delay(d)`. Groups have no timing settings of their own (see Timing).
@@ -216,8 +216,8 @@ Window::new("Lissajous", CANVAS)
   `CompiledScene::marker(name) -> Option<Duration>` reads one;
   `CompiledScene::markers()` lists all, sorted by time. Names are
   `Cow<'static, str>`, so literal names are not allocated. *(implemented)*
-- **Placement:** in `chain`, where the previous step ends; in `all`, at the
-  group start; in `flow`, a marker does not take a slot (it marks where the
+- **Placement:** in `chain`, where the previous step ends; in `all` and `any`, at
+  the group start; in `flow`, a marker does not take a slot (it marks where the
   next child starts, or the group's end if no child follows), so it never
   delays anything. A marker adds no time and makes no allocation in fragments
   without markers.

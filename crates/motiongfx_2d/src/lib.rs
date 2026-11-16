@@ -22,7 +22,7 @@ pub use kurbo::{Affine, Cap, Join, Point, Rect, Size, Vec2};
 pub use motiongfx_authoring::{
     AnimationError, AnimationErrorKind, BindingError, BindingSource,
     SampleTime, SceneError, SceneObject, Signal, SignalId, Simulated,
-    Source, Spring, SpringCurve, SpringError, World, all, chain,
+    Source, Spring, SpringCurve, SpringError, World, all, any, chain,
     computed, flow, marker, signal, smooth, wait,
 };
 pub use motiongfx_text::{
@@ -47,7 +47,7 @@ use peniko_motiongfx as _;
 /// ```
 pub type Scene = motiongfx_authoring::Scene<Graphics>;
 /// One animation in a 2D scene: a change, group or wait. Pass a list of
-/// them to `scene.compile(..)`, or combine them with `chain`/`all`/`flow`.
+/// them to `scene.compile(..)`, or combine them with `chain`/`all`/`any`/`flow`.
 pub type Animation = motiongfx_authoring::Animation<Graphics>;
 /// The result of `scene.compile(..)`: the scene with its baked timeline,
 /// ready to sample at any time.
@@ -125,8 +125,8 @@ pub mod prelude {
         CompiledScene, CompiledScene2dExt, FontStyle, FontWeight,
         Join, Line, Model2d, Path, Point, Rectangle, Scene,
         Scene2dExt, Size, Spring, Text, TextAlign, TextStyle,
-        Triangle, Vec2, all, chain, computed, flow, marker, signal,
-        wait,
+        Triangle, Vec2, all, any, chain, computed, flow, marker,
+        signal, wait,
     };
 }
 

@@ -5,7 +5,7 @@
 use motiongfx::prelude::*;
 use motiongfx_authoring::{
     Animation, AnimationError, AnimationErrorKind, Property, Scene,
-    SceneError, Spring, World, all, chain, flow, marker, signal,
+    SceneError, Spring, World, all, any, chain, flow, marker, signal,
     wait,
 };
 use std::time::Duration;
@@ -175,6 +175,32 @@ fn wait_inside_all_does_not_delay_siblings() {
         scene().compile([all([wait(ms(300)), x(0).to(10.0)])]);
     assert_eq!(animation.duration(), ms(300));
     close(item(&mut animation, 50, 0).x, 5.0);
+}
+
+#[test]
+fn any_ends_with_the_shortest_while_the_rest_keep_running() {
+    let mut animation = scene().compile([
+        any([x(0).to(10.0).over(ms(400)), y(0).to(10.0)]),
+        marker("after"),
+        x(1).to(10.0),
+    ]);
+    assert_eq!(animation.marker("after"), Some(ms(100)));
+    close(item(&mut animation, 150, 1).x, 5.0);
+    close(item(&mut animation, 200, 0).x, 5.0);
+    close(item(&mut animation, 400, 0).x, 10.0);
+    // Backward seek restores the start.
+    close(item(&mut animation, 0, 0).x, 0.0);
+}
+
+#[test]
+fn wait_inside_any_caps_the_group() {
+    let animation = scene().compile([
+        any([wait(ms(50)), x(0).to(10.0)]),
+        marker("after"),
+    ]);
+    assert_eq!(animation.marker("after"), Some(ms(50)));
+    // The running change still plays to its end.
+    assert_eq!(animation.duration(), ms(100));
 }
 
 #[test]

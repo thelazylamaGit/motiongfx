@@ -2,7 +2,8 @@
 //! model.
 //!
 //! Add objects to a [`Scene`], describe [`Animation`]s as values (combined
-//! with [`chain`], [`all`], [`flow`], [`wait`] and [`marker`]), then
+//! with [`chain`], [`all`], [`any`], [`flow`], [`wait`] and [`marker`]),
+//! then
 //! [`Scene::compile`] them into a [`CompiledScene`] that can be sampled at
 //! any time. [`signal`]s and [`computed()`] values drive object fields that
 //! follow other values. A model crate such as `motiongfx_2d` supplies the
@@ -19,7 +20,7 @@ pub mod bindings;
 mod input;
 pub use animation::{
     Animation, AnimationError, AnimationErrorKind, Step, Timing, all,
-    chain, flow, lower_change, marker, wait,
+    any, chain, flow, lower_change, marker, wait,
 };
 mod macros;
 mod object;

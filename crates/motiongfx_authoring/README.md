@@ -37,7 +37,8 @@ to `compile` runs in order, like `chain`.
   the change's start. Relative targets are resolved once while baking, never
   per frame.
 - `chain([..])` runs children one after another; `all([..])` starts them
-  together and lasts as long as the longest; `flow(interval, [..])` starts
+  together and lasts as long as the longest; `any([..])` starts them together
+  and ends with the shortest (the rest keep running); `flow(interval, [..])` starts
   them `interval` apart. Groups accept any iterator, so
   `all(items.iter().map(|item| item.fade_in()))` builds one per item.
 - `wait(duration)` pauses. Inside `all` it doesn't delay siblings; use

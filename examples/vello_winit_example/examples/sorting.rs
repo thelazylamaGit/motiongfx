@@ -24,8 +24,8 @@
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
     Animation, Color, CompiledScene, Rectangle, RectangleHandle,
-    Scene, Scene2dExt, Text, all, chain,
-    colors::{WHITE, hsl},
+    Scene, Scene2dExt, Text, all, any, chain,
+    colors::{WHITE, hsl, oklch},
     wait,
 };
 use std::time::Duration;
@@ -45,7 +45,7 @@ const SPREAD: f64 = 1200.0;
 /// Distance between the centres of neighbouring bars.
 const PITCH: f64 = SPREAD / BAR_COUNT as f64;
 /// Width of one bar; the rest of the pitch is the gap between bars.
-const BAR_WIDTH: f64 = PITCH * 0.75;
+const BAR_WIDTH: f64 = PITCH + 1.0;
 /// Height of the tallest bar.
 const MAX_HEIGHT: f64 = 540.0;
 /// The bars' shared bottom edge (y points up, 0 is the window's centre).
@@ -173,7 +173,7 @@ fn bar_height(value: usize) -> f64 {
 /// Colour for `value`: hue follows height, so sorted bars form a rainbow.
 fn bar_color(value: usize) -> Color {
     let hue = 360.0 * value as f32 / BAR_COUNT as f32;
-    hsl(hue, 1.0, 0.5)
+    oklch(0.7, 0.3, hue)
 }
 
 // ---------------------------------------------------------------------------
@@ -316,8 +316,12 @@ fn build_animation() -> CompiledScene {
         for (value, bar) in bars.iter().enumerate() {
             steps.extend([
                 bar.set_fill(HIGHLIGHT),
-                wait(ms(15)),
-                bar.set_fill(bar_color(value)),
+                any([
+                    wait(ms(15)),
+                    bar.set_fill(bar_color(value))
+                        .over(FADE_TIME)
+                        .ease(ease::cubic::ease_out),
+                ]),
             ]);
         }
         steps.push(wait(PAUSE_AFTER));

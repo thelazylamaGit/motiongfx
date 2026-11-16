@@ -5,7 +5,7 @@
 //! [`Scene::compile`](crate::Scene::compile) lowers it, so animations can be
 //! built anywhere, returned from functions, stored, cloned and reused.
 //! Lowering walks the tree once, in order, combining fragments with core's
-//! own `chain`/`all`/`flow`. See `docs/authoring-redesign.md` for the
+//! own `chain`/`all`/`any`/`flow`. See `docs/authoring-redesign.md` for the
 //! representation and its costs.
 
 use crate::{
@@ -19,8 +19,8 @@ use std::{panic::Location, sync::Arc, time::Duration};
 
 /// One animation: a property, signal or text-selection change, a group,
 /// a wait or a marker. Build them with property methods
-/// (`square.shift(..)`, `signal.to(..)`), [`chain`], [`all`], [`flow`],
-/// [`wait`] and [`marker`].
+/// (`square.shift(..)`, `signal.to(..)`), [`chain`], [`all`], [`any`],
+/// [`flow`], [`wait`] and [`marker`].
 ///
 /// `M` is the scene's model. `motiongfx_2d` exports `Animation` with its
 /// 2D model filled in, so 2D code writes plain `Animation`.
@@ -54,6 +54,7 @@ enum Node<M> {
 enum Order {
     Chain,
     All,
+    Any,
     Flow(Duration),
 }
 
@@ -93,6 +94,9 @@ impl<M> std::fmt::Debug for Animation<M> {
             }
             Node::Group(Order::All, children) => {
                 f.debug_tuple("All").field(children).finish()
+            }
+            Node::Group(Order::Any, children) => {
+                f.debug_tuple("Any").field(children).finish()
             }
             Node::Group(Order::Flow(interval), children) => f
                 .debug_tuple("Flow")
@@ -295,6 +299,7 @@ impl<M: 'static> Animation<M> {
                     children.iter().map(|child| child.lower(context));
                 match order {
                     Order::Chain => fragments.ord_chain(),
+                    Order::Any => fragments.ord_any(),
                     _ => fragments.ord_all(),
                 }
             }
@@ -376,6 +381,31 @@ pub fn all<M: 'static>(
     group(Order::All, animations)
 }
 
+/// Start animations together; the group ends when the shortest one does.
+///
+/// The longer animations keep running past the group's end, so whatever
+/// follows in a [`chain`] starts while they finish. With a [`wait`] inside,
+/// what follows starts at most that long after the group starts.
+///
+/// # Examples
+///
+/// ```
+/// use motiongfx::prelude::{ms, s};
+/// use motiongfx_authoring::{Animation, any, chain, signal};
+/// let x = signal(0.0);
+/// let y = signal(0.0);
+/// // `y` starts rising 500 ms in, while `x` is still moving.
+/// let overlap: Animation<()> = chain([
+///     any([x.to(100.0).over(s(2)), y.to(10.0).over(ms(500))]),
+///     y.to(50.0),
+/// ]);
+/// ```
+pub fn any<M: 'static>(
+    animations: impl IntoIterator<Item = Animation<M>>,
+) -> Animation<M> {
+    group(Order::Any, animations)
+}
+
 /// Start animations `interval` apart; the group lasts until the last ends.
 pub fn flow<M: 'static>(
     interval: Duration,
@@ -392,7 +422,8 @@ pub fn wait<M: 'static>(duration: Duration) -> Animation<M> {
 
 /// A named point in time, read after compiling with
 /// [`CompiledScene::marker`](crate::CompiledScene::marker). In a [`chain`]
-/// it is where the previous step ends; in [`all`], the group start; in
+/// it is where the previous step ends; in [`all`] and [`any`], the group
+/// start; in
 /// [`flow`], where the next child starts (it takes no slot). Names must be
 /// unique; `compile` reports duplicates with both locations.
 #[track_caller]

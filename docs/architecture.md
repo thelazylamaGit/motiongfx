@@ -255,7 +255,7 @@ ordinary cache checks, bounds/transforms, and Vello recording still take work.
 
 - Use ordinary timeline properties for authored changes: `.to`, `.offset`,
   `.multiply`, `.set`, `.to_with`, `.over`, `.ease`, `.spring`, combined with
-  `chain`, `all`, `flow`, `wait` and `marker`. Constructing an animation alone
+  `chain`, `all`, `any`, `flow`, `wait` and `marker`. Constructing an animation alone
   does not schedule it (it is `must_use`); passing it to `scene.compile` does.
 - `flow(interval, [..])` starts children `interval` apart and delegates to core
   `ord_flow`, reserving the latest child end. Children can be changes or nested
