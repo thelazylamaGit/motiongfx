@@ -5,8 +5,9 @@
 //! [`Scene::compile`](crate::Scene::compile) lowers it, so animations can be
 //! built anywhere, returned from functions, stored, cloned and reused.
 //! Lowering walks the tree once, in order, combining fragments with core's
-//! own `chain`/`all`/`any`/`flow`. See `docs/authoring-redesign.md` for the
-//! representation and its costs.
+//! own `chain`/`all`/`any`/`flow`. Markers and events lower to core cues,
+//! which those combinators shift like clips. See
+//! `docs/authoring-redesign.md` for the representation and its costs.
 
 use crate::{
     CompileContext, Field, Interp, Property, Spring, SpringError,
@@ -14,13 +15,17 @@ use crate::{
 };
 use motiongfx::prelude::*;
 use motiongfx::subject::SubjectId;
-use motiongfx::track::MarkerName;
-use std::{panic::Location, sync::Arc, time::Duration};
+use std::{
+    any::Any, borrow::Cow, panic::Location, sync::Arc, time::Duration,
+};
+
+/// The name of a [`marker`]. Literal names are borrowed, not allocated.
+pub type MarkerName = Cow<'static, str>;
 
 /// One animation: a property, signal or text-selection change, a group,
-/// a wait or a marker. Build them with property methods
+/// a wait, a marker or an event. Build them with property methods
 /// (`square.shift(..)`, `signal.to(..)`), [`chain`], [`all`], [`any`],
-/// [`flow`], [`wait`] and [`marker`].
+/// [`flow`], [`wait`], [`marker`] and [`event`].
 ///
 /// `M` is the scene's model. `motiongfx_2d` exports `Animation` with its
 /// 2D model filled in, so 2D code writes plain `Animation`.
@@ -44,6 +49,9 @@ enum Node<M> {
     Group(Order, Vec<Animation<M>>),
     Wait(Duration),
     Marker(MarkerName, &'static Location<'static>),
+    /// A payload for another crate (such as a sound) and how long it
+    /// lasts on the timeline.
+    Event(Arc<dyn Any + Send + Sync>, Duration),
     /// Every change inside may interrupt a running animation of the same
     /// property; see [`Animation::interrupt`]. Boxed so the common nodes
     /// stay small.
@@ -71,6 +79,9 @@ impl<M> Clone for Animation<M> {
             Node::Wait(duration) => Node::Wait(*duration),
             Node::Marker(name, location) => {
                 Node::Marker(name.clone(), location)
+            }
+            Node::Event(payload, length) => {
+                Node::Event(payload.clone(), *length)
             }
             Node::Interrupt(inner) => Node::Interrupt(inner.clone()),
         })
@@ -108,6 +119,9 @@ impl<M> std::fmt::Debug for Animation<M> {
             }
             Node::Marker(name, _) => {
                 f.debug_tuple("Marker").field(name).finish()
+            }
+            Node::Event(_, length) => {
+                f.debug_tuple("Event").field(length).finish()
             }
             Node::Interrupt(inner) => {
                 f.debug_tuple("Interrupt").field(inner).finish()
@@ -159,6 +173,8 @@ pub trait Step<M>: Send + Sync + 'static {
 
 const GROUP_TIMING: &str = "groups, waits and markers have no timing of \
      their own; set .over()/.ease()/.spring() on each animation inside";
+const EVENT_TIMING: &str = "an event has a length but no easing or \
+     spring; set its length with .over(..)";
 const SPRING_TIMING: &str = "a spring sets its own timing, so it cannot be \
      combined with .over()/.ease() or an instant .set(..)";
 
@@ -179,12 +195,14 @@ impl<M: 'static> Animation<M> {
     }
 
     /// The timing of a single change. Groups, waits and markers have none
-    /// (yet), so timing modifiers on them panic at the caller's line.
+    /// (yet), and events only a length, so timing modifiers on them panic
+    /// at the caller's line.
     #[track_caller]
     fn motion(&mut self) -> &mut Motion {
         match &mut self.0 {
             Node::Step(_, timing) => &mut timing.motion,
             Node::Interrupt(inner) => inner.motion(),
+            Node::Event(..) => panic!("{EVENT_TIMING}"),
             Node::Group(..) | Node::Wait(_) | Node::Marker(..) => {
                 panic!("{GROUP_TIMING}")
             }
@@ -192,12 +210,18 @@ impl<M: 'static> Animation<M> {
     }
 
     /// How long this change takes. Without it, the scene default applies.
+    /// On an [`event`], how long the event lasts instead of the length it
+    /// was created with.
     ///
     /// # Panics
     ///
     /// At the caller's line, on a group, wait or marker, or on a spring.
     #[track_caller]
     pub fn over(mut self, duration: Duration) -> Self {
+        if let Node::Event(_, length) = &mut self.0 {
+            *length = duration;
+            return self;
+        }
         match self.motion() {
             Motion::Tween { over, .. } => *over = Some(duration),
             Motion::Spring(_) => panic!("{SPRING_TIMING}"),
@@ -209,7 +233,8 @@ impl<M: 'static> Animation<M> {
     ///
     /// # Panics
     ///
-    /// At the caller's line, on a group, wait or marker, or on a spring.
+    /// At the caller's line, on a group, wait, marker or event, or on a
+    /// spring.
     #[track_caller]
     pub fn ease(mut self, ease: EaseFn) -> Self {
         match self.motion() {
@@ -225,8 +250,8 @@ impl<M: 'static> Animation<M> {
     ///
     /// # Panics
     ///
-    /// At the caller's line, on a group, wait or marker, or after `.over()`,
-    /// `.ease()` or `.set(..)`.
+    /// At the caller's line, on a group, wait, marker or event, or after
+    /// `.over()`, `.ease()` or `.set(..)`.
     #[track_caller]
     pub fn spring(mut self, spring: impl Into<Spring>) -> Self {
         let motion = self.motion();
@@ -248,7 +273,9 @@ impl<M: 'static> Animation<M> {
 
     /// Let this animation take over from a running animation of the same
     /// property instead of overlapping it, which `compile` reports as an
-    /// error. On a group, every change inside may take over.
+    /// error. On a group, every change inside may take over. Events have
+    /// no property to take over, so an event is never cut short: it plays
+    /// out even inside an interrupting group.
     ///
     /// The running animation is cut where this one starts: up to there it
     /// follows its own timing, and this one starts from the value it had
@@ -276,9 +303,10 @@ impl<M: 'static> Animation<M> {
     pub fn interrupt(self) -> Self {
         match self.0 {
             // Nothing inside to cut with.
-            Node::Wait(_) | Node::Marker(..) | Node::Interrupt(_) => {
-                self
-            }
+            Node::Wait(_)
+            | Node::Marker(..)
+            | Node::Event(..)
+            | Node::Interrupt(_) => self,
             node => Self(Node::Interrupt(Box::new(Self(node)))),
         }
     }
@@ -304,12 +332,15 @@ impl<M: 'static> Animation<M> {
                 }
             }
             Node::Wait(duration) => TrackFragment::silent(*duration),
-            Node::Marker(name, location) => {
-                if context.register_marker(name, location) {
-                    TrackFragment::marker(name.clone())
-                } else {
-                    TrackFragment::new()
-                }
+            Node::Marker(name, location) => context
+                .register_marker(name, location)
+                .map_or_else(TrackFragment::new, TrackFragment::cue),
+            Node::Event(payload, length) => {
+                let id =
+                    context.register_event(payload.clone(), *length);
+                let mut fragment = TrackFragment::silent(*length);
+                fragment.add_cue(id, Duration::ZERO);
+                fragment
             }
             Node::Interrupt(inner) => {
                 inner.lower(context).interrupting()
@@ -337,11 +368,13 @@ fn lower_flow<M: 'static>(
         .enumerate()
         .filter_map(|(index, child)| match &child.0 {
             Node::Marker(name, location) => {
-                if context.register_marker(name, location) {
+                if let Some(id) =
+                    context.register_marker(name, location)
+                {
                     let follows =
                         last_slot.is_some_and(|last| index < last);
                     markers.push((
-                        name,
+                        id,
                         follows.then(|| interval * slots),
                     ));
                 }
@@ -353,9 +386,9 @@ fn lower_flow<M: 'static>(
             }
         })
         .ord_flow(interval);
-    for (name, time) in markers {
+    for (id, time) in markers {
         let time = time.unwrap_or(fragment.duration());
-        fragment.add_marker(name.clone(), time);
+        fragment.add_cue(id, time);
     }
     fragment
 }
@@ -431,6 +464,35 @@ pub fn marker<M: 'static>(
     name: impl Into<MarkerName>,
 ) -> Animation<M> {
     Animation(Node::Marker(name.into(), Location::caller()))
+}
+
+/// A timed event carrying `payload` for another crate to act on, lasting
+/// `length` on the timeline (change it with `.over(..)`).
+///
+/// Events are how crates such as `motiongfx_audio` put things that aren't
+/// property changes, like sounds, on the timeline. Each is placed like any
+/// other animation: in a [`chain`] the next step starts after it, and in
+/// [`all`] it can lengthen the group. After compiling,
+/// [`CompiledScene::events`](crate::CompiledScene::events) lists every
+/// event of a payload type with its start time. Sampling ignores events.
+///
+/// # Examples
+///
+/// ```
+/// use motiongfx::prelude::ms;
+/// use motiongfx_authoring::{Animation, chain, event};
+/// #[derive(Debug, PartialEq)]
+/// struct Caption(&'static str);
+/// let captions: Animation<()> = chain([
+///     event(Caption("Hello"), ms(800)),
+///     event(Caption("World"), ms(800)).over(ms(500)),
+/// ]);
+/// ```
+pub fn event<M: 'static, E: Send + Sync + 'static>(
+    payload: E,
+    length: Duration,
+) -> Animation<M> {
+    Animation(Node::Event(Arc::new(payload), length))
 }
 
 /// Identifies a property compactly and rebuilds its full description when

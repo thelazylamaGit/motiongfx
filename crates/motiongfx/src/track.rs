@@ -1,7 +1,6 @@
 use core::any::TypeId;
 use core::time::Duration;
 
-use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use field_path::field::UntypedField;
@@ -15,9 +14,14 @@ use crate::sequence::Sequence;
 #[cfg(feature = "diagnostics")]
 use crate::time::Range;
 
-/// The name of a [marker](TrackFragment::marker). Literal names are
-/// borrowed, not allocated.
-pub type MarkerName = Cow<'static, str>;
+/// Identifies a [cue](TrackFragment::cue): a point in time that the
+/// combinators shift along with the clips around it. Core gives it no
+/// meaning; whoever creates cues chooses the IDs and maps them to their
+/// own data (the authoring layer uses them for markers and events).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
+pub struct CueId(pub u32);
 
 pub trait TrackOrdering {
     /// Run all [`TrackFragment`]s one after another.
@@ -64,7 +68,7 @@ pub fn chain(
             other_sequence.delay(chain_duration);
             track = track.upsert_sequence(key, other_sequence);
         }
-        track.take_markers(other_track.markers, chain_duration);
+        track.take_cues(other_track.cues, chain_duration);
         track.interrupting.append(&mut other_track.interrupting);
 
         chain_duration =
@@ -91,7 +95,7 @@ pub fn all(
         for (key, other_sequence) in other_track.sequences.drain() {
             track = track.upsert_sequence(key, other_sequence);
         }
-        track.take_markers(other_track.markers, Duration::ZERO);
+        track.take_cues(other_track.cues, Duration::ZERO);
         track.interrupting.append(&mut other_track.interrupting);
     }
 
@@ -115,7 +119,7 @@ pub fn any(
         for (key, other_sequence) in other_track.sequences.drain() {
             track = track.upsert_sequence(key, other_sequence);
         }
-        track.take_markers(other_track.markers, Duration::ZERO);
+        track.take_cues(other_track.cues, Duration::ZERO);
         track.interrupting.append(&mut other_track.interrupting);
     }
 
@@ -145,7 +149,7 @@ pub fn flow(
             sequence.delay(flow_delay);
             track = track.upsert_sequence(key, sequence);
         }
-        track.take_markers(other_track.markers, flow_delay);
+        track.take_cues(other_track.cues, flow_delay);
         track.interrupting.extend(other_track.interrupting);
     }
 
@@ -162,7 +166,7 @@ pub fn delay(
     for sequence in track.sequences.values_mut() {
         sequence.delay(delay);
     }
-    for (_, time) in &mut track.markers {
+    for (_, time) in &mut track.cues {
         *time = time.saturating_add(delay);
     }
 
@@ -173,10 +177,10 @@ pub fn delay(
 pub struct TrackFragment {
     sequences: HashMap<ActionKey, Sequence>,
     duration: Duration,
-    /// Named points in time, relative to this fragment's start. Shifted
+    /// Cued points in time, relative to this fragment's start. Shifted
     /// by the combinators exactly like clips. Empty (no allocation) in
-    /// fragments without markers.
-    markers: Vec<(MarkerName, Duration)>,
+    /// fragments without cues.
+    cues: Vec<(CueId, Duration)>,
     /// Clips that cut a running clip on the same field instead of
     /// conflicting with it; see [`Self::interrupting`]. Empty (no
     /// allocation) in fragments that don't interrupt.
@@ -196,7 +200,7 @@ impl TrackFragment {
         Self {
             sequences: HashMap::new(),
             duration: Duration::ZERO,
-            markers: Vec::new(),
+            cues: Vec::new(),
             interrupting: Vec::new(),
         }
     }
@@ -205,48 +209,43 @@ impl TrackFragment {
         Self {
             duration: clip.duration,
             sequences: [(key, Sequence::new(clip))].into(),
-            markers: Vec::new(),
+            cues: Vec::new(),
             interrupting: Vec::new(),
         }
     }
 
-    /// A zero-length fragment that names its start time. Combinators
+    /// A zero-length fragment that cues its start time. Combinators
     /// place it like any other fragment: in a chain, where the previous
     /// fragment ends; in `all`/`any`, at the group start; in `flow`, at
     /// its own slot.
-    pub fn marker(name: impl Into<MarkerName>) -> Self {
+    pub fn cue(id: CueId) -> Self {
         Self {
             sequences: HashMap::new(),
             duration: Duration::ZERO,
-            markers: alloc::vec![(name.into(), Duration::ZERO)],
+            cues: alloc::vec![(id, Duration::ZERO)],
             interrupting: Vec::new(),
         }
     }
 
-    /// Name the point `time` after this fragment's start.
-    pub fn add_marker(
-        &mut self,
-        name: impl Into<MarkerName>,
-        time: Duration,
-    ) {
-        self.markers.push((name.into(), time));
+    /// Cue the point `time` after this fragment's start.
+    pub fn add_cue(&mut self, id: CueId, time: Duration) {
+        self.cues.push((id, time));
     }
 
-    /// Named points in time, relative to this fragment's start.
-    pub fn markers(&self) -> &[(MarkerName, Duration)] {
-        &self.markers
+    /// Cued points in time, relative to this fragment's start.
+    pub fn cues(&self) -> &[(CueId, Duration)] {
+        &self.cues
     }
 
-    /// Append `markers`, shifted `offset` later.
-    fn take_markers(
+    /// Append `cues`, shifted `offset` later.
+    fn take_cues(
         &mut self,
-        markers: Vec<(MarkerName, Duration)>,
+        cues: Vec<(CueId, Duration)>,
         offset: Duration,
     ) {
-        self.markers.extend(
-            markers.into_iter().map(|(name, time)| {
-                (name, time.saturating_add(offset))
-            }),
+        self.cues.extend(
+            cues.into_iter()
+                .map(|(id, time)| (id, time.saturating_add(offset))),
         );
     }
 
@@ -257,7 +256,7 @@ impl TrackFragment {
         Self {
             sequences: HashMap::new(),
             duration,
-            markers: Vec::new(),
+            cues: Vec::new(),
             interrupting: Vec::new(),
         }
     }
@@ -331,11 +330,11 @@ impl TrackFragment {
         #[cfg(not(feature = "diagnostics"))]
         resolve_conflicts(&mut sequences);
 
-        // Stable, so markers at the same time keep their authoring order.
-        let mut markers = self.markers;
-        markers.sort_by_key(|(_, time)| *time);
-        let markers = markers.into_boxed_slice();
-        let last_marker = markers.last().map(|(_, time)| *time);
+        // Stable, so cues at the same time keep their authoring order.
+        let mut cues = self.cues;
+        cues.sort_by_key(|(_, time)| *time);
+        let cues = cues.into_boxed_slice();
+        let last_cue = cues.last().map(|(_, time)| *time);
 
         if sequences.is_empty() {
             return Track {
@@ -346,10 +345,10 @@ impl TrackFragment {
                 bake_order: Box::new([]),
                 #[cfg(feature = "diagnostics")]
                 conflicts,
-                markers,
+                cues,
                 duration: self
                     .duration
-                    .max(last_marker.unwrap_or_default()),
+                    .max(last_cue.unwrap_or_default()),
             };
         }
 
@@ -362,7 +361,7 @@ impl TrackFragment {
         let duration = sequences
             .iter()
             .map(|(_, seq)| seq.end())
-            .chain(last_marker)
+            .chain(last_cue)
             .max()
             .unwrap_or(Duration::ZERO)
             .max(self.duration);
@@ -435,7 +434,7 @@ impl TrackFragment {
             bake_order,
             #[cfg(feature = "diagnostics")]
             conflicts,
-            markers,
+            cues,
             duration,
         }
     }
@@ -711,8 +710,8 @@ pub struct Track {
     #[cfg(feature = "diagnostics")]
     conflicts: Box<[FieldConflict]>,
 
-    /// Named points in time, sorted by time.
-    markers: Box<[(MarkerName, Duration)]>,
+    /// Cued points in time, sorted by time.
+    cues: Box<[(CueId, Duration)]>,
 
     /// Total duration of the track.
     ///
@@ -795,18 +794,11 @@ impl Track {
         self.duration
     }
 
-    /// Named points in time, sorted by time.
+    /// Cued points in time, sorted by time; cues at the same time keep
+    /// the order they were added in.
     #[inline]
-    pub fn markers(&self) -> &[(MarkerName, Duration)] {
-        &self.markers
-    }
-
-    /// The time of the first marker called `name`.
-    pub fn marker(&self, name: &str) -> Option<Duration> {
-        self.markers
-            .iter()
-            .find(|(marker, _)| marker == name)
-            .map(|(_, time)| *time)
+    pub fn cues(&self) -> &[(CueId, Duration)] {
+        &self.cues
     }
 
     /// Clips this track dropped to resolve overlapping actions on
@@ -974,77 +966,65 @@ mod tests {
         assert_eq!(seq_b.start(), cs(50));
     }
 
-    fn marker(
-        name: &'static str,
-        time: Duration,
-    ) -> (MarkerName, Duration) {
-        (MarkerName::from(name), time)
-    }
+    const MID: CueId = CueId(0);
+    const START: CueId = CueId(1);
+    const LATE: CueId = CueId(2);
 
     #[test]
-    fn markers_move_with_their_fragments() {
+    fn cues_move_with_their_fragments() {
         let chained = [
             TrackFragment::single(key("a"), clip(100)),
-            TrackFragment::marker("mid"),
+            TrackFragment::cue(MID),
             TrackFragment::single(key("b"), clip(200)),
         ]
         .ord_chain();
-        assert_eq!(chained.markers(), [marker("mid", cs(100))]);
+        assert_eq!(chained.cues(), [(MID, cs(100))]);
         assert_eq!(chained.duration, cs(300));
 
-        // `all` and `any` place markers at the group start.
+        // `all` and `any` place cues at the group start.
         let together = [
             TrackFragment::single(key("a"), clip(100)),
-            TrackFragment::marker("start"),
+            TrackFragment::cue(START),
         ]
         .ord_all();
-        assert_eq!(together.markers(), [marker("start", cs(0))]);
+        assert_eq!(together.cues(), [(START, cs(0))]);
         assert_eq!(together.duration, cs(100));
 
-        // In `flow` a marker fragment takes its own slot.
+        // In `flow` a cue fragment takes its own slot.
         let flowed = [
             TrackFragment::single(key("a"), clip(100)),
             TrackFragment::silent(cs(10)),
-            TrackFragment::marker("third"),
+            TrackFragment::cue(LATE),
         ]
         .ord_flow(cs(50));
-        assert_eq!(flowed.markers(), [marker("third", cs(100))]);
+        assert_eq!(flowed.cues(), [(LATE, cs(100))]);
 
-        let delayed = delay(cs(30), TrackFragment::marker("late"));
-        assert_eq!(delayed.markers(), [marker("late", cs(30))]);
+        let delayed = delay(cs(30), TrackFragment::cue(LATE));
+        assert_eq!(delayed.cues(), [(LATE, cs(30))]);
 
         // Nested groups add up their offsets.
         let nested = [
             TrackFragment::silent(cs(20)),
-            [
-                TrackFragment::silent(cs(10)),
-                TrackFragment::marker("in"),
-            ]
-            .ord_chain(),
+            [TrackFragment::silent(cs(10)), TrackFragment::cue(MID)]
+                .ord_chain(),
         ]
         .ord_chain();
-        assert_eq!(nested.markers(), [marker("in", cs(30))]);
+        assert_eq!(nested.cues(), [(MID, cs(30))]);
     }
 
     #[test]
-    fn compiled_tracks_sort_markers_and_reach_the_last_one() {
+    fn compiled_tracks_sort_cues_and_reach_the_last_one() {
         let mut fragment = TrackFragment::silent(cs(10));
-        fragment.add_marker("late", cs(50));
-        fragment.add_marker("early", cs(5));
-        fragment.add_marker("also_early", cs(5));
+        fragment.add_cue(LATE, cs(50));
+        fragment.add_cue(MID, cs(5));
+        fragment.add_cue(START, cs(5));
 
         let track = fragment.compile();
         assert_eq!(
-            track.markers(),
-            [
-                marker("early", cs(5)),
-                marker("also_early", cs(5)),
-                marker("late", cs(50)),
-            ]
+            track.cues(),
+            [(MID, cs(5)), (START, cs(5)), (LATE, cs(50)),]
         );
-        assert_eq!(track.marker("late"), Some(cs(50)));
-        assert_eq!(track.marker("missing"), None);
-        // The playhead must be able to reach the last marker.
+        // The playhead must be able to reach the last cue.
         assert_eq!(track.duration(), cs(50));
     }
 

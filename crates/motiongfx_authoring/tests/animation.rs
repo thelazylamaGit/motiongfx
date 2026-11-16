@@ -5,8 +5,8 @@
 use motiongfx::prelude::*;
 use motiongfx_authoring::{
     Animation, AnimationError, AnimationErrorKind, CompileError,
-    Property, Scene, Spring, World, all, any, chain, flow, marker,
-    signal, wait,
+    Property, Scene, Spring, World, all, any, chain, event, flow,
+    marker, signal, wait,
 };
 use std::time::Duration;
 
@@ -521,4 +521,92 @@ fn overlapping_changes_to_one_property_report_both_lines() {
 #[should_panic(expected = "have no timing of")]
 fn timing_on_a_marker_panics() {
     let _ = marker::<Items>("loop").over(ms(10));
+}
+
+/// An event payload for the tests below.
+#[derive(Debug, PartialEq)]
+struct Beep(u32);
+
+fn beeps(
+    animation: &motiongfx_authoring::CompiledScene<Items>,
+) -> Vec<(u32, Duration, Duration)> {
+    animation
+        .events::<Beep>()
+        .map(|event| (event.payload.0, event.start, event.length))
+        .collect()
+}
+
+#[test]
+fn events_take_their_length_and_start_where_they_are_placed() {
+    let animation = scene().compile([
+        event(Beep(0), ms(40)), // 0..40
+        all([
+            x(0).to(1.0),           // 40..140
+            event(Beep(1), ms(60)), // 40..100
+        ]),
+        flow(
+            ms(10),
+            [event(Beep(2), ms(5)), event(Beep(3), ms(5))], // 140, 150
+        ),
+        event(Beep(4), ms(50)).over(ms(20)).delay(ms(5)), // 160..180
+        // An `any` ends with its shortest child; the longer event keeps
+        // its own length.
+        any([wait(ms(10)), event(Beep(5), ms(100))]), // 180..280
+        x(1).to(1.0), // starts when the `any` ends, at 190
+    ]);
+    assert_eq!(
+        beeps(&animation),
+        [
+            (0, ms(0), ms(40)),
+            (1, ms(40), ms(60)),
+            (2, ms(140), ms(5)),
+            (3, ms(150), ms(5)),
+            (4, ms(160), ms(20)),
+            (5, ms(180), ms(100)),
+        ]
+    );
+    // The playhead reaches the last event's end.
+    assert_eq!(animation.duration(), ms(290));
+}
+
+#[test]
+fn reused_and_interrupting_events_each_fire() {
+    let beep: Animation<Items> = event(Beep(7), ms(30));
+    let animation = scene().compile([
+        all([
+            x(0).to(1.0).over(ms(200)), // cut at 50 by the change below
+            beep.clone(),               // 0
+            // Interruption cuts the running `x` change, never an event.
+            all([x(0).to(0.0), beep.clone()])
+                .delay(ms(50))
+                .interrupt(), // 50
+        ]),
+        beep, // after the group's 200 ms
+    ]);
+    let starts: Vec<_> = beeps(&animation)
+        .into_iter()
+        .map(|(_, start, _)| start)
+        .collect();
+    assert_eq!(starts, [ms(0), ms(50), ms(200)]);
+}
+
+#[test]
+fn events_are_read_by_payload_type_and_ignored_by_markers() {
+    let animation = scene().compile([
+        event(Beep(1), ms(10)),
+        marker("between"),
+        event("caption", ms(10)),
+    ]);
+    assert_eq!(beeps(&animation), [(1, ms(0), ms(10))]);
+    let captions: Vec<_> =
+        animation.events::<&str>().map(|e| *e.payload).collect();
+    assert_eq!(captions, ["caption"]);
+    assert_eq!(animation.marker("between"), Some(ms(10)));
+    assert_eq!(animation.markers().len(), 1);
+}
+
+#[test]
+#[should_panic(expected = "set its length with .over")]
+fn easing_an_event_panics() {
+    let _ = event::<Items, _>(Beep(0), ms(10)).ease(ease::linear);
 }

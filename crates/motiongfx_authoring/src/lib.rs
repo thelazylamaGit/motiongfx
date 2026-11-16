@@ -2,8 +2,8 @@
 //! model.
 //!
 //! Add objects to a [`Scene`], describe [`Animation`]s as values (combined
-//! with [`chain`], [`all`], [`any`], [`flow`], [`wait`] and [`marker`]),
-//! then
+//! with [`chain`], [`all`], [`any`], [`flow`], [`wait`], [`marker`] and
+//! [`event`]), then
 //! [`Scene::compile`] them into a [`CompiledScene`] that can be sampled at
 //! any time. [`signal`]s and [`computed()`] values drive object fields that
 //! follow other values. A model crate such as `motiongfx_2d` supplies the
@@ -21,8 +21,8 @@ pub use background::{Background, BackgroundId, BackgroundProperty};
 pub mod bindings;
 mod input;
 pub use animation::{
-    Animation, AnimationError, AnimationErrorKind, Step, Timing, all,
-    any, chain, flow, lower_change, marker, wait,
+    Animation, AnimationError, AnimationErrorKind, MarkerName, Step,
+    Timing, all, any, chain, event, flow, lower_change, marker, wait,
 };
 mod macros;
 mod object;
@@ -31,7 +31,7 @@ pub use input::{Input, PreparedInput};
 pub use object::ObjectDefinition;
 mod values;
 pub use scene::{
-    CompileContext, CompileError, CompiledScene, NativeUpdate,
+    CompileContext, CompileError, CompiledScene, Event, NativeUpdate,
     ObjectHandle, Scene, SceneObject, UpdateTargets, World,
     WorldObject,
 };

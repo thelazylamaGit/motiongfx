@@ -36,8 +36,10 @@ it as each step lands.
    text selection. This replaces `AnimationChange` and the eight change types.
 7. **Springs work on any interpolated property.** Each value type defines its
    overshoot behaviour; only discrete properties cannot spring.
-8. **Markers live in core** and are shifted by the same combinator code as
-   clips. `animation.marker(name)` returns their time.
+8. **Marker times come from core**: markers lower to core cues, shifted by
+   the same combinator code as clips. `animation.marker(name)` returns their
+   time. (Originally named markers in core; generalised to cues on
+   2026-11-17 so events share the mechanism; see [audio.md](audio.md).)
 9. **No `Sequence`, callbacks or `animate!`.** See "Removed APIs".
 
 ```rust
@@ -210,12 +212,15 @@ Window::new("Lissajous", CANVAS)
     .run(animation)
 ```
 
-- **In core.** `TrackFragment` carries `(name, time)` markers that
-  `chain`/`flow`/`delay` shift exactly like clips, so marker times cannot drift
-  from clip times. The compiled timeline exposes them;
+- **Times from core.** `TrackFragment` carries `(CueId, time)` cues that
+  `chain`/`all`/`any`/`flow`/`delay` shift exactly like clips, so marker
+  times cannot drift from clip times. Each marker lowers to a cue; authoring
+  keeps the cue's name and resolves the names after compiling.
   `CompiledScene::marker(name) -> Option<Duration>` reads one;
   `CompiledScene::markers()` lists all, sorted by time. Names are
-  `Cow<'static, str>`, so literal names are not allocated. *(implemented)*
+  `Cow<'static, str>` (`MarkerName`, now in authoring), so literal names are
+  not allocated. Events (`event(payload, length)`) use the same cues.
+  *(implemented)*
 - **Placement:** in `chain`, where the previous step ends; in `all` and `any`, at
   the group start; in `flow`, a marker does not take a slot (it marks where the
   next child starts, or the group's end if no child follows), so it never

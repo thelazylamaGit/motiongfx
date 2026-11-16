@@ -27,7 +27,7 @@ let mut animation = scene.compile([
 
 ## Animations
 
-`Animation<M>` is one change, group, wait or marker (`M` is the scene's
+`Animation<M>` is one change, group, wait, marker or event (`M` is the scene's
 model; `motiongfx_2d` exports `Animation` with it filled in). The list passed
 to `compile` runs in order, like `chain`.
 
@@ -45,12 +45,23 @@ to `compile` runs in order, like `chain`.
   `.delay(duration)` on an animation for that.
 - `marker("name")` names a point in time, read back with
   `compiled.marker("name")` (for example a loop point). Names must be unique.
+- `event(payload, length)` puts a payload for another crate on the timeline,
+  such as a sound from `motiongfx_audio`. It lasts `length` (or `.over(..)`),
+  so the next step in a `chain` starts after it. `compiled.events::<E>()`
+  lists every event whose payload is an `E`, with its start time and
+  length. Sampling ignores events, and `.interrupt()` never cuts one.
 
 `.over(duration)` and `.ease(function)` time one change. Without them, the
 scene defaults apply: one second and the normalized sigmoid `smooth` easing,
 changeable with `scene.defaults(duration, ease)` at any point before
 `compile`. Groups, waits and markers have no timing of their own, so timing
-them panics at the caller's line.
+them panics at the caller's line. An event takes `.over(..)` as its length
+but panics on `.ease(..)` and `.spring(..)`.
+
+Markers and events both lower to core *cues*: numbered points that core's
+`chain`/`all`/`any`/`flow` shift exactly like clips, so their times cannot
+drift from the changes around them. Authoring keeps what each cue stands
+for (a marker name or an event payload) and resolves them after compiling.
 
 `Animation` is marked `must_use`: building one without passing it to
 `compile` or a group does nothing. Its `Debug` output shows the tree and the

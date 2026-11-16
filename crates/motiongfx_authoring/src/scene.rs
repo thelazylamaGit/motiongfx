@@ -11,7 +11,12 @@ use crate::{
 use motiongfx::action::ActionId;
 use motiongfx::prelude::*;
 use motiongfx::subject::SubjectId;
-use std::{any::TypeId, time::Duration};
+use motiongfx::track::CueId;
+use std::{
+    any::{Any, TypeId},
+    sync::Arc,
+    time::Duration,
+};
 
 /// Problems found while compiling a scene.
 #[derive(Debug, Clone)]
@@ -158,9 +163,11 @@ pub struct CompileContext<'a, M> {
         Vec<(ActionId, &'static std::panic::Location<'static>)>,
     /// Marker names seen so far, with where each was first used.
     markers: std::collections::HashMap<
-        motiongfx::track::MarkerName,
+        crate::MarkerName,
         &'static std::panic::Location<'static>,
     >,
+    /// What each core cue stands for, indexed by its `CueId`.
+    cued: Vec<Cued>,
     caches: std::collections::HashMap<TypeId, Box<dyn std::any::Any>>,
 }
 impl<M> CompileContext<'_, M> {
@@ -189,13 +196,13 @@ impl<M> CompileContext<'_, M> {
     pub(crate) fn signals(&mut self) -> &mut SignalValues {
         &mut self.world.signals
     }
-    /// Claim a marker name. Returns `false` (and reports the duplicate)
-    /// if the name was already used.
+    /// Claim a marker name and a cue for it. Returns `None` (and reports
+    /// the duplicate) if the name was already used.
     pub(crate) fn register_marker(
         &mut self,
-        name: &motiongfx::track::MarkerName,
+        name: &crate::MarkerName,
         location: &'static std::panic::Location<'static>,
-    ) -> bool {
+    ) -> Option<CueId> {
         if let Some(&first) = self.markers.get(name) {
             self.report(crate::AnimationError {
                 location,
@@ -204,11 +211,87 @@ impl<M> CompileContext<'_, M> {
                     first,
                 },
             });
-            return false;
+            return None;
         }
         self.markers.insert(name.clone(), location);
-        true
+        Some(self.cue(Cued::Marker(name.clone())))
     }
+    /// A cue for an event. Every use gets its own, so an animation reused
+    /// in several places fires its events once per place.
+    pub(crate) fn register_event(
+        &mut self,
+        payload: Arc<dyn Any + Send + Sync>,
+        length: Duration,
+    ) -> CueId {
+        self.cue(Cued::Event(payload, length))
+    }
+    fn cue(&mut self, cued: Cued) -> CueId {
+        let id = u32::try_from(self.cued.len())
+            .expect("fewer than 2^32 markers and events");
+        self.cued.push(cued);
+        CueId(id)
+    }
+}
+
+/// What a core cue stands for.
+enum Cued {
+    Marker(crate::MarkerName),
+    Event(Arc<dyn Any + Send + Sync>, Duration),
+}
+
+/// One event of a compiled scene; see [`CompiledScene::events`].
+struct TimedEvent {
+    start: Duration,
+    length: Duration,
+    payload: Arc<dyn Any + Send + Sync>,
+}
+
+/// An event read from a [`CompiledScene`], with its payload of type `E`.
+#[derive(Debug)]
+pub struct Event<'a, E> {
+    /// When the event starts.
+    pub start: Duration,
+    /// How long it lasts on the timeline.
+    pub length: Duration,
+    /// What it carries, as passed to [`event`](crate::event).
+    pub payload: &'a E,
+}
+// Derived impls would require `E: Clone`/`Copy`; only the reference is
+// copied.
+impl<E> Clone for Event<'_, E> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<E> Copy for Event<'_, E> {}
+
+/// Every marker with its time, sorted by time.
+type Markers = Box<[(crate::MarkerName, Duration)]>;
+
+/// Split the compiled track's cues into markers and events, both sorted
+/// by time (the track sorts its cues).
+fn resolve_cues(
+    cues: &[(CueId, Duration)],
+    mut cued: Vec<Cued>,
+) -> (Markers, Box<[TimedEvent]>) {
+    let mut markers = Vec::new();
+    let mut events = Vec::new();
+    for &(CueId(id), start) in cues {
+        // Each cue is used once, so its entry can be moved out.
+        let entry = std::mem::replace(
+            &mut cued[id as usize],
+            Cued::Marker(crate::MarkerName::Borrowed("")),
+        );
+        match entry {
+            Cued::Marker(name) => markers.push((name, start)),
+            Cued::Event(payload, length) => events.push(TimedEvent {
+                start,
+                length,
+                payload,
+            }),
+        }
+    }
+    (markers.into_boxed_slice(), events.into_boxed_slice())
 }
 type Prepare<M> = Box<dyn FnOnce(&mut Scene<M>) + Send + Sync>;
 type Update<M> =
@@ -546,6 +629,7 @@ impl<M: 'static> Scene<M> {
             errors: Vec::new(),
             actions: Vec::new(),
             markers: Default::default(),
+            cued: Vec::new(),
             caches: Default::default(),
         };
         // Lower each step as it is read; the list is never copied.
@@ -557,6 +641,7 @@ impl<M: 'static> Scene<M> {
             builder,
             mut errors,
             actions,
+            cued,
             ..
         } = context;
         let track = fragment.compile();
@@ -564,6 +649,7 @@ impl<M: 'static> Scene<M> {
         if !errors.is_empty() {
             return Err(CompileError::Animation(errors));
         }
+        let (markers, events) = resolve_cues(track.cues(), cued);
         let mut timeline = builder.compile(track);
         self.bindings.prepare(&self.world, &timeline)?;
         timeline.bake_actions(&registry, &self.world);
@@ -573,6 +659,8 @@ impl<M: 'static> Scene<M> {
             timeline,
             bindings: self.bindings,
             updates: self.updates,
+            markers,
+            events,
         };
         animation
             .run_simulations(self.simulations, self.simulation_rate);
@@ -622,6 +710,9 @@ pub struct CompiledScene<M> {
     timeline: Timeline<World<M>>,
     bindings: BindingPlan<World<M>>,
     updates: Vec<NativeUpdate<M>>,
+    markers: Markers,
+    /// Sorted by start time.
+    events: Box<[TimedEvent]>,
 }
 impl<M: 'static> std::fmt::Debug for CompiledScene<M> {
     fn fmt(
@@ -632,6 +723,7 @@ impl<M: 'static> std::fmt::Debug for CompiledScene<M> {
             .field("time", &self.world.time)
             .field("duration", &self.duration())
             .field("markers", &self.markers())
+            .field("events", &self.events.len())
             .finish_non_exhaustive()
     }
 }
@@ -662,13 +754,44 @@ impl<M: 'static> CompiledScene<M> {
     }
     /// The time of the marker called `name`, if the animation has one.
     pub fn marker(&self, name: &str) -> Option<Duration> {
-        self.timeline.tracks()[0].marker(name)
+        self.markers
+            .iter()
+            .find(|(marker, _)| marker == name)
+            .map(|(_, time)| *time)
     }
     /// Every marker with its time, sorted by time.
-    pub fn markers(
+    pub fn markers(&self) -> &[(crate::MarkerName, Duration)] {
+        &self.markers
+    }
+    /// Every [`event`](crate::event) whose payload is an `E`, sorted by
+    /// start time; events of other payload types are skipped.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use motiongfx::prelude::ms;
+    /// use motiongfx_authoring::{Scene, event};
+    /// struct Caption(&'static str);
+    /// let scene = Scene::<()>::new().compile([
+    ///     event(Caption("Hello"), ms(800)),
+    ///     event(Caption("World"), ms(800)),
+    /// ]);
+    /// let starts: Vec<_> = scene
+    ///     .events::<Caption>()
+    ///     .map(|event| (event.payload.0, event.start))
+    ///     .collect();
+    /// assert_eq!(starts, [("Hello", ms(0)), ("World", ms(800))]);
+    /// ```
+    pub fn events<E: 'static>(
         &self,
-    ) -> &[(motiongfx::track::MarkerName, Duration)] {
-        self.timeline.tracks()[0].markers()
+    ) -> impl Iterator<Item = Event<'_, E>> + '_ {
+        self.events.iter().filter_map(|event| {
+            Some(Event {
+                start: event.start,
+                length: event.length,
+                payload: event.payload.downcast_ref()?,
+            })
+        })
     }
     /// The state of `simulation` at the time last sampled.
     ///
