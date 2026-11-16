@@ -35,6 +35,8 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::Window as WinitWindow;
 
 pub use vello_motiongfx::lettering as labels;
+#[cfg(feature = "audio")]
+mod audio;
 pub mod playback;
 use playback::PlaybackControls;
 pub use playback::{
@@ -48,6 +50,8 @@ pub struct Window {
     canvas: Size,
     playback_mode: PlaybackMode,
     renderer: vello_motiongfx::Renderer,
+    #[cfg(feature = "audio")]
+    audio: bool,
 }
 
 impl Window {
@@ -76,7 +80,20 @@ impl Window {
             canvas,
             playback_mode: PlaybackMode::Once,
             renderer: vello_motiongfx::Renderer::default(),
+            #[cfg(feature = "audio")]
+            audio: false,
         }
+    }
+
+    /// Play the scene's sound events (notes and samples from
+    /// `motiongfx_audio`) through the default output device. Sound plays
+    /// while time moves forwards and stops on a pause, seek or reverse;
+    /// resuming starts with the events after the new time. If the device
+    /// can't be opened, the preview runs silently and says why on stderr.
+    #[cfg(feature = "audio")]
+    pub fn audio(mut self) -> Self {
+        self.audio = true;
+        self
     }
 
     /// Play once (the default), loop, ping-pong, or loop after an intro.
@@ -109,6 +126,13 @@ impl Window {
         animation: motiongfx_2d::CompiledScene,
     ) -> Result<(), winit::error::EventLoopError> {
         let event_loop = winit::event_loop::EventLoop::new()?;
+        #[cfg(feature = "audio")]
+        let audio = self
+            .audio
+            .then(|| {
+                audio::AudioSync::open(&animation, self.playback_mode)
+            })
+            .flatten();
         let mut app = VelloWinitApp::new(AnimationDemo {
             animation,
             renderer: self.renderer,
@@ -117,6 +141,10 @@ impl Window {
             viewport: self.canvas,
             playback_mode: self.playback_mode,
         });
+        #[cfg(feature = "audio")]
+        {
+            app.audio = audio;
+        }
         event_loop.run_app(&mut app)
     }
 }
@@ -227,6 +255,9 @@ pub struct VelloWinitApp<'s, D: VelloDemo> {
     last_frame: Instant,
     /// Hidden behind other windows. Not every platform reports this.
     occluded: bool,
+    /// The scene's sound, driven by the clock; see [`Window::audio`].
+    #[cfg(feature = "audio")]
+    audio: Option<audio::AudioSync>,
 }
 
 /// Whether the app has a window to draw to.
@@ -255,6 +286,8 @@ impl<'s, D: VelloDemo> VelloWinitApp<'s, D> {
             controls,
             last_frame: Instant::now(),
             occluded: false,
+            #[cfg(feature = "audio")]
+            audio: None,
         }
     }
 
@@ -279,10 +312,16 @@ impl<'s, D: VelloDemo> VelloWinitApp<'s, D> {
 
     fn tick_playback(&mut self) {
         let now = Instant::now();
+        #[cfg(feature = "audio")]
+        let before = self.controls.clock.state();
         self.controls
             .clock
             .advance(now.duration_since(self.last_frame));
         self.last_frame = now;
+        #[cfg(feature = "audio")]
+        if let Some(audio) = &mut self.audio {
+            audio.update(before, self.controls.clock.state());
+        }
     }
 
     fn render(&mut self) {
