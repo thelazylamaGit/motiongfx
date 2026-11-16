@@ -3,15 +3,11 @@
 use crate::{Input, Property, Scene, SceneObject, World};
 use motiongfx::prelude::{Path, SubjectSource, ThreadSafe};
 use motiongfx::subject::SubjectId;
-use std::{
-    any::TypeId,
-    ops::{Deref, DerefMut},
-    sync::Arc,
-};
+use std::{any::TypeId, sync::Arc};
 
-/// Wires one field of a newly added object, for example by binding it to a
-/// signal. Receives the scene and the object's handle.
-pub type Register<T, M> = Arc<
+// Wires one field of a newly added object, for example by binding it to a
+// signal. Shared so a cloned definition can register it again.
+type Register<T, M> = Arc<
     dyn Fn(&mut Scene<M>, <T as SceneObject<M>>::Handle)
         + Send
         + Sync,
@@ -20,8 +16,7 @@ pub type Register<T, M> = Arc<
 /// fields set from signals or computed values once it is added to a scene.
 ///
 /// Model crates wrap this in their own builder type (such as
-/// `motiongfx_2d::Object`) to add methods like `.fill(..)`. Dereferences to
-/// the state being built.
+/// `motiongfx_2d::Object`) to add methods like `.fill(..)`.
 pub struct ObjectDefinition<T: SceneObject<M>, M> {
     state: T,
     bindings: Vec<(
@@ -61,15 +56,31 @@ impl<T: SceneObject<M>, M: 'static> ObjectDefinition<T, M> {
             unique: Some(TypeId::of::<K>()),
         }
     }
-    /// Run `register` when the object is added, replacing any earlier hook
-    /// for `field`. Each added copy of the definition runs it once.
+    /// The state being built, as it will be when added.
+    pub fn state(&self) -> &T {
+        &self.state
+    }
+    /// The state being built, mutably. Writing a field here sets its
+    /// initial value only: a binding that a setter registered for the same
+    /// field still applies. Use [`property`](Self::property) to replace a
+    /// field's input.
+    pub fn state_mut(&mut self) -> &mut T {
+        &mut self.state
+    }
+    /// Run `register` with the scene and the object's handle when the
+    /// object is added, for example to bind a field to a signal. Replaces
+    /// any earlier hook for `field`; each added copy of the definition runs
+    /// it once.
     pub fn on_insert(
         &mut self,
         field: motiongfx::field_path::field::UntypedField,
-        register: Register<T, M>,
+        register: impl Fn(&mut Scene<M>, T::Handle)
+        + Send
+        + Sync
+        + 'static,
     ) {
         self.bindings.retain(|(previous, _)| *previous != field);
-        self.bindings.push((field, register));
+        self.bindings.push((field, Arc::new(register)));
     }
     /// Add the object with `insert`, then run its field hooks with the
     /// returned handle.
@@ -122,27 +133,16 @@ impl<T: SceneObject<M>, M: 'static> ObjectDefinition<T, M> {
         } else {
             self.on_insert(
                 path.field.untyped(),
-                Arc::new(move |scene, handle| {
+                move |scene, handle| {
                     scene.bind(
                         target(handle),
                         value.clone(),
                         std::convert::identity,
                     );
-                }),
+                },
             );
         }
         self
-    }
-}
-impl<T: SceneObject<M>, M> Deref for ObjectDefinition<T, M> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        &self.state
-    }
-}
-impl<T: SceneObject<M>, M> DerefMut for ObjectDefinition<T, M> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.state
     }
 }
 impl<T: SceneObject<M>, M: 'static> SceneObject<M>

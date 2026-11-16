@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 /// A stroked curve or polyline. Animate `end` from 0 to 1 to draw it on.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct Path {
     /// The path's shape, shared between copies.
     pub geometry: Arc<BezPath>,
@@ -54,7 +55,8 @@ impl Path {
         let mut object = Self::from_bez_path(BezPath::new());
         object.on_insert(
             path!(Path.geometry).field.untyped(),
-            Arc::new(move |scene, handle| {
+            move |scene: &mut motiongfx_authoring::Scene<M>,
+                  handle: Handle<Path>| {
                 let geometry = crate::computed(
                     inputs.clone(),
                     |(start, control, end)| {
@@ -68,7 +70,7 @@ impl Path {
                     geometry,
                     std::convert::identity,
                 );
-            }),
+            },
         );
         object
     }

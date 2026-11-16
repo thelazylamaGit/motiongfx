@@ -395,7 +395,7 @@ each tip from its own handle. Tipped lines and their shapes also work with direc
 `Triangle::new()` and `Chevron::new()` default to a 24-unit axial length and a
 pi/3 full opening angle. Their local apex is at the origin, pointing along +x;
 the base corners are `(-size, ±size * tan(angle / 2))`. Triangle closes/fills the
-outline; chevron is an open stroked outline (its fill setting is unused).
+outline; chevron is an open stroked outline with no fill; `line_cap` and `line_join` make its ends and apex flat or rounded.
 Sizes must be finite/nonnegative and angles strictly between zero and pi.
 Setters accept fixed values or reactive inputs, just like other shape builders.
 Both shapes are independently usable with `scene.add`, with the same geometry,

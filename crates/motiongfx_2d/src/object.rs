@@ -3,7 +3,6 @@ use crate::{Canvas, Input, Model2d, SceneObject, World};
 use motiongfx::prelude::{Path, SubjectSource, ThreadSafe};
 use motiongfx::subject::SubjectId;
 use motiongfx_authoring::{ObjectDefinition, Property};
-use std::ops::{Deref, DerefMut};
 /// An object description being built, such as `Circle::new(10.0).fill(..)`.
 #[must_use = "an object is only drawn after it is passed to `scene.add(..)`"]
 pub struct Object<T: SceneObject<M>, M: Model2d = Canvas>(
@@ -38,9 +37,21 @@ impl<T: SceneObject<M>, M: Model2d> Object<T, M> {
     pub(crate) fn on_insert(
         &mut self,
         field: motiongfx::field_path::field::UntypedField,
-        register: motiongfx_authoring::Register<T, M>,
+        register: impl Fn(&mut motiongfx_authoring::Scene<M>, T::Handle)
+        + Send
+        + Sync
+        + 'static,
     ) {
         self.0.on_insert(field, register);
+    }
+    /// The state being built, as it will be when added: the fixed values
+    /// set so far, with defaults for the rest.
+    pub fn state(&self) -> &T {
+        self.0.state()
+    }
+    /// The state being built, mutably; for fields no setter binds.
+    pub(crate) fn state_mut(&mut self) -> &mut T {
+        self.0.state_mut()
     }
     pub(crate) fn property<I, V>(
         self,
@@ -56,17 +67,6 @@ impl<T: SceneObject<M>, M: Model2d> Object<T, M> {
         World<M>: SubjectSource<I, T>,
     {
         Self(self.0.property(value.into().0, path, target))
-    }
-}
-impl<T: SceneObject<M>, M: Model2d> Deref for Object<T, M> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        &self.0
-    }
-}
-impl<T: SceneObject<M>, M: Model2d> DerefMut for Object<T, M> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.0
     }
 }
 impl<T: SceneObject<M>, M: Model2d> SceneObject<M> for Object<T, M>

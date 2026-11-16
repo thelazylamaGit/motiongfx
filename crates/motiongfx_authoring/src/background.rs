@@ -70,21 +70,23 @@ impl<M: Background> Scene<M> {
         &mut self,
         color: impl Into<Input<M, M::Color>>,
     ) -> BackgroundProperty<M> {
-        let color = color.into();
-        if let Input::Fixed(value) = &color {
-            *self.model_mut().background_mut() = value.clone();
-        }
-        // Keyed, so a later call's (possibly absent) binding replaces this
-        // one instead of conflicting with it.
-        self.prepare_with::<BackgroundId>(move |scene| {
-            if !matches!(color, Input::Fixed(_)) {
-                scene.bind(
-                    property::<M>(),
-                    color,
-                    std::convert::identity,
-                );
+        // Both arms prepare under the same key, so a later call's (possibly
+        // absent) binding replaces this one instead of conflicting with it.
+        match color.into() {
+            Input::Fixed(value) => {
+                *self.model_mut().background_mut() = value;
+                self.prepare_with::<BackgroundId>(|_| {});
             }
-        });
+            color => {
+                self.prepare_with::<BackgroundId>(move |scene| {
+                    scene.bind(
+                        property::<M>(),
+                        color,
+                        std::convert::identity,
+                    );
+                })
+            }
+        }
         property::<M>()
     }
 }

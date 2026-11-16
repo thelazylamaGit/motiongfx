@@ -21,6 +21,7 @@ pub trait Field<S, T>: Send + Sync + 'static {
 /// One field of one object, like [`Property`], but storing only the
 /// object's ID: the field is part of the type (`F`). Object handles return
 /// these, e.g. `circle.radius()`.
+#[must_use = "a field does nothing until animated (`.to(..)`) or followed"]
 pub struct Target<I, S, T, F> {
     id: I,
     // `fn() -> ..` names the types without owning values of them, so a

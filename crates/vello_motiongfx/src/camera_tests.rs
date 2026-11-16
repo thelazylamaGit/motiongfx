@@ -117,12 +117,12 @@ fn scale_pan_approaches_target_monotonically_and_retraces_on_seek() {
 fn follow_uses_nested_world_position_but_not_target_scale_or_rotation()
  {
     let mut scene = Scene::new();
-    let parent = scene.add(Rectangle {
-        position: Point::new(100.0, 50.0),
-        scale: 2.0,
-        rotation: std::f64::consts::FRAC_PI_2,
-        ..Rectangle::default()
-    });
+    let parent = scene.add(
+        Rectangle::new(100.0, 100.0)
+            .position((100.0, 50.0))
+            .scale(2.0)
+            .rotation(std::f64::consts::FRAC_PI_2),
+    );
     let target = scene.add(
         Circle::new(10.0)
             .relative_to(parent)

@@ -103,7 +103,7 @@ impl<M: crate::Model2d> crate::Object<Text, M> {
     /// becomes an offset from it, and the text moves, turns and scales with
     /// it. Style stays independent.
     pub fn relative_to(mut self, parent: impl Into<Parent>) -> Self {
-        self.parent = Some(parent.into());
+        self.state_mut().parent = Some(parent.into());
         self
     }
 }

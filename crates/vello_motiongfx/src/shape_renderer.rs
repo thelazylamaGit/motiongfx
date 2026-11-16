@@ -3,11 +3,12 @@
 use crate::triangle_geometry::CachedTriangle;
 use crate::{path_renderer, text_renderer};
 use motiongfx_2d::{
-    Canvas, Chevron, Circle, DrawObject, EndpointTip, Geometry, Line,
-    Model2d, Point, Rect, Rectangle, Size, Triangle,
+    Canvas, Cap, Chevron, Circle, Color, DrawObject, EndpointTip,
+    Geometry, Join, Line, Model2d, Point, Rect, Rectangle, Size,
+    Triangle,
 };
 use vello::kurbo::{
-    Affine, Circle as CircleShape, Line as LineShape, Stroke,
+    Affine, Circle as CircleShape, Line as LineShape, PathEl, Stroke,
 };
 use vello::peniko::Fill;
 trait RenderRectangle {
@@ -231,57 +232,6 @@ impl RenderTip for EndpointTip {
         }
     }
 }
-macro_rules! wedge_renderer {
-    ($shape:ty,$closed:expr) => {
-        impl RenderWedge for $shape {
-            fn render_geometry(
-                &self,
-                scene: &mut vello::Scene,
-                parent_transform: Affine,
-                inherited_opacity: f32,
-                geometry: Geometry,
-            ) {
-                let opacity = self.opacity.clamp(0.0, 1.0) as f32
-                    * inherited_opacity;
-                let transform = parent_transform * self.transform();
-                if self.size <= 0.0
-                    || opacity <= 0.0
-                    || transform.determinant() == 0.0
-                {
-                    return;
-                }
-                let geometry = geometry.canvas();
-                let outline = geometry.elements();
-                if $closed && self.fill.components[3] > 0.0 {
-                    scene.fill(
-                        Fill::NonZero,
-                        transform,
-                        self.fill.with_alpha(
-                            self.fill.components[3] * opacity,
-                        ),
-                        None,
-                        &outline,
-                    );
-                }
-                if self.stroke_width > 0.0
-                    && self.stroke.components[3] > 0.0
-                {
-                    scene.stroke(
-                        &Stroke::new(self.stroke_width)
-                            .with_caps(self.line_cap)
-                            .with_join(self.line_join),
-                        transform,
-                        self.stroke.with_alpha(
-                            self.stroke.components[3] * opacity,
-                        ),
-                        None,
-                        &outline,
-                    );
-                }
-            }
-        }
-    };
-}
 trait RenderWedge {
     fn render_geometry(
         &self,
@@ -291,8 +241,112 @@ trait RenderWedge {
         geometry: Geometry,
     );
 }
-wedge_renderer!(Triangle, true);
-wedge_renderer!(Chevron, false);
+// The transform and opacity a pointed shape draws with, or `None` if it
+// would draw nothing.
+fn wedge_frame(
+    size: f64,
+    opacity: f64,
+    inherited_opacity: f32,
+    transform: Affine,
+) -> Option<(Affine, f32)> {
+    let opacity = opacity.clamp(0.0, 1.0) as f32 * inherited_opacity;
+    (size > 0.0 && opacity > 0.0 && transform.determinant() != 0.0)
+        .then_some((transform, opacity))
+}
+// Stroke `outline` unless the stroke is invisible.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one stroke style, passed as its parts"
+)]
+fn stroke_outline(
+    scene: &mut vello::Scene,
+    transform: Affine,
+    opacity: f32,
+    color: Color,
+    width: f64,
+    cap: Cap,
+    join: Join,
+    outline: &[PathEl],
+) {
+    if width > 0.0 && color.components[3] > 0.0 {
+        scene.stroke(
+            &Stroke::new(width).with_caps(cap).with_join(join),
+            transform,
+            color.with_alpha(color.components[3] * opacity),
+            None,
+            &outline,
+        );
+    }
+}
+impl RenderWedge for Triangle {
+    fn render_geometry(
+        &self,
+        scene: &mut vello::Scene,
+        parent_transform: Affine,
+        inherited_opacity: f32,
+        geometry: Geometry,
+    ) {
+        let Some((transform, opacity)) = wedge_frame(
+            self.size,
+            self.opacity,
+            inherited_opacity,
+            parent_transform * self.transform(),
+        ) else {
+            return;
+        };
+        let geometry = geometry.canvas();
+        let outline = geometry.elements();
+        if self.fill.components[3] > 0.0 {
+            scene.fill(
+                Fill::NonZero,
+                transform,
+                self.fill
+                    .with_alpha(self.fill.components[3] * opacity),
+                None,
+                &outline,
+            );
+        }
+        stroke_outline(
+            scene,
+            transform,
+            opacity,
+            self.stroke,
+            self.stroke_width,
+            self.line_cap,
+            self.line_join,
+            outline,
+        );
+    }
+}
+impl RenderWedge for Chevron {
+    fn render_geometry(
+        &self,
+        scene: &mut vello::Scene,
+        parent_transform: Affine,
+        inherited_opacity: f32,
+        geometry: Geometry,
+    ) {
+        let Some((transform, opacity)) = wedge_frame(
+            self.size,
+            self.opacity,
+            inherited_opacity,
+            parent_transform * self.transform(),
+        ) else {
+            return;
+        };
+        let geometry = geometry.canvas();
+        stroke_outline(
+            scene,
+            transform,
+            opacity,
+            self.stroke,
+            self.stroke_width,
+            self.line_cap,
+            self.line_join,
+            geometry.elements(),
+        );
+    }
+}
 /// Draws sampled 2D scenes into a `vello::Scene`. Keep one per window and
 /// reuse it: it caches path geometry, text layout and rounded triangles
 /// between frames and rebuilds an entry only when its object changes.

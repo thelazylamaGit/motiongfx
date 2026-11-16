@@ -3,6 +3,7 @@ use crate::*;
 /// A rectangle centred on its position. Create one with [`Rectangle::new`].
 /// Scale changes its size but not its stroke width.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct Rectangle {
     /// Width and height in canvas units.
     pub size: Size,

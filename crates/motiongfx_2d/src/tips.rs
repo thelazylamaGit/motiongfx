@@ -49,7 +49,7 @@ impl<M: Model2d> LineTip<M> for Object<Circle, M> {
         scene: &mut motiongfx_authoring::Scene<M>,
     ) -> (Handle<Circle>, Option<EndpointTip>) {
         assert!(
-            self.parent.is_none(),
+            self.state().parent.is_none(),
             "a line tip uses its endpoint frame; remove relative_to"
         );
         let handle = self.insert_with(scene, |shape, scene| {

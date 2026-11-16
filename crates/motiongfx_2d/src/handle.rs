@@ -81,7 +81,7 @@ impl<T: Object2d> std::hash::Hash for Handle<T> {
         self.id.hash(state);
     }
 }
-/// Shows the object type and its ID.
+/// Shows the object's ID, such as `Handle(CircleId(3))`.
 impl<T: Object2d> std::fmt::Debug for Handle<T> {
     fn fmt(
         &self,

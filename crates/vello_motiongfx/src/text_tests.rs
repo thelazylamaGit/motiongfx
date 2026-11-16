@@ -3,7 +3,8 @@ use text_renderer::TextLayout;
 
 #[test]
 fn paint_and_transforms_reuse_layout_but_font_size_reshapes() {
-    let mut text: Object<Text> = Text::new("café office");
+    let mut text: Text =
+        Text::new::<Canvas>("café office").state().clone();
     let mut cache = TextLayout::default();
     let mut fonts = None;
     let mut frame = vello::Scene::new();

@@ -40,7 +40,7 @@ impl<M: crate::Model2d> crate::Object<Camera, M> {
     /// becomes an offset from it. The camera follows its position only, not
     /// its rotation or scale.
     pub fn relative_to(mut self, target: impl Into<Parent>) -> Self {
-        self.target = Some(target.into());
+        self.state_mut().target = Some(target.into());
         self
     }
 }

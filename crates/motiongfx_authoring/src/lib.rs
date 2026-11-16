@@ -28,7 +28,7 @@ mod macros;
 mod object;
 mod scene;
 pub use input::{Input, PreparedInput};
-pub use object::{ObjectDefinition, Register};
+pub use object::ObjectDefinition;
 mod values;
 pub use scene::{
     CompileContext, CompileError, CompiledScene, NativeUpdate,

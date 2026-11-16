@@ -54,7 +54,10 @@ fn path_cache_handles_bezier_geometry_and_style_changes() {
     let mut curve = BezPath::new();
     curve.move_to((0.0, 0.0));
     curve.quad_to((10.0, 20.0), (20.0, 0.0));
-    let mut path: Object<Path> = Path::from_bez_path(curve).end(0.5);
+    let mut path: Path = Path::from_bez_path::<Canvas>(curve)
+        .end(0.5)
+        .state()
+        .clone();
     let mut cache = PathGeometry::new(&path);
     assert_eq!(
         cache.visible.segments().last().unwrap().eval(1.0),
@@ -72,6 +75,7 @@ fn path_cache_handles_bezier_geometry_and_style_changes() {
     cache.render(&path, &mut rendered, Affine::IDENTITY);
     assert_eq!(cache.rebuilds, 1);
     path.geometry = Path::new::<Canvas, _>([(0.0, 0.0), (40.0, 0.0)])
+        .state()
         .geometry
         .clone();
     rendered.reset();

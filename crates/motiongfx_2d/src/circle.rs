@@ -61,7 +61,7 @@ impl<M: crate::Model2d> crate::Object<Circle, M> {
     /// becomes an offset from it, and the circle moves, turns and scales
     /// with it. Colour and opacity stay independent.
     pub fn relative_to(mut self, parent: impl Into<Parent>) -> Self {
-        self.parent = Some(parent.into());
+        self.state_mut().parent = Some(parent.into());
         self
     }
 }

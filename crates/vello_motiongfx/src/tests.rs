@@ -44,7 +44,7 @@ fn authored_square_matches_direct_motiongfx_at_arbitrary_times() {
 
     // Independent baseline: the original low-level builder, not the
     // convenience methods under test. Both use the same initial graphics.
-    let mut world = Baseline((*initial).clone());
+    let mut world = Baseline(initial.state().clone());
     let mut registry = Registry::new();
     let mut b = registry.create_builder::<Baseline>();
     let shift = b
