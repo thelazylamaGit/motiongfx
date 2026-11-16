@@ -1,7 +1,7 @@
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
     AnimationErrorKind, Circle, CircleHandle, CompiledScene2dExt,
-    Scene, SceneError, TextHandle, all, wait,
+    Fillable, Scene, SceneError, TextHandle, all, wait,
 };
 use std::mem::{needs_drop, size_of};
 

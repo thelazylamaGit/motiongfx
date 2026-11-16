@@ -3,7 +3,7 @@
 
 use motiongfx::time::ms;
 use motiongfx_2d::{
-    Rectangle, Scene, Spring,
+    Fillable, Rectangle, Scene, Spring, Transformable,
     colors::{BLUE, ORANGE},
 };
 use vello_winit_motiongfx::Window;

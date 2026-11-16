@@ -1,4 +1,5 @@
-//! Macros declaring each object's typed fields and handle methods.
+//! Macros declaring each object's typed fields, builder setters and handle
+//! getters from one list.
 
 // Declares a module of field markers for one object type, next to the
 // object. `$method` is `new` (smooth) or `discrete`.
@@ -26,14 +27,24 @@ macro_rules! fields {
 }
 pub(crate) use fields;
 
-// One getter per field on an object handle. `also impl<..> Type => path`
-// generates the same getters on a second handle type that holds the ID at
-// `self.path`, such as a line with tips.
-macro_rules! handle_methods {
-    ($handle:ident, $state:ty, $id:ty;
-        also impl<$($generic:ident),*> $other:ty => $inner:ident.id;
-        $($name:ident: $value:ty;)*) => {
-        crate::properties::handle_methods!($handle, $state, $id; $($name: $value;)*);
+// Declares every animatable field of one object type, once. Each entry is
+//
+//     set radius: f64 => new(Circle.radius);
+//
+// `set` also generates a builder setter (`Circle::new(..).radius(..)`);
+// `get` only the field and its handle getter, for fields set through a
+// combined setter such as `stroke(color, width)` or not set directly, such
+// as `position_x`. Doc comments on a `set` entry replace the setter's
+// default docs. `new` fields interpolate; `discrete` ones jump.
+//
+// `also impl<..> Type => path;` adds the same getters to a second handle
+// type that holds the ID at `self.path.id`, such as a line with tips.
+macro_rules! object {
+    ($state:ident, $handle:ident, $id:ident;
+        also impl<$($generic:ident),*> $other:ty => $inner:ident;
+        $($(#[$attr:meta])* $kind:ident $name:ident: $value:ty => $method:ident($($path:tt)+);)*) => {
+        crate::properties::object!($state, $handle, $id;
+            $($(#[$attr])* $kind $name: $value => $method($($path)+);)*);
         impl<$($generic),*> $other {
             $(
             #[doc = concat!("The line's `", stringify!($name), "`, to animate (`.to(..)`) or for other objects to follow.")]
@@ -42,7 +53,11 @@ macro_rules! handle_methods {
             })*
         }
     };
-    ($handle:ident, $state:ty, $id:ty; $($name:ident: $value:ty;)*) => {
+    ($state:ident, $handle:ident, $id:ident;
+        $($(#[$attr:meta])* $kind:ident $name:ident: $value:ty => $method:ident($($path:tt)+);)*) => {
+        crate::properties::fields!(fields, $state, $id;
+            $($name: $value => $method($($path)+);)*);
+        $(crate::properties::setter!($kind [$(#[$attr])*] $state $name: $value => ($($path)+));)*
         impl $handle {
             $(
             #[doc = concat!("The object's `", stringify!($name), "`, to animate (`.to(..)`) or for other objects to follow.")]
@@ -52,77 +67,28 @@ macro_rules! handle_methods {
         }
     };
 }
-pub(crate) use handle_methods;
+pub(crate) use object;
 
-macro_rules! fill_methods {
-    ($handle:ident,$state:ty,$id:ty) => {
-        impl $handle {
-            /// Animate the fill colour to `color`.
-            #[track_caller]
-            pub fn fill_to<M: crate::Model2d>(
+// One builder setter for a `set` entry of `object!`; nothing for `get`.
+macro_rules! setter {
+    (get [$($attr:tt)*] $($rest:tt)*) => {};
+    (set [] $state:ident $name:ident: $value:ty => ($($path:tt)+)) => {
+        crate::properties::setter!(set [
+            #[doc = concat!("Set `", stringify!($name), "`: a fixed value, or a signal, computed value or property for it to follow.")]
+        ] $state $name: $value => ($($path)+));
+    };
+    (set [$($attr:tt)+] $state:ident $name:ident: $value:ty => ($($path:tt)+)) => {
+        impl<M: crate::Model2d> crate::Object<$state, M> {
+            $($attr)+
+            pub fn $name(
                 self,
-                color: impl Into<crate::Color>,
-            ) -> motiongfx_authoring::Animation<M> {
-                self.fill().to(color)
-            }
-            /// Change the fill colour instantly.
-            #[track_caller]
-            pub fn set_fill<M: crate::Model2d>(
-                self,
-                color: impl Into<crate::Color>,
-            ) -> motiongfx_authoring::Animation<M> {
-                self.fill().set(color)
+                value: impl Into<crate::Input<$value, M>>,
+            ) -> Self {
+                self.property(value, motiongfx::path!($($path)+), |handle| {
+                    handle.$name().into()
+                })
             }
         }
     };
 }
-pub(crate) use fill_methods;
-
-macro_rules! transform_methods {
-    ($handle:ident,$state:ty,$id:ty) => {
-        impl $handle {
-            /// Move by `(x, y)` from wherever the object is when this starts.
-            #[track_caller]
-            pub fn shift<M: crate::Model2d>(
-                self,
-                x: f64,
-                y: f64,
-            ) -> motiongfx_authoring::Animation<M> {
-                self.position().offset((x, y))
-            }
-            /// Move horizontally by `x`.
-            #[track_caller]
-            pub fn shift_x<M: crate::Model2d>(
-                self,
-                x: f64,
-            ) -> motiongfx_authoring::Animation<M> {
-                self.position_x().offset(x)
-            }
-            /// Move vertically by `y` (up is positive).
-            #[track_caller]
-            pub fn shift_y<M: crate::Model2d>(
-                self,
-                y: f64,
-            ) -> motiongfx_authoring::Animation<M> {
-                self.position_y().offset(y)
-            }
-            /// Scale by `factor` relative to the current scale.
-            #[track_caller]
-            pub fn scale_by<M: crate::Model2d>(
-                self,
-                factor: f64,
-            ) -> motiongfx_authoring::Animation<M> {
-                self.scale().multiply(factor)
-            }
-            /// Rotate by `angle` radians, counterclockwise.
-            #[track_caller]
-            pub fn rotate<M: crate::Model2d>(
-                self,
-                angle: f64,
-            ) -> motiongfx_authoring::Animation<M> {
-                self.rotation().offset(angle)
-            }
-        }
-    };
-}
-pub(crate) use transform_methods;
+pub(crate) use setter;

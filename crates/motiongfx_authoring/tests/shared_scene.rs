@@ -3,7 +3,7 @@ use motiongfx::prelude::*;
 use motiongfx_authoring::{
     BindingPlan, BindingSource, CompiledScene, Input, NativeUpdate,
     ObjectDefinition, Property, Scene, SceneObject, UpdateTargets,
-    World, all, computed, signal, wait,
+    World, WorldObject, all, computed, signal, wait,
 };
 
 #[derive(Clone, Default)]
@@ -43,16 +43,15 @@ struct PointId;
 struct DepthId;
 // Model-owned typed IDs make these impls legal across crate boundaries, even
 // when World is owned by authoring and SubjectSource by the core crate.
-impl<M: HasPoint> SubjectSource<PointId, PointModel> for World<M> {
-    fn get_source(&self, _: PointId) -> Option<&PointModel> {
-        Some(self.model().point())
+impl<M: HasPoint> WorldObject<PointId, M> for PointModel {
+    fn get(world: &World<M>, _: PointId) -> Option<&Self> {
+        Some(world.model().point())
     }
-    fn apply_source<R>(
-        &mut self,
+    fn get_mut(
+        world: &mut World<M>,
         _: PointId,
-        f: impl FnOnce(&mut PointModel) -> R,
-    ) -> Option<R> {
-        Some(f(self.model_mut().point_mut()))
+    ) -> Option<&mut Self> {
+        Some(world.model_mut().point_mut())
     }
 }
 impl SubjectSource<DepthId, DepthModel> for World<Models> {

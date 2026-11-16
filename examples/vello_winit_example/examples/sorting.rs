@@ -23,9 +23,9 @@
 
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
-    Animation, Color, CompiledScene, Rectangle, RectangleHandle,
-    Scene, Scene2dExt, Text, all, any, chain,
-    colors::{WHITE, hsl, oklch},
+    Animation, Color, CompiledScene, Fillable, Rectangle,
+    RectangleHandle, Scene, Scene2dExt, Text, all, any, chain,
+    colors::{WHITE, hsl},
     wait,
 };
 use std::time::Duration;

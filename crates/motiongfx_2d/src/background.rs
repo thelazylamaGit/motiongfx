@@ -1,7 +1,7 @@
 //! The scene's background colour, which renderers clear the frame with.
 
 use crate::Color;
-use motiongfx::prelude::{SubjectSource, path};
+use motiongfx::prelude::path;
 use motiongfx_authoring::Property;
 
 pub(crate) struct Background(pub Color);
@@ -21,17 +21,19 @@ pub(crate) fn property() -> Property<BackgroundId, Color, Color> {
     Property::new(BackgroundId, path!(Color))
 }
 
-impl<M: crate::Model2d> SubjectSource<BackgroundId, Color>
-    for crate::World<M>
+impl<M: crate::Model2d>
+    motiongfx_authoring::WorldObject<BackgroundId, M> for Color
 {
-    fn get_source(&self, _: BackgroundId) -> Option<&Color> {
-        Some(&self.model().graphics().background.0)
-    }
-    fn apply_source<R>(
-        &mut self,
+    fn get(
+        world: &crate::World<M>,
         _: BackgroundId,
-        f: impl FnOnce(&mut Color) -> R,
-    ) -> Option<R> {
-        Some(f(&mut self.model_mut().graphics_mut().background.0))
+    ) -> Option<&Self> {
+        Some(&world.model().graphics().background.0)
+    }
+    fn get_mut(
+        world: &mut crate::World<M>,
+        _: BackgroundId,
+    ) -> Option<&mut Self> {
+        Some(&mut world.model_mut().graphics_mut().background.0)
     }
 }

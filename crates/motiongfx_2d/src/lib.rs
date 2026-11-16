@@ -76,6 +76,7 @@ impl Model2d for Graphics {
 mod access;
 mod background;
 mod camera;
+mod capability;
 mod chevron;
 mod circle;
 pub mod colors;
@@ -97,6 +98,9 @@ mod triangle;
 mod updates;
 pub use background::BackgroundId;
 pub use camera::{Camera, CameraHandle, CameraId};
+pub use capability::{
+    Fadable, Fillable, ObjectHandle, Strokable, Transformable,
+};
 pub use chevron::{Chevron, ChevronHandle, ChevronId};
 pub use circle::{Circle, CircleHandle, CircleId};
 pub use input::Input;
@@ -122,11 +126,11 @@ pub use rounded_triangle::Geometry;
 pub mod prelude {
     pub use crate::{
         Animation, Camera, Cap, Chevron, Circle, Color,
-        CompiledScene, CompiledScene2dExt, FontStyle, FontWeight,
-        Join, Line, Model2d, Path, Point, Rectangle, Scene,
-        Scene2dExt, Size, Spring, Text, TextAlign, TextStyle,
-        Triangle, Vec2, all, any, chain, computed, flow, marker,
-        signal, wait,
+        CompiledScene, CompiledScene2dExt, Fadable, Fillable,
+        FontStyle, FontWeight, Join, Line, Model2d, Path, Point,
+        Rectangle, Scene, Scene2dExt, Size, Spring, Strokable, Text,
+        TextAlign, TextStyle, Transformable, Triangle, Vec2, all,
+        any, chain, computed, flow, marker, signal, wait,
     };
 }
 

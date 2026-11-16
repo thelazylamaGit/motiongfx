@@ -2,7 +2,7 @@
 
 use crate::{Color, DrawObject, Point, SceneObject};
 pub use kurbo::BezPath;
-use motiongfx::prelude::{SubjectSource, path};
+use motiongfx::prelude::path;
 use std::sync::Arc;
 
 /// A stroked curve or polyline. Animate `end` from 0 to 1 to draw it on.
@@ -139,10 +139,6 @@ fn quadratic_geometry(
     geometry.quad_to(control, end);
     geometry
 }
-crate::object::properties!(Path;
-    position: Point, start: f64, end: f64, opacity: f64,
-    scale: f64, rotation: f64, stroke_width: f64, geometry: Arc<BezPath>,
-);
 crate::object::stroke!(Path);
 crate::object::stroke_options!(Path);
 
@@ -188,52 +184,23 @@ impl<M: crate::Model2d> SceneObject<M> for Path {
     }
 }
 
-impl<M: crate::Model2d> SubjectSource<PathId, Path>
-    for motiongfx_authoring::World<M>
-{
-    fn get_source(&self, id: PathId) -> Option<&Path> {
-        self.model().graphics().paths.get(id.0)
-    }
-    fn apply_source<R>(
-        &mut self,
-        id: PathId,
-        f: impl FnOnce(&mut Path) -> R,
-    ) -> Option<R> {
-        self.model_mut().graphics_mut().paths.get_mut(id.0).map(f)
-    }
-}
+crate::capability::stored_in!(Path, PathId, paths);
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
-crate::properties::fields!(fields, Path, PathId;
-stroke: Color => new(Path.stroke);
-stroke_width: f64 => new(Path.stroke_width);
-line_cap: crate::Cap => discrete(Path.line_cap);
-line_join: crate::Join => discrete(Path.line_join);
-opacity: f64 => new(Path.opacity);
-scale: f64 => new(Path.scale);
-rotation: f64 => new(Path.rotation);
-start: f64 => new(Path.start);
-end: f64 => new(Path.end);
-geometry: Arc<BezPath> => discrete(Path.geometry);
-position: Point => new(Path.position);
-position_x: f64 => new(Path.position.x);
-position_y: f64 => new(Path.position.y);
+crate::properties::object!(Path, PathHandle, PathId;
+set position: Point => new(Path.position);
+set start: f64 => new(Path.start);
+set end: f64 => new(Path.end);
+set opacity: f64 => new(Path.opacity);
+set scale: f64 => new(Path.scale);
+set rotation: f64 => new(Path.rotation);
+get stroke: Color => new(Path.stroke);
+set stroke_width: f64 => new(Path.stroke_width);
+get line_cap: crate::Cap => discrete(Path.line_cap);
+get line_join: crate::Join => discrete(Path.line_join);
+set geometry: Arc<BezPath> => discrete(Path.geometry);
+get position_x: f64 => new(Path.position.x);
+get position_y: f64 => new(Path.position.y);
 );
-
-crate::properties::handle_methods!(PathHandle,Path,PathId;
-stroke: Color;
-stroke_width: f64;
-line_cap: crate::Cap;
-line_join: crate::Join;
-opacity: f64;
-scale: f64;
-rotation: f64;
-start: f64;
-end: f64;
-geometry: Arc<BezPath>;
-position: Point;
-position_x: f64;
-position_y: f64;
-);
-
-crate::properties::transform_methods!(PathHandle, Path, PathId);
+crate::capability::handle_traits!(PathHandle => Path, PathId;
+    Transformable, Strokable, Fadable);

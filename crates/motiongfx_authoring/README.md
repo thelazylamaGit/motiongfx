@@ -90,8 +90,11 @@ subject types can expose their own typed `Property` fields.
 
 `Scene<M>` owns an application-selected model `M`, one native binding plan,
 and the ordered native update callbacks. `World<M>` wraps the model with
-scene-local signal storage and sampled time. Models implement the core
-`SubjectSource<ModelId, ModelState> for World<M>` using model-owned typed IDs.
+scene-local signal storage and sampled time. Models implement
+`WorldObject<ModelId, M>` for each object type using model-owned typed IDs;
+a blanket impl provides core's `SubjectSource` for `World<M>` from it.
+Implementing `SubjectSource` for `World<M>` directly still works for one
+concrete model, but conflicts with the blanket impl when generic over `M`.
 There is no rendering dependency, closed list of shape kinds, or per-sample
 type registry in this shared layer.
 
@@ -263,7 +266,8 @@ helper can return a description without retaining references to its arguments.
 
 `Source<W>::register(world, plan)` prepares a description for one world and
 deduplicates its computed nodes. Integrations implement `SignalWorld` with
-`SignalValues` storage and `SubjectSource<SignalId, T>` access. A scene
+`SignalValues` storage and `SubjectSource<SignalId, T>` access (for
+`World<M>`, through `WorldObject<SignalId, M>`). A scene
 registers signals automatically, including ones used only in animations.
 
 Descriptions are cloneable shared ownership, not `Copy` runtime IDs. Each

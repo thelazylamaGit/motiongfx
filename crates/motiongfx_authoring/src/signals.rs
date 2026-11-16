@@ -174,6 +174,13 @@ impl SignalValues {
     pub fn get<T: ThreadSafe>(&self, id: SignalId) -> Option<&T> {
         self.values.get(id.0)?.downcast_ref()
     }
+    /// The value in slot `id`, mutably, if it exists and holds a `T`.
+    pub fn get_mut<T: ThreadSafe>(
+        &mut self,
+        id: SignalId,
+    ) -> Option<&mut T> {
+        self.values.get_mut(id.0)?.downcast_mut()
+    }
     /// Run `f` on the value in slot `id`, if it exists and holds a `T`.
     pub fn apply<T: ThreadSafe, R>(
         &mut self,

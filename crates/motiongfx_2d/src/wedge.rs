@@ -72,8 +72,6 @@ macro_rules! wedge {
                 $handle { id: $id(storage.len() - 1) }
             }
         }
-        crate::object::properties!($shape; size: f64, angle: f64, position: Point,
-            rotation: f64, scale: f64, opacity: f64, fill: Color, stroke_width: f64, $($radius: f64,)?);
         crate::object::stroke!($shape);
         crate::object::stroke_options!($shape);
         #[doc = concat!("Identifies one [`", stringify!($shape), "`] in its scene.")]
@@ -94,12 +92,7 @@ macro_rules! wedge {
             type Handle = $handle;
             fn insert_into(self, scene: &mut motiongfx_authoring::Scene<M>) -> $handle { self.insert(scene) }
         }
-        impl<M:crate::Model2d> SubjectSource<$id, $shape> for World<M> {
-            fn get_source(&self, id: $id) -> Option<&$shape> { self.model().graphics().$storage.get(id.0) }
-            fn apply_source<R>(&mut self, id: $id, f: impl FnOnce(&mut $shape) -> R) -> Option<R> {
-                self.model_mut().graphics_mut().$storage.get_mut(id.0).map(f)
-            }
-        }
+        crate::capability::stored_in!($shape, $id, $storage);
 
     };
 }

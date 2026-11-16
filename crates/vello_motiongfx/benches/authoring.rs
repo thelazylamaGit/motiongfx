@@ -25,8 +25,9 @@ use criterion::{
 };
 use motiongfx::prelude::{ease, ms};
 use vello_motiongfx::{
-    Circle, CircleHandle, Color, CompiledScene, Renderer, Scene,
-    Signal, Size, Spring, all, flow, signal, wait,
+    Circle, CircleHandle, Color, CompiledScene, Fillable, Renderer,
+    Scene, Signal, Size, Spring, Transformable, all, flow, signal,
+    wait,
 };
 
 const SIZES: [usize; 2] = [1_000, 10_000];

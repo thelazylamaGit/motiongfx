@@ -30,7 +30,7 @@ pub use object::{ObjectDefinition, Register};
 mod values;
 pub use scene::{
     CompiledScene, NativeUpdate, Scene, SceneContext, SceneError,
-    SceneObject, UpdateTargets, World,
+    SceneObject, UpdateTargets, World, WorldObject,
 };
 pub use values::SampleTime;
 mod signals;

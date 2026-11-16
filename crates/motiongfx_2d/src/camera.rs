@@ -2,7 +2,6 @@
 
 use crate::{Graphics, Parent, Point};
 use kurbo::Affine;
-use motiongfx::prelude::SubjectSource;
 
 /// The scene's view. Every scene has one; get it with `scene.camera()`, or
 /// set its starting state with `scene.set_camera(Camera::new()..)`.
@@ -35,7 +34,6 @@ impl Camera {
     }
 }
 
-crate::object::properties!(Camera; position: Point, scale: f64, rotation: f64);
 impl<M: crate::Model2d> crate::Object<Camera, M> {
     /// Follow a rectangle or circle already in the scene: `position`
     /// becomes an offset from it. The camera follows its position only, not
@@ -106,36 +104,26 @@ impl Graphics {
     }
 }
 
-impl<M: crate::Model2d> SubjectSource<CameraId, Camera>
-    for motiongfx_authoring::World<M>
+impl<M: crate::Model2d> motiongfx_authoring::WorldObject<CameraId, M>
+    for Camera
 {
-    fn get_source(&self, _: CameraId) -> Option<&Camera> {
-        Some(&self.model().graphics().camera)
+    fn get(world: &crate::World<M>, _: CameraId) -> Option<&Self> {
+        Some(&world.model().graphics().camera)
     }
-    fn apply_source<R>(
-        &mut self,
+    fn get_mut(
+        world: &mut crate::World<M>,
         _: CameraId,
-        f: impl FnOnce(&mut Camera) -> R,
-    ) -> Option<R> {
-        Some(f(&mut self.model_mut().graphics_mut().camera))
+    ) -> Option<&mut Self> {
+        Some(&mut world.model_mut().graphics_mut().camera)
     }
 }
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
-crate::properties::fields!(fields, Camera, CameraId;
-scale: f64 => new(Camera.scale);
-rotation: f64 => new(Camera.rotation);
-position: Point => new(Camera.position);
-position_x: f64 => new(Camera.position.x);
-position_y: f64 => new(Camera.position.y);
+crate::properties::object!(Camera, CameraHandle, CameraId;
+set position: Point => new(Camera.position);
+set scale: f64 => new(Camera.scale);
+set rotation: f64 => new(Camera.rotation);
+get position_x: f64 => new(Camera.position.x);
+get position_y: f64 => new(Camera.position.y);
 );
-
-crate::properties::handle_methods!(CameraHandle,Camera,CameraId;
-scale: f64;
-rotation: f64;
-position: Point;
-position_x: f64;
-position_y: f64;
-);
-
-crate::properties::transform_methods!(CameraHandle, Camera, CameraId);
+crate::capability::handle_traits!(CameraHandle => Camera, CameraId; Transformable);

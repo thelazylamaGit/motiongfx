@@ -4,8 +4,7 @@ use crate::{
     Color, FontStyle, FontWeight, Parent, Point, SceneObject,
     TextSelectionId,
 };
-use crate::{DrawObject, Model2d, World};
-use motiongfx::prelude::SubjectSource;
+use crate::{DrawObject, Model2d};
 use std::sync::Arc;
 
 /// Which side of a text block its position anchors.
@@ -92,14 +91,11 @@ impl Text {
     }
 }
 
-crate::object::properties!(Text;
-    content: Arc<str>, position: Point, scale: f64, rotation: f64;
-    style TextStyle {
-        font_size: f64, fill: Color, opacity: f64, align: TextAlign,
-        font_family: Arc<str>, font_weight: FontWeight, font_style: FontStyle,
-        line_height: f64, letter_spacing: f64, tabular_numbers: bool,
-        wrap_width: f64,
-    }
+crate::style::partial_style!(Text, TextStyle;
+    font_size: f64, fill: Color, opacity: f64, align: TextAlign,
+    font_family: Arc<str>, font_weight: FontWeight, font_style: FontStyle,
+    line_height: f64, letter_spacing: f64, tabular_numbers: bool,
+    wrap_width: f64,
 );
 impl<M: crate::Model2d> crate::Object<Text, M> {
     /// Attach to a rectangle or circle already in the scene: `position`
@@ -146,18 +142,7 @@ impl<M: crate::Model2d> SceneObject<M> for Text {
     }
 }
 
-impl<M: Model2d> SubjectSource<TextId, Text> for World<M> {
-    fn get_source(&self, id: TextId) -> Option<&Text> {
-        self.model().graphics().texts.get(id.0)
-    }
-    fn apply_source<R>(
-        &mut self,
-        id: TextId,
-        f: impl FnOnce(&mut Text) -> R,
-    ) -> Option<R> {
-        self.model_mut().graphics_mut().texts.get_mut(id.0).map(f)
-    }
-}
+crate::capability::stored_in!(Text, TextId, texts);
 
 pub(crate) fn insert_text<M: Model2d>(
     scene: &mut motiongfx_authoring::Scene<M>,
@@ -174,49 +159,27 @@ pub(crate) fn insert_text<M: Model2d>(
 }
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
-crate::properties::fields!(fields, Text, TextId;
-content: Arc<str> => discrete(Text.content);
-font_size: f64 => new(Text.font_size);
-font_family: Arc<str> => discrete(Text.font_family);
-font_weight: FontWeight => new(Text.font_weight);
-font_style: FontStyle => discrete(Text.font_style);
-line_height: f64 => new(Text.line_height);
-letter_spacing: f64 => new(Text.letter_spacing);
-tabular_numbers: bool => discrete(Text.tabular_numbers);
-wrap_width: f64 => new(Text.wrap_width);
-fill: Color => new(Text.fill);
-opacity: f64 => new(Text.opacity);
-scale: f64 => new(Text.scale);
-rotation: f64 => new(Text.rotation);
-align: TextAlign => discrete(Text.align);
-position: Point => new(Text.position);
-position_x: f64 => new(Text.position.x);
-position_y: f64 => new(Text.position.y);
+crate::properties::object!(Text, TextHandle, TextId;
+set content: Arc<str> => discrete(Text.content);
+set position: Point => new(Text.position);
+set scale: f64 => new(Text.scale);
+set rotation: f64 => new(Text.rotation);
+set font_size: f64 => new(Text.font_size);
+set font_family: Arc<str> => discrete(Text.font_family);
+set font_weight: FontWeight => new(Text.font_weight);
+set font_style: FontStyle => discrete(Text.font_style);
+set line_height: f64 => new(Text.line_height);
+set letter_spacing: f64 => new(Text.letter_spacing);
+set tabular_numbers: bool => discrete(Text.tabular_numbers);
+set wrap_width: f64 => new(Text.wrap_width);
+set fill: Color => new(Text.fill);
+set opacity: f64 => new(Text.opacity);
+set align: TextAlign => discrete(Text.align);
+get position_x: f64 => new(Text.position.x);
+get position_y: f64 => new(Text.position.y);
 );
-
-crate::properties::handle_methods!(TextHandle,Text,TextId;
-content: Arc<str>;
-font_size: f64;
-font_family: Arc<str>;
-font_weight: FontWeight;
-font_style: FontStyle;
-line_height: f64;
-letter_spacing: f64;
-tabular_numbers: bool;
-wrap_width: f64;
-fill: Color;
-opacity: f64;
-scale: f64;
-rotation: f64;
-align: TextAlign;
-position: Point;
-position_x: f64;
-position_y: f64;
-);
-
-crate::properties::transform_methods!(TextHandle, Text, TextId);
-
-crate::properties::fill_methods!(TextHandle, Text, TextId);
+crate::capability::handle_traits!(TextHandle => Text, TextId;
+    Transformable, Fillable, Fadable);
 
 impl TextHandle {
     /// Change the text instantly.

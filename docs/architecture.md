@@ -60,7 +60,13 @@ Implementation entry points:
 
 Authoring owns `Scene<M>`, `CompiledScene<M>`, and `World<M>`. World wraps an
 application-selected model with signal storage and sampled time. Model crates
-implement core `SubjectSource<ModelId, State> for World<M>` using their own IDs.
+implement `WorldObject<ModelId, M>` for each object type, using their own IDs;
+one blanket impl turns that into core's `SubjectSource` for `World<M>`.
+The 2D capability traits (`Transformable`, `Fillable`, `Strokable`,
+`Fadable`) require it of the objects they cover. A function taking
+`impl Transformable` can therefore call `.to(..)` on the object's fields
+without its own `where World<M>: SubjectSource<..>` clause: the trait already
+tells the compiler the scene can store that object.
 Shared code never enumerates graphics/3D types or invokes a renderer.
 
 The 2D convenience aliases specialise that lifecycle to `Graphics`. Local

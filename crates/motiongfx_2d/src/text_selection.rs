@@ -1,7 +1,7 @@
 //! Text selections: part of a text, found by content or byte range, whose
 //! colour and opacity can be animated on their own.
 use crate::*;
-use motiongfx::prelude::{SubjectSource, ThreadSafe, TrackFragment};
+use motiongfx::prelude::{ThreadSafe, TrackFragment};
 use motiongfx_authoring::{
     AnimationError, AnimationErrorKind, Field, Property,
     SceneContext, Step, Timing, lower_change,
@@ -335,27 +335,11 @@ where
         }
     }
 }
-impl<M: Model2d> SubjectSource<TextSelectionId, TextSelection>
-    for World<M>
-{
-    fn get_source(
-        &self,
-        id: TextSelectionId,
-    ) -> Option<&TextSelection> {
-        self.model().graphics().text_selections.get(id.0)
-    }
-    fn apply_source<R>(
-        &mut self,
-        id: TextSelectionId,
-        f: impl FnOnce(&mut TextSelection) -> R,
-    ) -> Option<R> {
-        self.model_mut()
-            .graphics_mut()
-            .text_selections
-            .get_mut(id.0)
-            .map(f)
-    }
-}
+crate::capability::stored_in!(
+    TextSelection,
+    TextSelectionId,
+    text_selections
+);
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
 crate::properties::fields!(fields, TextSelection, TextSelectionId;

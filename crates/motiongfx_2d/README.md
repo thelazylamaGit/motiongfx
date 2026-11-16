@@ -62,7 +62,14 @@ radius. Object handles expose typed getters: `position().to(point)`,
 `position().to_xy(x, y)`, `position_x().to(x)` and `position_y().to(y)`.
 `shift(dx, dy)`, `scale_by(factor)` and `rotate(radians)` are relative helpers
 using the action-start value. `fill_to(color)` is an animated convenience;
-`set_fill(color)` is an immediate scheduled change.
+`set_fill(color)` is an immediate scheduled change. These come from the
+capability traits in the prelude: `Transformable` (position, scale, rotation),
+`Fillable`, `Strokable` and `Fadable` (opacity). Each object's handle
+implements the ones it has, so a helper such as
+`fn rise_in(o: impl Transformable + Fadable) -> Animation` works for any
+shape or text. Each object type declares its fields once, with
+`properties::object!`, which generates its builder setters, field markers and
+handle getters.
 Whole-position and per-axis changes on the same object write overlapping
 fields, so running them at the same time is a `compile` error (as is any
 overlap on one property); separate axes are independent.

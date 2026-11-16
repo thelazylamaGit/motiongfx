@@ -23,8 +23,9 @@ model; it has not yet been adapted to these portable 2D objects.
 
 `Scene<M>` and `CompiledScene<M>` own the one authoring/sampling implementation.
 `World<M>` contains the chosen model, scene-local signal storage and sampled
-time. Model-owned typed IDs permit adapters to implement the core
-`SubjectSource<ModelId, State> for World<M>` across crate boundaries.
+time. Model-owned typed IDs permit adapters to implement
+`WorldObject<ModelId, M>` for their object types across crate boundaries;
+authoring's blanket impl provides the core `SubjectSource` from it.
 A composite model contains multiple stores and supplies their accessors.
 No per-sample type map chooses the store.
 

@@ -60,9 +60,8 @@ impl std::error::Error for SceneError {
 /// Everything a scene animates: the model `M` (its objects), the current
 /// signal values and the sample time.
 ///
-/// A model makes its objects animatable by implementing core's
-/// `SubjectSource<Id, Object> for World<M>` for each object type, with its
-/// own ID types.
+/// A model makes its objects animatable by implementing [`WorldObject`]
+/// for each object type, with its own ID types.
 pub struct World<M> {
     model: M,
     signals: SignalValues,
@@ -95,16 +94,40 @@ impl<M> SignalWorld for World<M> {
         &mut self.signals
     }
 }
-impl<M, T: ThreadSafe> SubjectSource<SignalId, T> for World<M> {
-    fn get_source(&self, id: SignalId) -> Option<&T> {
-        self.signals.get(id)
+/// An object type stored in a [`World<M>`] under IDs of type `I`, such as
+/// a 2D model's circles under `CircleId`. Implementing it makes the type
+/// animatable in every world with that model.
+///
+/// It replaces implementing core's `SubjectSource<I, Self>` for
+/// `World<M>` directly: as a bound on the object type, it can be required
+/// by traits, so generic code over "any object with a position" can
+/// animate that position without repeating world bounds.
+pub trait WorldObject<I, M>: Sized + 'static {
+    /// The object `id`, if `world` has it.
+    fn get(world: &World<M>, id: I) -> Option<&Self>;
+    /// The object `id`, mutably, if `world` has it.
+    fn get_mut(world: &mut World<M>, id: I) -> Option<&mut Self>;
+}
+impl<M, I: SubjectId, S: WorldObject<I, M>> SubjectSource<I, S>
+    for World<M>
+{
+    fn get_source(&self, id: I) -> Option<&S> {
+        S::get(self, id)
     }
     fn apply_source<R>(
         &mut self,
-        id: SignalId,
-        f: impl FnOnce(&mut T) -> R,
+        id: I,
+        f: impl FnOnce(&mut S) -> R,
     ) -> Option<R> {
-        self.signals.apply(id, f)
+        S::get_mut(self, id).map(f)
+    }
+}
+impl<M, T: ThreadSafe> WorldObject<SignalId, M> for T {
+    fn get(world: &World<M>, id: SignalId) -> Option<&T> {
+        world.signals.get(id)
+    }
+    fn get_mut(world: &mut World<M>, id: SignalId) -> Option<&mut T> {
+        world.signals.get_mut(id)
     }
 }
 

@@ -2,7 +2,6 @@
 
 use crate::tips::EndpointTip;
 use crate::{Color, DrawObject, Point, SceneObject};
-use motiongfx::prelude::SubjectSource;
 use std::sync::Arc;
 
 /// A straight line between two points. Create one with [`Line::new`];
@@ -72,11 +71,6 @@ impl Line {
         .end(end)
     }
 }
-crate::object::properties!(Line;
-    start: Point, end: Point, opacity: f64, stroke_width: f64, reveal: f64,
-    line_dash: Arc<[f64]>, dash_offset: f64, start_offset: f64, end_offset: f64,
-
-);
 crate::object::stroke!(Line);
 crate::object::stroke_options!(Line);
 
@@ -119,57 +113,28 @@ impl<M: crate::Model2d> SceneObject<M> for Line {
         LineHandle { id }
     }
 }
-impl<M: crate::Model2d> SubjectSource<LineId, Line>
-    for motiongfx_authoring::World<M>
-{
-    fn get_source(&self, id: LineId) -> Option<&Line> {
-        self.model().graphics().lines.get(id.0)
-    }
-    fn apply_source<R>(
-        &mut self,
-        id: LineId,
-        f: impl FnOnce(&mut Line) -> R,
-    ) -> Option<R> {
-        self.model_mut().graphics_mut().lines.get_mut(id.0).map(f)
-    }
-}
+crate::capability::stored_in!(Line, LineId, lines);
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
-crate::properties::fields!(fields, Line, LineId;
-stroke: Color => new(Line.stroke);
-stroke_width: f64 => new(Line.stroke_width);
-line_cap: crate::Cap => discrete(Line.line_cap);
-line_join: crate::Join => discrete(Line.line_join);
-opacity: f64 => new(Line.opacity);
-reveal: f64 => new(Line.reveal);
-line_dash: Arc<[f64]> => discrete(Line.line_dash);
-dash_offset: f64 => new(Line.dash_offset);
-start_offset: f64 => new(Line.start_offset);
-end_offset: f64 => new(Line.end_offset);
-start: Point => new(Line.start);
-start_x: f64 => new(Line.start.x);
-start_y: f64 => new(Line.start.y);
-end: Point => new(Line.end);
-end_x: f64 => new(Line.end.x);
-end_y: f64 => new(Line.end.y);
+crate::properties::object!(Line, LineHandle, LineId;
+also impl<S, E> crate::LineTipHandle<S, E> => line;
+set start: Point => new(Line.start);
+set end: Point => new(Line.end);
+set opacity: f64 => new(Line.opacity);
+get stroke: Color => new(Line.stroke);
+set stroke_width: f64 => new(Line.stroke_width);
+get line_cap: crate::Cap => discrete(Line.line_cap);
+get line_join: crate::Join => discrete(Line.line_join);
+set reveal: f64 => new(Line.reveal);
+set line_dash: Arc<[f64]> => discrete(Line.line_dash);
+set dash_offset: f64 => new(Line.dash_offset);
+set start_offset: f64 => new(Line.start_offset);
+set end_offset: f64 => new(Line.end_offset);
+get start_x: f64 => new(Line.start.x);
+get start_y: f64 => new(Line.start.y);
+get end_x: f64 => new(Line.end.x);
+get end_y: f64 => new(Line.end.y);
 );
-
-crate::properties::handle_methods!(LineHandle,Line,LineId;
-also impl<S, E> crate::LineTipHandle<S, E> => line.id;
-stroke: Color;
-stroke_width: f64;
-line_cap: crate::Cap;
-line_join: crate::Join;
-opacity: f64;
-reveal: f64;
-line_dash: Arc<[f64]>;
-dash_offset: f64;
-start_offset: f64;
-end_offset: f64;
-start: Point;
-start_x: f64;
-start_y: f64;
-end: Point;
-end_x: f64;
-end_y: f64;
-);
+crate::capability::handle_traits!(LineHandle => Line, LineId; Strokable, Fadable);
+crate::capability::handle_traits!(impl [S: Copy, E: Copy] crate::LineTipHandle<S, E> => Line, LineId,
+    id: line.id; Strokable, Fadable);

@@ -1,8 +1,7 @@
 //! [`Chevron`]: an open arrowhead outline.
 use crate::rounded_triangle::Geometry;
-use crate::{Color, DrawObject, Object, Point, SceneObject, World};
+use crate::{Color, DrawObject, Object, Point, SceneObject};
 use kurbo::Affine;
-use motiongfx::prelude::SubjectSource;
 
 crate::wedge::wedge!(
     Chevron,
@@ -30,42 +29,20 @@ impl Chevron {
 }
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
-crate::properties::fields!(fields, Chevron, ChevronId;
-position: Point => new(Chevron.position);
-position_x: f64 => new(Chevron.position.x);
-position_y: f64 => new(Chevron.position.y);
-size: f64 => new(Chevron.size);
-angle: f64 => new(Chevron.angle);
-rotation: f64 => new(Chevron.rotation);
-scale: f64 => new(Chevron.scale);
-opacity: f64 => new(Chevron.opacity);
-stroke_width: f64 => new(Chevron.stroke_width);
-fill: Color => new(Chevron.fill);
-stroke: Color => new(Chevron.stroke);
-line_cap: crate::Cap => discrete(Chevron.line_cap);
-line_join: crate::Join => discrete(Chevron.line_join);
+crate::properties::object!(Chevron, ChevronHandle, ChevronId;
+set size: f64 => new(Chevron.size);
+set angle: f64 => new(Chevron.angle);
+set position: Point => new(Chevron.position);
+set rotation: f64 => new(Chevron.rotation);
+set scale: f64 => new(Chevron.scale);
+set opacity: f64 => new(Chevron.opacity);
+set fill: Color => new(Chevron.fill);
+get stroke: Color => new(Chevron.stroke);
+set stroke_width: f64 => new(Chevron.stroke_width);
+get line_cap: crate::Cap => discrete(Chevron.line_cap);
+get line_join: crate::Join => discrete(Chevron.line_join);
+get position_x: f64 => new(Chevron.position.x);
+get position_y: f64 => new(Chevron.position.y);
 );
-
-crate::properties::handle_methods!(ChevronHandle,Chevron,ChevronId;
-position: Point;
-position_x: f64;
-position_y: f64;
-size: f64;
-angle: f64;
-rotation: f64;
-scale: f64;
-opacity: f64;
-stroke_width: f64;
-fill: Color;
-stroke: Color;
-line_cap: crate::Cap;
-line_join: crate::Join;
-);
-
-crate::properties::transform_methods!(
-    ChevronHandle,
-    Chevron,
-    ChevronId
-);
-
-crate::properties::fill_methods!(ChevronHandle, Chevron, ChevronId);
+crate::capability::handle_traits!(ChevronHandle => Chevron, ChevronId;
+    Transformable, Fillable, Strokable, Fadable);

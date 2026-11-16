@@ -77,27 +77,6 @@ where
         self.0.insert_into(scene)
     }
 }
-// One builder setter per field. Each takes a fixed value or a source.
-macro_rules! properties {
-    ($state:ident; $($field:ident: $value:ty),* $(,)?;
-        style $style:ident { $($styled:ident: $style_value:ty),* $(,)? }) => {
-        crate::object::properties!($state;
-            $($field: $value,)* $($styled: $style_value,)*
-        );
-        crate::style::partial_style!($state, $style; $($styled: $style_value,)*);
-    };
-    ($state:ident; $($field:ident: $value:ty),* $(,)?) => {
-        impl<M:crate::Model2d> crate::Object<$state,M> {
-            $(
-            #[doc = concat!("Set `", stringify!($field), "`: a fixed value, or a signal, computed value or property for it to follow.")]
-            pub fn $field(self, value: impl Into<crate::Input<$value,M>>) -> Self {
-                self.property(value, motiongfx::path!($state.$field), |handle| handle.$field().into())
-            })*
-        }
-    };
-}
-pub(crate) use properties;
-
 macro_rules! stroke {
     ($state:ident) => {
         impl<M: crate::Model2d> crate::Object<$state, M> {

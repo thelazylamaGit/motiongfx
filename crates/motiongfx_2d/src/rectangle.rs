@@ -1,6 +1,5 @@
 //! [`Rectangle`]: rectangles, optionally with rounded corners.
 use crate::*;
-use motiongfx::prelude::SubjectSource;
 /// A rectangle centred on its position. Create one with [`Rectangle::new`].
 /// Scale changes its size but not its stroke width.
 #[derive(Clone)]
@@ -69,10 +68,6 @@ impl Rectangle {
     }
 }
 
-crate::object::properties!(Rectangle;
-    size: Size, position: Point, fill: Color, opacity: f64, radius: f64,
-    scale: f64, rotation: f64, stroke_width: f64,
-);
 crate::object::stroke!(Rectangle);
 crate::object::stroke_options!(Rectangle);
 
@@ -89,22 +84,7 @@ pub struct RectangleHandle {
     pub(crate) id: RectangleId,
 }
 
-impl<M: Model2d> SubjectSource<RectangleId, Rectangle> for World<M> {
-    fn get_source(&self, id: RectangleId) -> Option<&Rectangle> {
-        self.model().graphics().rectangles.get(id.0)
-    }
-    fn apply_source<R>(
-        &mut self,
-        id: RectangleId,
-        f: impl FnOnce(&mut Rectangle) -> R,
-    ) -> Option<R> {
-        self.model_mut()
-            .graphics_mut()
-            .rectangles
-            .get_mut(id.0)
-            .map(f)
-    }
-}
+crate::capability::stored_in!(Rectangle, RectangleId, rectangles);
 
 fn insert_rectangle<M: Model2d>(
     scene: &mut motiongfx_authoring::Scene<M>,
@@ -145,46 +125,20 @@ impl<M: Model2d> SceneObject<M> for Rectangle {
 }
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
-crate::properties::fields!(fields, Rectangle, RectangleId;
-fill: Color => new(Rectangle.fill);
-opacity: f64 => new(Rectangle.opacity);
-scale: f64 => new(Rectangle.scale);
-rotation: f64 => new(Rectangle.rotation);
-size: Size => new(Rectangle.size);
-radius: f64 => new(Rectangle.radius);
-stroke: Color => new(Rectangle.stroke);
-stroke_width: f64 => new(Rectangle.stroke_width);
-line_cap: crate::Cap => discrete(Rectangle.line_cap);
-line_join: crate::Join => discrete(Rectangle.line_join);
-position: Point => new(Rectangle.position);
-position_x: f64 => new(Rectangle.position.x);
-position_y: f64 => new(Rectangle.position.y);
+crate::properties::object!(Rectangle, RectangleHandle, RectangleId;
+set size: Size => new(Rectangle.size);
+set position: Point => new(Rectangle.position);
+set fill: Color => new(Rectangle.fill);
+set opacity: f64 => new(Rectangle.opacity);
+set radius: f64 => new(Rectangle.radius);
+set scale: f64 => new(Rectangle.scale);
+set rotation: f64 => new(Rectangle.rotation);
+get stroke: Color => new(Rectangle.stroke);
+set stroke_width: f64 => new(Rectangle.stroke_width);
+get line_cap: crate::Cap => discrete(Rectangle.line_cap);
+get line_join: crate::Join => discrete(Rectangle.line_join);
+get position_x: f64 => new(Rectangle.position.x);
+get position_y: f64 => new(Rectangle.position.y);
 );
-
-crate::properties::handle_methods!(RectangleHandle,Rectangle,RectangleId;
-fill: Color;
-opacity: f64;
-scale: f64;
-rotation: f64;
-size: Size;
-radius: f64;
-stroke: Color;
-stroke_width: f64;
-line_cap: crate::Cap;
-line_join: crate::Join;
-position: Point;
-position_x: f64;
-position_y: f64;
-);
-
-crate::properties::transform_methods!(
-    RectangleHandle,
-    Rectangle,
-    RectangleId
-);
-
-crate::properties::fill_methods!(
-    RectangleHandle,
-    Rectangle,
-    RectangleId
-);
+crate::capability::handle_traits!(RectangleHandle => Rectangle, RectangleId;
+    Transformable, Fillable, Strokable, Fadable);

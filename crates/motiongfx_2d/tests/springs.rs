@@ -1,8 +1,8 @@
 use motiongfx::prelude::{ms, s};
 use motiongfx_2d::{
     Animation, AnimationError, AnimationErrorKind, Circle, Color,
-    CompiledScene2dExt, Point, Scene, SceneError, Spring, Text, all,
-    signal, wait,
+    CompiledScene2dExt, Fillable, Point, Scene, SceneError, Spring,
+    Text, Transformable, all, signal, wait,
 };
 
 #[test]

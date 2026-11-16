@@ -1,8 +1,7 @@
 //! [`Triangle`]: a filled arrowhead, optionally with rounded corners.
 use crate::rounded_triangle::{self, Geometry};
-use crate::{Color, DrawObject, Object, Point, SceneObject, World};
+use crate::{Color, DrawObject, Object, Point, SceneObject};
 use kurbo::Affine;
-use motiongfx::prelude::SubjectSource;
 
 crate::wedge::wedge!(Triangle, TriangleHandle, TriangleId, triangles, triangle, true, radius => triangle_geometry);
 
@@ -15,48 +14,21 @@ impl Triangle {
 }
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
-crate::properties::fields!(fields, Triangle, TriangleId;
-position: Point => new(Triangle.position);
-position_x: f64 => new(Triangle.position.x);
-position_y: f64 => new(Triangle.position.y);
-size: f64 => new(Triangle.size);
-angle: f64 => new(Triangle.angle);
-radius: f64 => new(Triangle.radius);
-rotation: f64 => new(Triangle.rotation);
-scale: f64 => new(Triangle.scale);
-opacity: f64 => new(Triangle.opacity);
-stroke_width: f64 => new(Triangle.stroke_width);
-fill: Color => new(Triangle.fill);
-stroke: Color => new(Triangle.stroke);
-line_cap: crate::Cap => discrete(Triangle.line_cap);
-line_join: crate::Join => discrete(Triangle.line_join);
+crate::properties::object!(Triangle, TriangleHandle, TriangleId;
+set size: f64 => new(Triangle.size);
+set angle: f64 => new(Triangle.angle);
+set radius: f64 => new(Triangle.radius);
+set position: Point => new(Triangle.position);
+set rotation: f64 => new(Triangle.rotation);
+set scale: f64 => new(Triangle.scale);
+set opacity: f64 => new(Triangle.opacity);
+set fill: Color => new(Triangle.fill);
+get stroke: Color => new(Triangle.stroke);
+set stroke_width: f64 => new(Triangle.stroke_width);
+get line_cap: crate::Cap => discrete(Triangle.line_cap);
+get line_join: crate::Join => discrete(Triangle.line_join);
+get position_x: f64 => new(Triangle.position.x);
+get position_y: f64 => new(Triangle.position.y);
 );
-
-crate::properties::handle_methods!(TriangleHandle,Triangle,TriangleId;
-position: Point;
-position_x: f64;
-position_y: f64;
-size: f64;
-angle: f64;
-radius: f64;
-rotation: f64;
-scale: f64;
-opacity: f64;
-stroke_width: f64;
-fill: Color;
-stroke: Color;
-line_cap: crate::Cap;
-line_join: crate::Join;
-);
-
-crate::properties::transform_methods!(
-    TriangleHandle,
-    Triangle,
-    TriangleId
-);
-
-crate::properties::fill_methods!(
-    TriangleHandle,
-    Triangle,
-    TriangleId
-);
+crate::capability::handle_traits!(TriangleHandle => Triangle, TriangleId;
+    Transformable, Fillable, Strokable, Fadable);

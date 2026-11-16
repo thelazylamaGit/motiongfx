@@ -2,7 +2,6 @@
 
 use crate::{Color, DrawObject, Parent, Point, SceneObject};
 use kurbo::Affine;
-use motiongfx::prelude::SubjectSource;
 
 /// A circle. Create one with [`Circle::new`]; for a ring, use a
 /// transparent fill and a stroke. Scale also scales the stroke and any
@@ -55,10 +54,6 @@ impl Circle {
     }
 }
 
-crate::object::properties!(Circle;
-    position: Point, radius: f64, fill: Color, opacity: f64,
-    scale: f64, rotation: f64, stroke_width: f64,
-);
 crate::object::stroke!(Circle);
 impl<M: crate::Model2d> crate::Object<Circle, M> {
     /// Attach to a rectangle or circle already in the scene: `position`
@@ -128,48 +123,20 @@ impl Circle {
     }
 }
 
-impl<M: crate::Model2d> SubjectSource<CircleId, Circle>
-    for motiongfx_authoring::World<M>
-{
-    fn get_source(&self, id: CircleId) -> Option<&Circle> {
-        self.model().graphics().circles.get(id.0)
-    }
-    fn apply_source<R>(
-        &mut self,
-        id: CircleId,
-        f: impl FnOnce(&mut Circle) -> R,
-    ) -> Option<R> {
-        self.model_mut().graphics_mut().circles.get_mut(id.0).map(f)
-    }
-}
+crate::capability::stored_in!(Circle, CircleId, circles);
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
-crate::properties::fields!(fields, Circle, CircleId;
-radius: f64 => new(Circle.radius);
-fill: Color => new(Circle.fill);
-stroke: Color => new(Circle.stroke);
-stroke_width: f64 => new(Circle.stroke_width);
-opacity: f64 => new(Circle.opacity);
-scale: f64 => new(Circle.scale);
-rotation: f64 => new(Circle.rotation);
-position: Point => new(Circle.position);
-position_x: f64 => new(Circle.position.x);
-position_y: f64 => new(Circle.position.y);
+crate::properties::object!(Circle, CircleHandle, CircleId;
+set radius: f64 => new(Circle.radius);
+set fill: Color => new(Circle.fill);
+get stroke: Color => new(Circle.stroke);
+set stroke_width: f64 => new(Circle.stroke_width);
+set opacity: f64 => new(Circle.opacity);
+set scale: f64 => new(Circle.scale);
+set rotation: f64 => new(Circle.rotation);
+set position: Point => new(Circle.position);
+get position_x: f64 => new(Circle.position.x);
+get position_y: f64 => new(Circle.position.y);
 );
-
-crate::properties::handle_methods!(CircleHandle,Circle,CircleId;
-radius: f64;
-fill: Color;
-stroke: Color;
-stroke_width: f64;
-opacity: f64;
-scale: f64;
-rotation: f64;
-position: Point;
-position_x: f64;
-position_y: f64;
-);
-
-crate::properties::transform_methods!(CircleHandle, Circle, CircleId);
-
-crate::properties::fill_methods!(CircleHandle, Circle, CircleId);
+crate::capability::handle_traits!(CircleHandle => Circle, CircleId;
+    Transformable, Fillable, Strokable, Fadable);
