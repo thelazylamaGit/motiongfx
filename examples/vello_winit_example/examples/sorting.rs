@@ -23,8 +23,8 @@
 
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
-    Animation, Color, CompiledScene, Fillable, Rectangle,
-    RectangleHandle, Scene, Text, all, any, chain,
+    Animation, Color, CompiledScene, Handle, Rectangle, Scene, Text,
+    all, any, chain,
     colors::{WHITE, hsl},
     wait,
 };
@@ -187,7 +187,7 @@ fn bar_color(value: usize) -> Color {
 /// Both slices list bar values by slot. Returns `None` when nothing moved,
 /// such as after a comparison that didn't swap.
 fn move_bars(
-    bars: &[RectangleHandle],
+    bars: &[Handle<Rectangle>],
     from: &[usize],
     to: &[usize],
     duration: Duration,
@@ -238,7 +238,7 @@ fn build_animation() -> CompiledScene {
         start_slot[value] = slot;
     }
     // `bars[value]` is the bar showing `value`, wherever it is on screen.
-    let bars: Vec<RectangleHandle> = start_slot
+    let bars: Vec<Handle<Rectangle>> = start_slot
         .iter()
         .enumerate()
         .map(|(value, &slot)| {

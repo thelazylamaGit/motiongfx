@@ -108,7 +108,7 @@ impl TextSelectionHandle {
         self.fill().set(color)
     }
 }
-impl TextHandle {
+impl Handle<Text> {
     /// The first occurrence of `needle` in the text's starting content.
     #[track_caller]
     pub fn select(self, needle: &str) -> TextSelectionHandle {

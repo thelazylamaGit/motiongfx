@@ -1,5 +1,6 @@
 //! [`Camera`]: the scene's view, which can pan, zoom, turn and follow.
 
+use crate::Handle;
 use crate::{Canvas, Parent, Point};
 use kurbo::Affine;
 
@@ -75,22 +76,15 @@ impl Camera {
 )]
 pub struct CameraId;
 
-/// The scene's camera, from `scene.add(Camera::new())`. Its methods return
-/// fields to animate.
-#[derive(Clone, Copy, Debug)]
-pub struct CameraHandle {
-    pub(crate) id: CameraId,
-}
-
-pub(crate) fn camera_handle() -> CameraHandle {
-    CameraHandle { id: CameraId }
+pub(crate) fn camera_handle() -> Handle<Camera> {
+    Handle::new(CameraId)
 }
 impl<M: crate::Model2d> crate::SceneObject<M> for Camera {
-    type Handle = CameraHandle;
+    type Handle = Handle<Camera>;
     fn insert_into(
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
-    ) -> CameraHandle {
+    ) -> Handle<Camera> {
         scene.model_mut().canvas_mut().camera = self;
         camera_handle()
     }
@@ -119,11 +113,11 @@ impl<M: crate::Model2d> motiongfx_authoring::WorldObject<CameraId, M>
 }
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
-crate::properties::object!(Camera, CameraHandle, CameraId;
-set position: Point => new(Camera.position);
-set scale: f64 => new(Camera.scale);
-set rotation: f64 => new(Camera.rotation);
-get position_x: f64 => new(Camera.position.x);
-get position_y: f64 => new(Camera.position.y);
+crate::properties::object!(Camera, CameraId;
+set position: Point => new(Camera.position) shared;
+set scale: f64 => new(Camera.scale) shared;
+set rotation: f64 => new(Camera.rotation) shared;
+get position_x: f64 => new(Camera.position.x) shared;
+get position_y: f64 => new(Camera.position.y) shared;
 );
-crate::capability::handle_traits!(CameraHandle => Camera, CameraId; Transformable);
+crate::capability::capabilities!(Camera; Transformable);

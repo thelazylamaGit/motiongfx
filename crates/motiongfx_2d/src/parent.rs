@@ -2,7 +2,7 @@
 //! turning and scaling with it.
 
 use crate::{
-    Canvas, CircleHandle, CircleId, RectangleHandle, RectangleId,
+    Canvas, Circle, CircleId, Handle, Rectangle, RectangleId,
 };
 use kurbo::Affine;
 
@@ -16,13 +16,13 @@ pub enum Parent {
     Circle(CircleId),
 }
 
-impl From<RectangleHandle> for Parent {
-    fn from(handle: RectangleHandle) -> Self {
+impl From<Handle<Rectangle>> for Parent {
+    fn from(handle: Handle<Rectangle>) -> Self {
         Self::Rectangle(handle.id)
     }
 }
-impl From<CircleHandle> for Parent {
-    fn from(handle: CircleHandle) -> Self {
+impl From<Handle<Circle>> for Parent {
+    fn from(handle: Handle<Circle>) -> Self {
         Self::Circle(handle.id)
     }
 }

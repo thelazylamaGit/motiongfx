@@ -4,7 +4,9 @@ Objects, styles, geometry, attachments, and 2D camera semantics live here. This
 crate depends on Kurbo/Peniko directly, not Vello, Winit, or a GPU. The
 `Scene` and `CompiledScene` names are convenience aliases for the shared
 `motiongfx_authoring::Scene<Canvas>` / `CompiledScene<Canvas>` lifecycle.
-Import `motiongfx_2d::prelude::*` for objects and the capability traits.
+Import `motiongfx_2d::prelude::*` for the common types. `scene.add` returns
+a typed `Handle<T>`, such as `Handle<Circle>`, whose methods are all plain
+methods, so none need a trait import.
 After sampling, `compiled.get(handle)` returns that object's state, such as a
 `&Circle` for a circle's handle.
 The portable model makes no claim that every renderer already supports it.
@@ -63,12 +65,15 @@ radius. Object handles expose typed getters: `position().to(point)`,
 `position().to_xy(x, y)`, `position_x().to(x)` and `position_y().to(y)`.
 `shift(dx, dy)`, `scale_by(factor)` and `rotate(radians)` are relative helpers
 using the action-start value. `fill_to(color)` is an animated convenience;
-`set_fill(color)` is an immediate scheduled change. These come from the
-capability traits in the prelude: `Transformable` (position, scale, rotation),
-`Fillable`, `Strokable` and `Fadable` (opacity). Each object's handle
-implements the ones it has, so a helper such as
-`fn rise_in(o: impl Transformable + Fadable) -> Animation` works for any
-shape or text. Each object type declares its fields once, with
+`set_fill(color)` is an immediate scheduled change. Which methods a handle
+has follows from its object's capability traits: `Transformable` (position,
+scale, rotation), `Fillable`, `Strokable` and `Fadable` (opacity), each
+implemented by the object types that have those fields, with one
+`impl<T: Transformable> Handle<T>` block (and so on) supplying the methods.
+Generic code names the traits as bounds, so
+`fn rise_in<T: Transformable + Fadable>(o: Handle<T>) -> Animation` works for
+any shape or text. A tipped line's handle holds the line's `Handle<Line>` and
+each tip's as public fields (`arrow.line`, `arrow.end_tip`). Each object type declares its fields once, with
 `properties::object!`, which generates its builder setters, field markers and
 handle getters.
 Whole-position and per-axis changes on the same object write overlapping
@@ -383,10 +388,9 @@ let animation = scene.compile([
 boolean arrow flags and shared `arrow_size` have been replaced by this API.
 The returned handle retains the concrete tip types: a circle exposes `radius`,
 while triangles and chevrons expose `size` and `angle`. Triangle also exposes
-its independently animatable corner `radius`. Ordinary line fields
-remain accessible through the same handle. `CompiledScene::line` accepts either
-plain or tipped line handles; `circle`, `triangle`, and `chevron` access sampled
-tip state. Tipped lines and their shapes also work with direct updates.
+its independently animatable corner `radius`. The line's own fields are on its `line` field (`arrow.line.reveal()`), and
+`compiled.get(..)` reads the line from either a plain or tipped handle and
+each tip from its own handle. Tipped lines and their shapes also work with direct updates.
 
 `Triangle::new()` and `Chevron::new()` default to a 24-unit axial length and a
 pi/3 full opening angle. Their local apex is at the origin, pointing along +x;

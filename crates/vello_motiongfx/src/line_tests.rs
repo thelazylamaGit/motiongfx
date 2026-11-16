@@ -277,7 +277,7 @@ fn attached_shapes_retain_typed_reactive_properties_and_seek_independently()
         line.end_tip.angle().to(1.0).ease(ease::linear),
         line.end_tip.size().to(30.0).ease(ease::linear),
         line.end_tip.fill().to(colors::ORANGE).ease(ease::linear),
-        line.end().to_xy(0.0, 200.0).ease(ease::linear),
+        line.line.end().to_xy(0.0, 200.0).ease(ease::linear),
     ])]);
     for (time, r, size, angle, end) in [
         (500, 6.0, 25.0, 0.8, Point::new(50.0, 100.0)),

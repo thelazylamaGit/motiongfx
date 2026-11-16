@@ -77,6 +77,8 @@ impl Model2d for Canvas {
 mod background;
 mod camera;
 mod capability;
+mod handle;
+pub use handle::{Handle, Object2d};
 mod chevron;
 mod circle;
 pub mod colors;
@@ -96,18 +98,18 @@ mod text_selection;
 mod tips;
 mod triangle;
 mod updates;
-pub use camera::{Camera, CameraHandle, CameraId};
+pub use camera::{Camera, CameraId};
 pub use capability::{Fadable, Fillable, Strokable, Transformable};
-pub use chevron::{Chevron, ChevronHandle, ChevronId};
-pub use circle::{Circle, CircleHandle, CircleId};
+pub use chevron::{Chevron, ChevronId};
+pub use circle::{Circle, CircleId};
 pub use input::Input;
-pub use line::{Line, LineHandle, LineId};
+pub use line::{Line, LineId};
 pub use line_layout::{LineLayout, TipPlacement};
 pub use object::Object;
 pub use parent::Parent;
-pub use path::{BezPath, Path, PathHandle, PathId};
+pub use path::{BezPath, Path, PathId};
 pub use style::ApplyStyle;
-pub use text::{Text, TextAlign, TextHandle, TextId, TextStyle};
+pub use text::{Text, TextAlign, TextId, TextStyle};
 pub use text_selection::{
     SelectionProperty, SelectionTargetError, TextSelection,
     TextSelectionHandle, TextSelectionId,
@@ -115,7 +117,7 @@ pub use text_selection::{
 pub use tips::{
     EndpointTip, LineTip, LineTipHandle, LineWithTips, NoTip,
 };
-pub use triangle::{Triangle, TriangleHandle, TriangleId};
+pub use triangle::{Triangle, TriangleId};
 mod wedge;
 pub use rounded_triangle::Geometry;
 /// The types most 2D scenes use: `use motiongfx_2d::prelude::*;`.
@@ -123,14 +125,14 @@ pub mod prelude {
     pub use crate::{
         Animation, Camera, Cap, Chevron, Circle, Color,
         CompiledScene, Fadable, Fillable, FontStyle, FontWeight,
-        Join, Line, Model2d, Path, Point, Rectangle, Scene, Size,
-        Spring, Strokable, Text, TextAlign, TextStyle, Transformable,
-        Triangle, Vec2, all, any, chain, computed, flow, marker,
-        signal, wait,
+        Handle, Join, Line, Model2d, Path, Point, Rectangle, Scene,
+        Size, Spring, Strokable, Text, TextAlign, TextStyle,
+        Transformable, Triangle, Vec2, all, any, chain, computed,
+        flow, marker, signal, wait,
     };
 }
 
 mod canvas;
 mod rectangle;
 pub use canvas::{Canvas, DrawObject};
-pub use rectangle::{Rectangle, RectangleHandle, RectangleId};
+pub use rectangle::{Rectangle, RectangleId};

@@ -25,8 +25,8 @@ use criterion::{
 };
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
-    Circle, CircleHandle, Color, CompiledScene, Fillable, Scene,
-    Signal, Size, Spring, Transformable, all, flow, signal, wait,
+    Circle, Color, CompiledScene, Handle, Scene, Signal, Size,
+    Spring, all, flow, signal, wait,
 };
 use vello_motiongfx::Renderer;
 
@@ -37,7 +37,7 @@ const ORANGE: Color = Color::from_rgb8(255, 134, 47);
 
 struct Objects {
     scene: Scene,
-    circles: Vec<CircleHandle>,
+    circles: Vec<Handle<Circle>>,
     progress: Signal<f64>,
 }
 

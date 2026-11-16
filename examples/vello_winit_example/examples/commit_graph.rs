@@ -3,15 +3,15 @@
 
 use motiongfx::prelude::{ease, ms, s};
 use motiongfx_2d::{
-    Animation, Circle, CircleHandle, Color, Path, Scene, all,
+    Animation, Circle, Color, Handle, Path, Scene, all,
     colors::{MAUVE, PASTEL_BLUE, TRANSPARENT},
     flow, wait,
 };
 use vello_winit_motiongfx::Window;
 
 struct Commit {
-    dot: CircleHandle,
-    ring: CircleHandle,
+    dot: Handle<Circle>,
+    ring: Handle<Circle>,
 }
 
 impl Commit {

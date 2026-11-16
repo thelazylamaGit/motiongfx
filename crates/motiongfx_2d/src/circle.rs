@@ -1,4 +1,5 @@
 //! [`Circle`]: filled circles and, with a transparent fill, rings.
+use crate::Handle;
 
 use crate::{Color, DrawObject, Parent, Point, SceneObject};
 use kurbo::Affine;
@@ -77,21 +78,8 @@ impl CircleId {
     }
 }
 
-/// A [`Circle`] in a scene, returned by `scene.add`. Its
-/// methods return fields to animate or for other objects to follow.
-#[derive(Clone, Copy, Debug)]
-pub struct CircleHandle {
-    pub(crate) id: CircleId,
-}
-impl CircleHandle {
-    /// The object's ID.
-    pub fn id(self) -> CircleId {
-        self.id
-    }
-}
-
 impl<M: crate::Model2d> SceneObject<M> for Circle {
-    type Handle = CircleHandle;
+    type Handle = Handle<Circle>;
     fn insert_into(
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
@@ -104,7 +92,7 @@ impl Circle {
     pub(crate) fn insert<M: crate::Model2d>(
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
-    ) -> CircleHandle {
+    ) -> Handle<Circle> {
         let handle = self.insert_tip(scene);
         let graphics = scene.model_mut().canvas_mut();
         graphics.order.push(DrawObject::Circle(handle.id));
@@ -114,29 +102,26 @@ impl Circle {
     pub(crate) fn insert_tip<M: crate::Model2d>(
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
-    ) -> CircleHandle {
+    ) -> Handle<Circle> {
         let circles = &mut scene.model_mut().canvas_mut().circles;
         circles.push(self);
-        CircleHandle {
-            id: CircleId(circles.len() - 1),
-        }
+        Handle::new(CircleId(circles.len() - 1))
     }
 }
 
 crate::capability::stored_in!(Circle, CircleId, circles);
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
-crate::properties::object!(Circle, CircleHandle, CircleId;
+crate::properties::object!(Circle, CircleId;
 set radius: f64 => new(Circle.radius);
-set fill: Color => new(Circle.fill);
-get stroke: Color => new(Circle.stroke);
-set stroke_width: f64 => new(Circle.stroke_width);
-set opacity: f64 => new(Circle.opacity);
-set scale: f64 => new(Circle.scale);
-set rotation: f64 => new(Circle.rotation);
-set position: Point => new(Circle.position);
-get position_x: f64 => new(Circle.position.x);
-get position_y: f64 => new(Circle.position.y);
+set fill: Color => new(Circle.fill) shared;
+get stroke: Color => new(Circle.stroke) shared;
+set stroke_width: f64 => new(Circle.stroke_width) shared;
+set opacity: f64 => new(Circle.opacity) shared;
+set scale: f64 => new(Circle.scale) shared;
+set rotation: f64 => new(Circle.rotation) shared;
+set position: Point => new(Circle.position) shared;
+get position_x: f64 => new(Circle.position.x) shared;
+get position_y: f64 => new(Circle.position.y) shared;
 );
-crate::capability::handle_traits!(CircleHandle => Circle, CircleId;
-    Transformable, Fillable, Strokable, Fadable);
+crate::capability::capabilities!(Circle; Transformable, Fillable, Strokable, Fadable);

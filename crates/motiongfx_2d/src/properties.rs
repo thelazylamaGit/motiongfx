@@ -37,37 +37,36 @@ pub(crate) use fields;
 // as `position_x`. Doc comments on a `set` entry replace the setter's
 // default docs. `new` fields interpolate; `discrete` ones jump.
 //
-// `also impl<..> Type => path;` adds the same getters to a second handle
-// type that holds the ID at `self.path.id`, such as a line with tips.
+// A trailing `shared` marks a field whose handle getter comes from a
+// capability trait (`position` from `Transformable`, and so on), so no
+// separate getter is generated for it.
 macro_rules! object {
-    ($state:ident, $handle:ident, $id:ident;
-        also impl<$($generic:ident),*> $other:ty => $inner:ident;
-        $($(#[$attr:meta])* $kind:ident $name:ident: $value:ty => $method:ident($($path:tt)+);)*) => {
-        crate::properties::object!($state, $handle, $id;
-            $($(#[$attr])* $kind $name: $value => $method($($path)+);)*);
-        impl<$($generic),*> $other {
-            $(
-            #[doc = concat!("The line's `", stringify!($name), "`, to animate (`.to(..)`) or for other objects to follow.")]
-            pub fn $name(self) -> fields::$name::Target {
-                motiongfx_authoring::Target::new(self.$inner.id)
-            })*
-        }
-    };
-    ($state:ident, $handle:ident, $id:ident;
-        $($(#[$attr:meta])* $kind:ident $name:ident: $value:ty => $method:ident($($path:tt)+);)*) => {
+    ($state:ident, $id:ident;
+        $($(#[$attr:meta])* $kind:ident $name:ident: $value:ty => $method:ident($($path:tt)+) $($shared:ident)?;)*) => {
         crate::properties::fields!(fields, $state, $id;
             $($name: $value => $method($($path)+);)*);
         $(crate::properties::setter!($kind [$(#[$attr])*] $state $name: $value => ($($path)+));)*
-        impl $handle {
-            $(
-            #[doc = concat!("The object's `", stringify!($name), "`, to animate (`.to(..)`) or for other objects to follow.")]
-            pub fn $name(self) -> fields::$name::Target {
-                motiongfx_authoring::Target::new(self.id)
-            })*
+        $(crate::properties::getter!([$($shared)?] $state $name);)*
+        impl crate::Object2d for $state {
+            type Id = $id;
         }
     };
 }
 pub(crate) use object;
+
+// The handle getter for one `object!` entry; nothing for a `shared` one.
+macro_rules! getter {
+    ([shared] $($rest:tt)*) => {};
+    ([] $state:ident $name:ident) => {
+        impl crate::Handle<$state> {
+            #[doc = concat!("The object's `", stringify!($name), "`, to animate (`.to(..)`) or for other objects to follow.")]
+            pub fn $name(self) -> fields::$name::Target {
+                motiongfx_authoring::Target::new(self.id)
+            }
+        }
+    };
+}
+pub(crate) use getter;
 
 // One builder setter for a `set` entry of `object!`; nothing for `get`.
 macro_rules! setter {

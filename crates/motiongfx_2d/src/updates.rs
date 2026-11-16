@@ -139,34 +139,28 @@ macro_rules! update_handle {
     };
 }
 update_handle!(
-    RectangleHandle,
+    Handle<Rectangle>,
     Rectangle,
     rectangles,
     0,
-    |h: RectangleHandle| h.id.0
+    |h: Handle<Rectangle>| h.id.0
 );
-update_handle!(
-    CircleHandle,
+update_handle!(Handle<Circle>, Circle, circles, 1, |h: Handle<
     Circle,
-    circles,
-    1,
-    |h: CircleHandle| h.id.0
-);
-update_handle!(LineHandle, Line, lines, 2, |h: LineHandle| h.id.0);
+>| h.id.0);
+update_handle!(Handle<Line>, Line, lines, 2, |h: Handle<Line>| h
+    .id
+    .0);
 update_handle!(
-    TriangleHandle,
+    Handle<Triangle>,
     Triangle,
     triangles,
     6,
-    |h: TriangleHandle| h.id.0
+    |h: Handle<Triangle>| h.id.0
 );
-update_handle!(
-    ChevronHandle,
+update_handle!(Handle<Chevron>, Chevron, chevrons, 7, |h: Handle<
     Chevron,
-    chevrons,
-    7,
-    |h: ChevronHandle| h.id.0
-);
+>| h.id.0);
 
 impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe> UpdateHandle<Canvas>
     for LineTipHandle<S, E>
@@ -179,7 +173,7 @@ impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe> UpdateHandle<Canvas>
         batch: &mut <Canvas as UpdateStorage>::Batch<'a, N>,
         slot: usize,
     ) -> &'a mut Line {
-        LineHandle::take(batch, slot)
+        Handle::<Line>::take(batch, slot)
     }
 }
 impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe> UpdateTargets<Canvas>
@@ -200,9 +194,15 @@ impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe> UpdateTargets<Canvas>
         self.line.callback(source, update, world)
     }
 }
-update_handle!(PathHandle, Path, paths, 3, |h: PathHandle| h.id.0);
-update_handle!(TextHandle, Text, texts, 4, |h: TextHandle| h.id.0);
-update_handle!(CameraHandle, Camera, cameras, 5, |_: CameraHandle| 0);
+update_handle!(Handle<Path>, Path, paths, 3, |h: Handle<Path>| h
+    .id
+    .0);
+update_handle!(Handle<Text>, Text, texts, 4, |h: Handle<Text>| h
+    .id
+    .0);
+update_handle!(Handle<Camera>, Camera, cameras, 5, |_: Handle<
+    Camera,
+>| 0);
 
 impl UpdateStorage for Canvas {
     type Spec = ObjectSpec;

@@ -1,157 +1,182 @@
 //! Traits for what several kinds of objects share, such as a position or
-//! a fill, so one function can animate any object that has it.
-use crate::{Canvas, Color, Model2d, Point};
-use motiongfx_authoring::{Animation, Field, ObjectHandle, Target};
+//! a fill. A [`Handle`] to an object with one gets its methods, and
+//! generic code can require it of `T` in `Handle<T>`.
+use crate::{Canvas, Color, Handle, Model2d, Object2d, Point};
+use motiongfx_authoring::{Animation, Field, Target, WorldObject};
 
-/// The field of `H` identified by marker `F`.
-type FieldOf<H, M, T, F> = Target<
-    <H as ObjectHandle<M>>::Id,
-    <H as ObjectHandle<M>>::State,
-    T,
-    F,
->;
+/// The field of `T` identified by marker `F`.
+type FieldOf<T, V, F> = Target<<T as Object2d>::Id, T, V, F>;
 
-/// Objects with a position, scale and rotation: shapes, text and the
-/// camera.
+/// Objects with a position, scale and rotation: shapes, paths, text and
+/// the camera. Their handles have `position()`, `shift(..)`, `rotate(..)`
+/// and so on; see [`Handle`] for a generic example.
 ///
-/// # Examples
-///
-/// One function for any object that moves and fades:
-///
-/// ```
-/// use motiongfx::prelude::s;
-/// use motiongfx_2d::prelude::*;
-///
-/// fn rise_in(object: impl Transformable + Fadable) -> Animation {
-///     all([object.shift_y(20.0), object.opacity().to(1.0)])
-/// }
-///
-/// let mut scene = Scene::new();
-/// let dot = scene.add(Circle::new(10.0).opacity(0.0));
-/// let label = scene.add(Text::new("Hi").opacity(0.0));
-/// let mut animation = scene.compile([rise_in(dot), rise_in(label)]);
-/// animation.sample(s(5));
-/// assert_eq!(animation.get(dot).position, Point::new(0.0, 20.0));
-/// assert_eq!(animation.get(label).opacity, 1.0);
-/// ```
-pub trait Transformable<M: Model2d = Canvas>:
-    ObjectHandle<M>
+/// The `WorldObject` bound for [`Canvas`] lets generic code over
+/// `Handle<T>` animate these fields in ordinary 2D scenes; for a
+/// composite model `M`, also require `T: WorldObject<T::Id, M>`.
+pub trait Transformable:
+    Object2d + WorldObject<<Self as Object2d>::Id, Canvas>
 {
     /// Marker for the position field.
-    type Position: Field<Self::State, Point>;
+    type Position: Field<Self, Point>;
     /// Marker for the position's x.
-    type PositionX: Field<Self::State, f64>;
+    type PositionX: Field<Self, f64>;
     /// Marker for the position's y.
-    type PositionY: Field<Self::State, f64>;
+    type PositionY: Field<Self, f64>;
     /// Marker for the scale field.
-    type Scale: Field<Self::State, f64>;
+    type Scale: Field<Self, f64>;
     /// Marker for the rotation field.
-    type Rotation: Field<Self::State, f64>;
+    type Rotation: Field<Self, f64>;
+}
 
+/// Methods of every [`Transformable`] object's handle.
+impl<T: Transformable> Handle<T> {
     /// The position, in canvas units (y up).
-    fn position(self) -> FieldOf<Self, M, Point, Self::Position> {
-        Target::new(ObjectHandle::id(self))
+    pub fn position(self) -> FieldOf<T, Point, T::Position> {
+        Target::new(self.id)
     }
     /// The position's x.
-    fn position_x(self) -> FieldOf<Self, M, f64, Self::PositionX> {
-        Target::new(ObjectHandle::id(self))
+    pub fn position_x(self) -> FieldOf<T, f64, T::PositionX> {
+        Target::new(self.id)
     }
     /// The position's y (up is positive).
-    fn position_y(self) -> FieldOf<Self, M, f64, Self::PositionY> {
-        Target::new(ObjectHandle::id(self))
+    pub fn position_y(self) -> FieldOf<T, f64, T::PositionY> {
+        Target::new(self.id)
     }
     /// The uniform scale; 1 is normal size.
-    fn scale(self) -> FieldOf<Self, M, f64, Self::Scale> {
-        Target::new(ObjectHandle::id(self))
+    pub fn scale(self) -> FieldOf<T, f64, T::Scale> {
+        Target::new(self.id)
     }
     /// The rotation in radians, counterclockwise.
-    fn rotation(self) -> FieldOf<Self, M, f64, Self::Rotation> {
-        Target::new(ObjectHandle::id(self))
+    pub fn rotation(self) -> FieldOf<T, f64, T::Rotation> {
+        Target::new(self.id)
     }
     /// Move by `(x, y)` from wherever the object is when this starts.
     #[track_caller]
-    fn shift(self, x: f64, y: f64) -> Animation<M> {
-        Transformable::position(self).offset((x, y))
+    pub fn shift<M: Model2d>(self, x: f64, y: f64) -> Animation<M>
+    where
+        T: WorldObject<T::Id, M>,
+    {
+        self.position().offset((x, y))
     }
     /// Move horizontally by `x`.
     #[track_caller]
-    fn shift_x(self, x: f64) -> Animation<M> {
-        Transformable::position_x(self).offset(x)
+    pub fn shift_x<M: Model2d>(self, x: f64) -> Animation<M>
+    where
+        T: WorldObject<T::Id, M>,
+    {
+        self.position_x().offset(x)
     }
     /// Move vertically by `y` (up is positive).
     #[track_caller]
-    fn shift_y(self, y: f64) -> Animation<M> {
-        Transformable::position_y(self).offset(y)
+    pub fn shift_y<M: Model2d>(self, y: f64) -> Animation<M>
+    where
+        T: WorldObject<T::Id, M>,
+    {
+        self.position_y().offset(y)
     }
     /// Scale by `factor` relative to the current scale.
     #[track_caller]
-    fn scale_by(self, factor: f64) -> Animation<M> {
-        Transformable::scale(self).multiply(factor)
+    pub fn scale_by<M: Model2d>(self, factor: f64) -> Animation<M>
+    where
+        T: WorldObject<T::Id, M>,
+    {
+        self.scale().multiply(factor)
     }
     /// Rotate by `angle` radians, counterclockwise.
     #[track_caller]
-    fn rotate(self, angle: f64) -> Animation<M> {
-        Transformable::rotation(self).offset(angle)
+    pub fn rotate<M: Model2d>(self, angle: f64) -> Animation<M>
+    where
+        T: WorldObject<T::Id, M>,
+    {
+        self.rotation().offset(angle)
     }
 }
 
-/// Objects with a fill colour: closed shapes and text.
-pub trait Fillable<M: Model2d = Canvas>: ObjectHandle<M> {
+/// Objects with a fill colour: closed shapes and text. Their handles have
+/// `fill()`, `fill_to(..)` and `set_fill(..)`.
+pub trait Fillable:
+    Object2d + WorldObject<<Self as Object2d>::Id, Canvas>
+{
     /// Marker for the fill field.
-    type Fill: Field<Self::State, Color>;
+    type Fill: Field<Self, Color>;
+}
 
+/// Methods of every [`Fillable`] object's handle.
+impl<T: Fillable> Handle<T> {
     /// The fill colour.
-    fn fill(self) -> FieldOf<Self, M, Color, Self::Fill> {
-        Target::new(ObjectHandle::id(self))
+    pub fn fill(self) -> FieldOf<T, Color, T::Fill> {
+        Target::new(self.id)
     }
     /// Animate the fill colour to `color`.
     #[track_caller]
-    fn fill_to(self, color: impl Into<Color>) -> Animation<M> {
-        Fillable::fill(self).to(color)
+    pub fn fill_to<M: Model2d>(
+        self,
+        color: impl Into<Color>,
+    ) -> Animation<M>
+    where
+        T: WorldObject<T::Id, M>,
+    {
+        self.fill().to(color)
     }
     /// Change the fill colour instantly.
     #[track_caller]
-    fn set_fill(self, color: impl Into<Color>) -> Animation<M> {
-        Fillable::fill(self).set(color)
+    pub fn set_fill<M: Model2d>(
+        self,
+        color: impl Into<Color>,
+    ) -> Animation<M>
+    where
+        T: WorldObject<T::Id, M>,
+    {
+        self.fill().set(color)
     }
 }
 
-/// Objects with an outline: shapes, lines and paths.
-pub trait Strokable<M: Model2d = Canvas>: ObjectHandle<M> {
+/// Objects with an outline: shapes, lines and paths. Their handles have
+/// `stroke()` and `stroke_width()`.
+pub trait Strokable:
+    Object2d + WorldObject<<Self as Object2d>::Id, Canvas>
+{
     /// Marker for the stroke colour field.
-    type Stroke: Field<Self::State, Color>;
+    type Stroke: Field<Self, Color>;
     /// Marker for the stroke width field.
-    type StrokeWidth: Field<Self::State, f64>;
+    type StrokeWidth: Field<Self, f64>;
+}
 
+/// Methods of every [`Strokable`] object's handle.
+impl<T: Strokable> Handle<T> {
     /// The outline colour.
-    fn stroke(self) -> FieldOf<Self, M, Color, Self::Stroke> {
-        Target::new(ObjectHandle::id(self))
+    pub fn stroke(self) -> FieldOf<T, Color, T::Stroke> {
+        Target::new(self.id)
     }
     /// The outline width in canvas units.
-    fn stroke_width(
-        self,
-    ) -> FieldOf<Self, M, f64, Self::StrokeWidth> {
-        Target::new(ObjectHandle::id(self))
+    pub fn stroke_width(self) -> FieldOf<T, f64, T::StrokeWidth> {
+        Target::new(self.id)
     }
 }
 
-/// Objects that can fade: every drawn object.
-pub trait Fadable<M: Model2d = Canvas>: ObjectHandle<M> {
+/// Objects that can fade: every drawn object. Their handles have
+/// `opacity()`.
+pub trait Fadable:
+    Object2d + WorldObject<<Self as Object2d>::Id, Canvas>
+{
     /// Marker for the opacity field.
-    type Opacity: Field<Self::State, f64>;
+    type Opacity: Field<Self, f64>;
+}
 
+/// Methods of every [`Fadable`] object's handle.
+impl<T: Fadable> Handle<T> {
     /// 0 (invisible) to 1 (opaque).
-    fn opacity(self) -> FieldOf<Self, M, f64, Self::Opacity> {
-        Target::new(ObjectHandle::id(self))
+    pub fn opacity(self) -> FieldOf<T, f64, T::Opacity> {
+        Target::new(self.id)
     }
 }
 
-// Implements `ObjectHandle` and the listed traits for a handle type, using
-// the field markers that `object!` declared in the same module. `id` is
-// where the handle keeps its object ID.
-macro_rules! handle_traits {
-    (@ Transformable [$($generics:tt)*] $handle:ty) => {
-        impl<M: crate::Model2d, $($generics)*> crate::Transformable<M> for $handle {
+// Implements the listed traits for an object type, using the field
+// markers that `object!` declared in the same module.
+macro_rules! capabilities {
+    (@ Transformable $state:ty) => {
+        impl crate::Transformable for $state {
             type Position = fields::position::Marker;
             type PositionX = fields::position_x::Marker;
             type PositionY = fields::position_y::Marker;
@@ -159,44 +184,27 @@ macro_rules! handle_traits {
             type Rotation = fields::rotation::Marker;
         }
     };
-    (@ Fillable [$($generics:tt)*] $handle:ty) => {
-        impl<M: crate::Model2d, $($generics)*> crate::Fillable<M> for $handle {
+    (@ Fillable $state:ty) => {
+        impl crate::Fillable for $state {
             type Fill = fields::fill::Marker;
         }
     };
-    (@ Strokable [$($generics:tt)*] $handle:ty) => {
-        impl<M: crate::Model2d, $($generics)*> crate::Strokable<M> for $handle {
+    (@ Strokable $state:ty) => {
+        impl crate::Strokable for $state {
             type Stroke = fields::stroke::Marker;
             type StrokeWidth = fields::stroke_width::Marker;
         }
     };
-    (@ Fadable [$($generics:tt)*] $handle:ty) => {
-        impl<M: crate::Model2d, $($generics)*> crate::Fadable<M> for $handle {
+    (@ Fadable $state:ty) => {
+        impl crate::Fadable for $state {
             type Opacity = fields::opacity::Marker;
         }
     };
-    (@ ObjectHandle [$($generics:tt)*] $handle:ty => $state:ty, $id:ty,
-        $($field:ident).+) => {
-        impl<M: crate::Model2d, $($generics)*> motiongfx_authoring::ObjectHandle<M> for $handle {
-            type Id = $id;
-            type State = $state;
-            fn id(self) -> $id {
-                self.$($field).+
-            }
-        }
-    };
-    (impl $generics:tt $handle:ty => $state:ty, $id:ty, id: $($field:ident).+;
-        $($capability:ident),* $(,)?) => {
-        crate::capability::handle_traits!(@ ObjectHandle $generics $handle => $state, $id,
-            $($field).+);
-        $(crate::capability::handle_traits!(@ $capability $generics $handle);)*
-    };
-    ($handle:ty => $state:ty, $id:ty; $($capability:ident),* $(,)?) => {
-        crate::capability::handle_traits!(impl [] $handle => $state, $id, id: id;
-            $($capability),*);
+    ($state:ty; $($capability:ident),* $(,)?) => {
+        $(crate::capability::capabilities!(@ $capability $state);)*
     };
 }
-pub(crate) use handle_traits;
+pub(crate) use capabilities;
 
 // Stores objects of type `$state` in `Canvas::$storage`, indexed by
 // `$id`, which makes them animatable in any world with a 2D model.

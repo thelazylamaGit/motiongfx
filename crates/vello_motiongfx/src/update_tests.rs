@@ -122,7 +122,7 @@ fn array_targets_preserve_order_and_support_empty_arrays() {
             }
         },
     );
-    scene.update([] as [LineHandle; 0], &amount, |lines, _| {
+    scene.update([] as [Handle<Line>; 0], &amount, |lines, _| {
         assert!(lines.is_empty())
     });
     let mut animation =

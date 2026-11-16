@@ -5,7 +5,7 @@
 
 use motiongfx::prelude::{ease, ms, s};
 use motiongfx_2d::{
-    Circle, Color, Input, Line, LineHandle, Path, Point, Rectangle,
+    Circle, Color, Handle, Input, Line, Path, Point, Rectangle,
     Scene, Text, all, chain, computed, signal, wait,
 };
 use vello::kurbo::Rect;
@@ -27,7 +27,7 @@ fn grid(
     scene: &mut Scene,
     bounds: Rect,
     spacing: f64,
-) -> Vec<LineHandle> {
+) -> Vec<Handle<Line>> {
     let mut lines = Vec::new();
     for column in 0..=(bounds.width() / spacing) as usize {
         let x = bounds.x0 + column as f64 * spacing;

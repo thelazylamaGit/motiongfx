@@ -1,4 +1,5 @@
 //! [`Line`]: straight lines, optionally dashed, trimmed or with tips.
+use crate::Handle;
 
 use crate::tips::EndpointTip;
 use crate::{Color, DrawObject, Point, SceneObject};
@@ -85,24 +86,12 @@ impl LineId {
         self.0
     }
 }
-/// A [`Line`] in a scene, returned by `scene.add`. Its
-/// methods return fields to animate or for other objects to follow.
-#[derive(Clone, Copy, Debug)]
-pub struct LineHandle {
-    pub(crate) id: LineId,
-}
-impl LineHandle {
-    /// The object's ID.
-    pub fn id(self) -> LineId {
-        self.id
-    }
-}
 impl<M: crate::Model2d> SceneObject<M> for Line {
-    type Handle = LineHandle;
+    type Handle = Handle<Line>;
     fn insert_into(
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
-    ) -> LineHandle {
+    ) -> Handle<Line> {
         let id = LineId(scene.model_mut().canvas_mut().lines.len());
         scene.model_mut().canvas_mut().lines.push(self);
         scene
@@ -110,19 +99,18 @@ impl<M: crate::Model2d> SceneObject<M> for Line {
             .canvas_mut()
             .order
             .push(DrawObject::Line(id));
-        LineHandle { id }
+        Handle::new(id)
     }
 }
 crate::capability::stored_in!(Line, LineId, lines);
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
-crate::properties::object!(Line, LineHandle, LineId;
-also impl<S, E> crate::LineTipHandle<S, E> => line;
+crate::properties::object!(Line, LineId;
 set start: Point => new(Line.start);
 set end: Point => new(Line.end);
-set opacity: f64 => new(Line.opacity);
-get stroke: Color => new(Line.stroke);
-set stroke_width: f64 => new(Line.stroke_width);
+set opacity: f64 => new(Line.opacity) shared;
+get stroke: Color => new(Line.stroke) shared;
+set stroke_width: f64 => new(Line.stroke_width) shared;
 get line_cap: crate::Cap => discrete(Line.line_cap);
 get line_join: crate::Join => discrete(Line.line_join);
 set reveal: f64 => new(Line.reveal);
@@ -135,6 +123,4 @@ get start_y: f64 => new(Line.start.y);
 get end_x: f64 => new(Line.end.x);
 get end_y: f64 => new(Line.end.y);
 );
-crate::capability::handle_traits!(LineHandle => Line, LineId; Strokable, Fadable);
-crate::capability::handle_traits!(impl [S: Copy, E: Copy] crate::LineTipHandle<S, E> => Line, LineId,
-    id: line.id; Strokable, Fadable);
+crate::capability::capabilities!(Line; Strokable, Fadable);

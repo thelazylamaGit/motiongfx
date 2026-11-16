@@ -25,7 +25,7 @@ mod sealed {
 /// A shape that can be a line tip: a circle, triangle or chevron
 /// description, or [`NoTip`]. Sealed: other types can't implement it.
 pub trait LineTip<M: Model2d = Canvas>: sealed::Sealed {
-    /// The tip's handle, such as a `CircleHandle`, to animate it.
+    /// The tip's handle, such as a `Handle<Circle>`, to animate it.
     type Handle: Copy + ThreadSafe;
     #[doc(hidden)]
     fn attach(
@@ -43,11 +43,11 @@ impl<M: Model2d> LineTip<M> for NoTip {
     }
 }
 impl<M: Model2d> LineTip<M> for Object<Circle, M> {
-    type Handle = CircleHandle;
+    type Handle = Handle<Circle>;
     fn attach(
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
-    ) -> (CircleHandle, Option<EndpointTip>) {
+    ) -> (Handle<Circle>, Option<EndpointTip>) {
         assert!(
             self.parent.is_none(),
             "a line tip uses its endpoint frame; remove relative_to"
@@ -59,13 +59,13 @@ impl<M: Model2d> LineTip<M> for Object<Circle, M> {
     }
 }
 macro_rules! attach {
-    ($shape:ident, $handle:ident) => {
+    ($shape:ident) => {
         impl<M: Model2d> LineTip<M> for Object<$shape, M> {
-            type Handle = $handle;
+            type Handle = Handle<$shape>;
             fn attach(
                 self,
                 scene: &mut motiongfx_authoring::Scene<M>,
-            ) -> ($handle, Option<EndpointTip>) {
+            ) -> (Handle<$shape>, Option<EndpointTip>) {
                 let handle = self
                     .insert_with(scene, |shape, scene| {
                         shape.insert_tip(scene)
@@ -75,8 +75,8 @@ macro_rules! attach {
         }
     };
 }
-attach!(Triangle, TriangleHandle);
-attach!(Chevron, ChevronHandle);
+attach!(Triangle);
+attach!(Chevron);
 
 impl EndpointTip {
     pub(crate) fn extent(
@@ -133,8 +133,7 @@ impl<M: Model2d> Object<Line, M> {
     /// let mut animation = scene.compile([
     ///     line.start_tip.radius().to(10.0),
     ///     line.end_tip.angle().to(0.9),
-    ///     // The line's own getters work on the tipped handle too.
-    ///     line.reveal().to(0.5),
+    ///     line.line.reveal().to(0.5),
     /// ]);
     /// animation.sample(s(3));
     /// assert_eq!(animation.get(line.start_tip).radius, 10.0);
@@ -221,12 +220,13 @@ setters!(start: Point, end: Point, opacity: f64, stroke_width: f64,
     reveal: f64, line_dash: std::sync::Arc<[f64]>, dash_offset: f64,
     start_offset: f64, end_offset: f64,);
 
-/// A line with tips in a scene, returned by `scene.add`. It has the same
-/// getters as a [`LineHandle`] (`reveal()`, `stroke()`, ...), and the tips
-/// are animated through `start_tip` and `end_tip`.
+/// A line with tips in a scene, returned by `scene.add`: the line's
+/// handle and each tip's, to animate them separately
+/// (`arrow.line.reveal()`, `arrow.end_tip.fill()`).
 #[derive(Clone, Copy, Debug)]
 pub struct LineTipHandle<S, E> {
-    pub(crate) line: LineHandle,
+    /// The line's handle.
+    pub line: Handle<Line>,
     /// The start tip's handle ([`NoTip`] if none).
     pub start_tip: S,
     /// The end tip's handle ([`NoTip`] if none).
@@ -238,9 +238,20 @@ impl<S, E> LineTipHandle<S, E> {
         self.line.id
     }
 }
-impl<S, E> From<LineTipHandle<S, E>> for LineHandle {
+impl<S, E> From<LineTipHandle<S, E>> for Handle<Line> {
     fn from(handle: LineTipHandle<S, E>) -> Self {
         handle.line
+    }
+}
+impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe, M>
+    motiongfx_authoring::ObjectHandle<M> for LineTipHandle<S, E>
+where
+    Line: motiongfx_authoring::WorldObject<LineId, M>,
+{
+    type Id = LineId;
+    type State = Line;
+    fn id(self) -> LineId {
+        self.line.id
     }
 }
 impl<M: Model2d, S: LineTip<M>, E: LineTip<M>> SceneObject<M>

@@ -1,4 +1,5 @@
 //! [`Text`]: text objects, with real font shaping.
+use crate::Handle;
 
 use crate::{
     Color, FontStyle, FontWeight, Parent, Point, SceneObject,
@@ -119,21 +120,8 @@ impl TextId {
     }
 }
 
-/// A [`Text`] in a scene, returned by `scene.add`. Its
-/// methods return fields to animate or for other objects to follow.
-#[derive(Clone, Copy, Debug)]
-pub struct TextHandle {
-    pub(crate) id: TextId,
-}
-impl TextHandle {
-    /// The object's ID.
-    pub fn id(self) -> TextId {
-        self.id
-    }
-}
-
 impl<M: crate::Model2d> SceneObject<M> for Text {
-    type Handle = TextHandle;
+    type Handle = Handle<Text>;
     fn insert_into(
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
@@ -147,7 +135,7 @@ crate::capability::stored_in!(Text, TextId, texts);
 pub(crate) fn insert_text<M: Model2d>(
     scene: &mut motiongfx_authoring::Scene<M>,
     text: Text,
-) -> TextHandle {
+) -> Handle<Text> {
     let id = TextId(scene.model_mut().canvas_mut().texts.len());
     scene.model_mut().canvas_mut().texts.push(text);
     scene
@@ -155,15 +143,15 @@ pub(crate) fn insert_text<M: Model2d>(
         .canvas_mut()
         .order
         .push(DrawObject::Text(id));
-    TextHandle { id }
+    Handle::new(id)
 }
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
-crate::properties::object!(Text, TextHandle, TextId;
+crate::properties::object!(Text, TextId;
 set content: Arc<str> => discrete(Text.content);
-set position: Point => new(Text.position);
-set scale: f64 => new(Text.scale);
-set rotation: f64 => new(Text.rotation);
+set position: Point => new(Text.position) shared;
+set scale: f64 => new(Text.scale) shared;
+set rotation: f64 => new(Text.rotation) shared;
 set font_size: f64 => new(Text.font_size);
 set font_family: Arc<str> => discrete(Text.font_family);
 set font_weight: FontWeight => new(Text.font_weight);
@@ -172,16 +160,15 @@ set line_height: f64 => new(Text.line_height);
 set letter_spacing: f64 => new(Text.letter_spacing);
 set tabular_numbers: bool => discrete(Text.tabular_numbers);
 set wrap_width: f64 => new(Text.wrap_width);
-set fill: Color => new(Text.fill);
-set opacity: f64 => new(Text.opacity);
+set fill: Color => new(Text.fill) shared;
+set opacity: f64 => new(Text.opacity) shared;
 set align: TextAlign => discrete(Text.align);
-get position_x: f64 => new(Text.position.x);
-get position_y: f64 => new(Text.position.y);
+get position_x: f64 => new(Text.position.x) shared;
+get position_y: f64 => new(Text.position.y) shared;
 );
-crate::capability::handle_traits!(TextHandle => Text, TextId;
-    Transformable, Fillable, Fadable);
+crate::capability::capabilities!(Text; Transformable, Fillable, Fadable);
 
-impl TextHandle {
+impl Handle<Text> {
     /// Change the text instantly.
     #[track_caller]
     pub fn set_content<M: crate::Model2d>(

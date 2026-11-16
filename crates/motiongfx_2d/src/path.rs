@@ -1,4 +1,5 @@
 //! [`Path`]: stroked curves and polylines that can be drawn on gradually.
+use crate::Handle;
 
 use crate::{Color, DrawObject, Point, SceneObject};
 pub use kurbo::BezPath;
@@ -154,21 +155,8 @@ impl PathId {
     }
 }
 
-/// A [`Path`] in a scene, returned by `scene.add`. Its
-/// methods return fields to animate or for other objects to follow.
-#[derive(Clone, Copy, Debug)]
-pub struct PathHandle {
-    pub(crate) id: PathId,
-}
-impl PathHandle {
-    /// The object's ID.
-    pub fn id(self) -> PathId {
-        self.id
-    }
-}
-
 impl<M: crate::Model2d> SceneObject<M> for Path {
-    type Handle = PathHandle;
+    type Handle = Handle<Path>;
     fn insert_into(
         self,
         scene: &mut motiongfx_authoring::Scene<M>,
@@ -180,27 +168,26 @@ impl<M: crate::Model2d> SceneObject<M> for Path {
             .canvas_mut()
             .order
             .push(DrawObject::Path(id));
-        PathHandle { id }
+        Handle::new(id)
     }
 }
 
 crate::capability::stored_in!(Path, PathId, paths);
 
 // Animatable fields: `new` ones interpolate, `discrete` ones jump.
-crate::properties::object!(Path, PathHandle, PathId;
-set position: Point => new(Path.position);
+crate::properties::object!(Path, PathId;
+set position: Point => new(Path.position) shared;
 set start: f64 => new(Path.start);
 set end: f64 => new(Path.end);
-set opacity: f64 => new(Path.opacity);
-set scale: f64 => new(Path.scale);
-set rotation: f64 => new(Path.rotation);
-get stroke: Color => new(Path.stroke);
-set stroke_width: f64 => new(Path.stroke_width);
+set opacity: f64 => new(Path.opacity) shared;
+set scale: f64 => new(Path.scale) shared;
+set rotation: f64 => new(Path.rotation) shared;
+get stroke: Color => new(Path.stroke) shared;
+set stroke_width: f64 => new(Path.stroke_width) shared;
 get line_cap: crate::Cap => discrete(Path.line_cap);
 get line_join: crate::Join => discrete(Path.line_join);
 set geometry: Arc<BezPath> => discrete(Path.geometry);
-get position_x: f64 => new(Path.position.x);
-get position_y: f64 => new(Path.position.y);
+get position_x: f64 => new(Path.position.x) shared;
+get position_y: f64 => new(Path.position.y) shared;
 );
-crate::capability::handle_traits!(PathHandle => Path, PathId;
-    Transformable, Strokable, Fadable);
+crate::capability::capabilities!(Path; Transformable, Strokable, Fadable);

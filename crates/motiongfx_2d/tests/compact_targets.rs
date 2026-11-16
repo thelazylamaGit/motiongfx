@@ -1,7 +1,7 @@
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
-    AnimationErrorKind, Circle, CircleHandle, CompileError, Fillable,
-    Scene, TextHandle, all, wait,
+    AnimationErrorKind, Camera, Chevron, Circle, CompileError,
+    Handle, Line, Path, Rectangle, Scene, Text, Triangle, all, wait,
 };
 use std::mem::{needs_drop, size_of};
 
@@ -13,30 +13,15 @@ fn built_in_targets_store_only_object_ids() {
         size_of::<fields::text::opacity::Target>(),
         size_of::<usize>()
     );
-    assert!(!needs_drop::<TextHandle>());
-    assert_eq!(size_of::<TextHandle>(), size_of::<usize>());
-    assert_eq!(size_of::<CircleHandle>(), size_of::<usize>());
-    assert_eq!(
-        size_of::<motiongfx_2d::RectangleHandle>(),
-        size_of::<usize>()
-    );
-    assert_eq!(
-        size_of::<motiongfx_2d::LineHandle>(),
-        size_of::<usize>()
-    );
-    assert_eq!(
-        size_of::<motiongfx_2d::PathHandle>(),
-        size_of::<usize>()
-    );
-    assert_eq!(
-        size_of::<motiongfx_2d::TriangleHandle>(),
-        size_of::<usize>()
-    );
-    assert_eq!(
-        size_of::<motiongfx_2d::ChevronHandle>(),
-        size_of::<usize>()
-    );
-    assert_eq!(size_of::<motiongfx_2d::CameraHandle>(), 0);
+    assert!(!needs_drop::<Handle<Text>>());
+    assert_eq!(size_of::<Handle<Text>>(), size_of::<usize>());
+    assert_eq!(size_of::<Handle<Circle>>(), size_of::<usize>());
+    assert_eq!(size_of::<Handle<Rectangle>>(), size_of::<usize>());
+    assert_eq!(size_of::<Handle<Line>>(), size_of::<usize>());
+    assert_eq!(size_of::<Handle<Path>>(), size_of::<usize>());
+    assert_eq!(size_of::<Handle<Triangle>>(), size_of::<usize>());
+    assert_eq!(size_of::<Handle<Chevron>>(), size_of::<usize>());
+    assert_eq!(size_of::<Handle<Camera>>(), 0);
     assert_eq!(
         size_of::<motiongfx_2d::TextSelectionHandle>(),
         2 * size_of::<usize>()

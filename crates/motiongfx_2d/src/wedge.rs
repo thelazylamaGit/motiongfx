@@ -6,7 +6,7 @@ use crate::Point;
 // One definition for both pointed shapes. A chevron is an open outline;
 // a triangle closes and fills the same three vertices.
 macro_rules! wedge {
-    ($shape:ident, $handle:ident, $id:ident, $storage:ident, $accessor:ident, $closed:literal $(, $radius:ident => $cache:ident)?) => {
+    ($shape:ident, $id:ident, $storage:ident, $accessor:ident, $closed:literal $(, $radius:ident => $cache:ident)?) => {
         /// A pointed shape facing +x, with its apex at `position`. Create
         /// one with `new()`. A chevron is an open outline, so its fill is
         /// unused.
@@ -60,16 +60,16 @@ macro_rules! wedge {
                     * Affine::rotate(-self.rotation) * Affine::scale(self.scale)
             }
             /// Add the shape and draw it in insertion order.
-            pub(crate) fn insert<M:crate::Model2d>(self, scene: &mut motiongfx_authoring::Scene<M>) -> $handle {
+            pub(crate) fn insert<M:crate::Model2d>(self, scene: &mut motiongfx_authoring::Scene<M>) -> crate::Handle<$shape> {
                 let handle = self.insert_tip(scene);
                 scene.model_mut().canvas_mut().order.push(DrawObject::$shape(handle.id));
                 handle
             }
             /// Add the shape without drawing it; its line draws it as a tip.
-            pub(crate) fn insert_tip<M:crate::Model2d>(self, scene: &mut motiongfx_authoring::Scene<M>) -> $handle {
+            pub(crate) fn insert_tip<M:crate::Model2d>(self, scene: &mut motiongfx_authoring::Scene<M>) -> crate::Handle<$shape> {
                 let storage = &mut scene.model_mut().canvas_mut().$storage;
                 storage.push(self);
-                $handle { id: $id(storage.len() - 1) }
+                crate::Handle::new($id(storage.len() - 1))
             }
         }
         crate::object::stroke!($shape);
@@ -81,16 +81,9 @@ macro_rules! wedge {
             /// Its position in the scene's storage for this shape type.
             pub fn index(self)->usize { self.0 }
         }
-        #[doc = concat!("A [`", stringify!($shape), "`] in a scene, returned by `scene.add`. Its methods return fields to animate.")]
-        #[derive(Clone, Copy, Debug)]
-        pub struct $handle { pub(crate) id: $id }
-        impl $handle {
-            /// The shape's ID.
-            pub fn id(self)->$id {self.id}
-        }
         impl<M:crate::Model2d> SceneObject<M> for $shape {
-            type Handle = $handle;
-            fn insert_into(self, scene: &mut motiongfx_authoring::Scene<M>) -> $handle { self.insert(scene) }
+            type Handle = crate::Handle<$shape>;
+            fn insert_into(self, scene: &mut motiongfx_authoring::Scene<M>) -> crate::Handle<$shape> { self.insert(scene) }
         }
         crate::capability::stored_in!($shape, $id, $storage);
 
