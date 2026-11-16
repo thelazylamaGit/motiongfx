@@ -24,11 +24,11 @@ use criterion::{
     criterion_main,
 };
 use motiongfx::prelude::{ease, ms};
-use vello_motiongfx::{
-    Circle, CircleHandle, Color, CompiledScene, Fillable, Renderer,
-    Scene, Signal, Size, Spring, Transformable, all, flow, signal,
-    wait,
+use motiongfx_2d::{
+    Circle, CircleHandle, Color, CompiledScene, Fillable, Scene,
+    Signal, Size, Spring, Transformable, all, flow, signal, wait,
 };
+use vello_motiongfx::Renderer;
 
 const SIZES: [usize; 2] = [1_000, 10_000];
 /// Samples per sweep; throughput is reported per frame.

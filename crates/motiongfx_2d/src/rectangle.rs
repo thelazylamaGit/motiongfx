@@ -59,6 +59,13 @@ impl Rectangle {
         })
     }
 
+    /// Where the rectangle's local coordinates sit on the canvas. Scale is
+    /// applied to the size instead, so strokes keep their width.
+    pub fn transform(&self) -> Affine {
+        Affine::translate((self.position.x, -self.position.y))
+            * Affine::rotate(-self.rotation)
+    }
+
     /// A white rectangle from a `(width, height)` tuple, `Vec2` or `Size`.
     pub fn from_size<M: Model2d>(
         size: impl Into<(f64, f64)>,

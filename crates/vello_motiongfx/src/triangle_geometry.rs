@@ -9,7 +9,7 @@ pub struct CachedTriangle {
     pub rebuilds: usize,
 }
 impl CachedTriangle {
-    pub fn new(triangle: &crate::Triangle) -> Self {
+    pub fn new(triangle: &motiongfx_2d::Triangle) -> Self {
         Self {
             key: [triangle.size, triangle.angle, triangle.radius],
             geometry: triangle.geometry(),
@@ -17,7 +17,7 @@ impl CachedTriangle {
             rebuilds: 1,
         }
     }
-    pub fn update(&mut self, triangle: &crate::Triangle) {
+    pub fn update(&mut self, triangle: &motiongfx_2d::Triangle) {
         if self.key
             != [triangle.size, triangle.angle, triangle.radius]
         {

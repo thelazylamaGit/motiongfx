@@ -2,8 +2,9 @@
 //! panics otherwise), samples at any time including backwards, and renders
 //! a frame, without opening a window.
 use motiongfx_2d::CompiledScene;
+use motiongfx_2d::Size;
 use std::time::Duration;
-use vello_motiongfx::{Renderer, Size};
+use vello_motiongfx::Renderer;
 
 pub fn check(mut animation: CompiledScene) {
     let end = animation.duration();

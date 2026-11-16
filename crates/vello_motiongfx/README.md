@@ -2,9 +2,8 @@
 
 Draws [motiongfx_2d](../motiongfx_2d/README.md) scenes with Vello. Sample a
 compiled scene, then render it into a `vello::Scene`; the renderer caches path
-geometry, text layout and triangle outlines between frames. It also re-exports
-`motiongfx_2d` for convenience, but import authoring types from `motiongfx_2d`
-directly.
+geometry, text layout and triangle outlines between frames. It exports only
+renderer types; import objects and scenes from `motiongfx_2d`.
 
 ```rust
 use motiongfx::prelude::s;

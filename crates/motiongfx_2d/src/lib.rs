@@ -74,7 +74,6 @@ impl Model2d for Canvas {
         self
     }
 }
-mod access;
 mod background;
 mod camera;
 mod capability;

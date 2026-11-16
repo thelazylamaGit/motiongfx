@@ -82,9 +82,9 @@ from layout and animated paint. Rendering still records normal Vello commands.
 The native host samples the shared animation and then invokes that renderer.
 The background remains a renderer clear/base color, independent of the camera.
 
-`vello_motiongfx` temporarily re-exports portable types for import compatibility;
-it contains no second Scene, object model, signal storage or evaluator. New
-examples import `motiongfx_2d`. Existing low-level demos remain explicit host
+`vello_motiongfx` exports only renderer types; objects, scenes and signals are
+imported from `motiongfx_2d`, so each type has one public path. It contains no
+second Scene, object model, signal storage or evaluator. Existing low-level demos remain explicit host
 and renderer extension examples.
 
 This split adds static type boundaries and construction adapters. It adds no

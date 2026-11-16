@@ -1,7 +1,7 @@
 //! Path drawing: the visible part of each path, cached until the path's
 //! geometry or visible range changes.
 
-use crate::Path;
+use motiongfx_2d::Path;
 use peniko_motiongfx::trace::Trace;
 use std::sync::Arc;
 use vello::kurbo::{Affine, BezPath, Stroke};

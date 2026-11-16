@@ -1,5 +1,11 @@
 //! [`Renderer`]: draws a sampled 2D scene into a `vello::Scene`.
-use crate::*;
+
+use crate::triangle_geometry::CachedTriangle;
+use crate::{path_renderer, text_renderer};
+use motiongfx_2d::{
+    Canvas, Chevron, Circle, DrawObject, EndpointTip, Geometry, Line,
+    Model2d, Point, Rect, Rectangle, Size, Triangle,
+};
 use vello::kurbo::{
     Affine, Circle as CircleShape, Line as LineShape, Stroke,
 };

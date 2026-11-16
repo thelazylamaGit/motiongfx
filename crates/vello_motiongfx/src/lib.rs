@@ -2,7 +2,6 @@
 //! Author scenes with motiongfx_2d; sample with motiongfx_authoring; render here.
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
-pub use motiongfx_2d::*;
 pub mod lettering;
 mod path_renderer;
 mod shape_renderer;
@@ -13,13 +12,14 @@ use motiongfx::prelude::{
     Registry, TrackOrdering, ease, ms, path, s,
 };
 #[cfg(test)]
+use motiongfx_2d::*;
+#[cfg(test)]
 use path_renderer::PathGeometry;
 pub use shape_renderer::Renderer;
 #[cfg(test)]
 use shape_renderer::*;
 #[cfg(test)]
 use std::time::Duration;
-use triangle_geometry::CachedTriangle;
 #[cfg(test)]
 use vello::kurbo::Stroke;
 #[cfg(test)]
