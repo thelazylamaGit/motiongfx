@@ -1,10 +1,11 @@
 //! Path drawing: the visible part of each path, cached until the path's
 //! geometry or visible range changes.
 
+use crate::outline::Outline;
 use motiongfx_2d::Path;
 use peniko_motiongfx::trace::Trace;
 use std::sync::Arc;
-use vello::kurbo::{Affine, BezPath, Stroke};
+use vello::kurbo::{Affine, BezPath};
 
 pub(crate) struct PathGeometry {
     source: Arc<BezPath>,
@@ -43,10 +44,10 @@ impl PathGeometry {
             };
         }
         let opacity = path.opacity.clamp(0.0, 1.0) as f32;
-        if opacity == 0.0
-            || path.stroke_width <= 0.0
-            || self.visible.is_empty()
-        {
+        let Some((style, color)) = path.outline(opacity) else {
+            return;
+        };
+        if self.visible.is_empty() {
             return;
         }
         let xf = screen
@@ -59,15 +60,6 @@ impl PathGeometry {
                 path.transform.scale,
                 -path.transform.scale,
             );
-        scene.stroke(
-            &Stroke::new(path.stroke_width)
-                .with_caps(path.line_cap)
-                .with_join(path.line_join),
-            xf,
-            path.stroke
-                .with_alpha(path.stroke.components[3] * opacity),
-            None,
-            &self.visible,
-        );
+        scene.stroke(&style, xf, color, None, &self.visible);
     }
 }

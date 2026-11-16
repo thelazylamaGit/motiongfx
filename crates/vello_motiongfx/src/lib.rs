@@ -3,6 +3,7 @@
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 pub mod lettering;
+mod outline;
 mod path_renderer;
 mod shape_renderer;
 mod text_renderer;

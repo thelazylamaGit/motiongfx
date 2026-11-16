@@ -1,14 +1,14 @@
 //! [`Renderer`]: draws a sampled 2D scene into a `vello::Scene`.
 
+use crate::outline::Outline;
 use crate::triangle_geometry::CachedTriangle;
 use crate::{path_renderer, text_renderer};
 use motiongfx_2d::{
-    Canvas, Cap, Chevron, Circle, Color, DrawObject, EndpointTip,
-    Geometry, Join, Line, Model2d, Point, Rect, Rectangle, Size,
-    Triangle,
+    Canvas, Chevron, Circle, DrawObject, EndpointTip, Geometry, Line,
+    Model2d, Point, Rect, Rectangle, Size, Triangle,
 };
 use vello::kurbo::{
-    Affine, Circle as CircleShape, Line as LineShape, PathEl, Stroke,
+    Affine, Circle as CircleShape, Line as LineShape,
 };
 use vello::peniko::Fill;
 trait RenderRectangle {
@@ -38,17 +38,8 @@ impl RenderRectangle for Rectangle {
             None,
             &shape,
         );
-        if rectangle.stroke_width > 0.0 {
-            let stroke = rectangle.stroke;
-            scene.stroke(
-                &Stroke::new(rectangle.stroke_width)
-                    .with_caps(rectangle.line_cap)
-                    .with_join(rectangle.line_join),
-                xf,
-                stroke.with_alpha(stroke.components[3] * opacity),
-                None,
-                &shape,
-            );
+        if let Some((style, color)) = rectangle.outline(opacity) {
+            scene.stroke(&style, xf, color, None, &shape);
         }
     }
 }
@@ -87,16 +78,8 @@ impl RenderCircle for Circle {
                 &shape,
             );
         }
-        if self.stroke_width > 0.0 && self.stroke.components[3] > 0.0
-        {
-            scene.stroke(
-                &Stroke::new(self.stroke_width),
-                transform,
-                self.stroke
-                    .with_alpha(self.stroke.components[3] * opacity),
-                None,
-                &shape,
-            );
+        if let Some((style, color)) = self.outline(opacity) {
+            scene.stroke(&style, transform, color, None, &shape);
         }
     }
 }
@@ -162,31 +145,9 @@ impl RenderLine for Line {
         end: Point,
         opacity: f32,
     ) {
-        if self.stroke_width > 0.0 && self.stroke.components[3] > 0.0
-        {
-            let color = self
-                .stroke
-                .with_alpha(self.stroke.components[3] * opacity);
-            let mut stroke = Stroke::new(self.stroke_width)
-                .with_caps(self.line_cap)
-                .with_join(self.line_join);
-            if !self.line_dash.is_empty() {
-                assert!(
-                    self.dash_offset.is_finite()
-                        && self
-                            .line_dash
-                            .iter()
-                            .all(|d| d.is_finite() && *d >= 0.0)
-                        && self.line_dash.iter().sum::<f64>() > 0.0,
-                    "line dash lengths must be finite, nonnegative and have a positive period"
-                );
-                stroke = stroke.with_dashes(
-                    self.dash_offset,
-                    self.line_dash.iter(),
-                );
-            }
+        if let Some((style, color)) = self.outline(opacity) {
             scene.stroke(
-                &stroke,
+                &style,
                 screen,
                 color,
                 None,
@@ -255,31 +216,6 @@ fn wedge_frame(
     (size > 0.0 && opacity > 0.0 && transform.determinant() != 0.0)
         .then_some((transform, opacity))
 }
-// Stroke `outline` unless the stroke is invisible.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "one stroke style, passed as its parts"
-)]
-fn stroke_outline(
-    scene: &mut vello::Scene,
-    transform: Affine,
-    opacity: f32,
-    color: Color,
-    width: f64,
-    cap: Cap,
-    join: Join,
-    outline: &[PathEl],
-) {
-    if width > 0.0 && color.components[3] > 0.0 {
-        scene.stroke(
-            &Stroke::new(width).with_caps(cap).with_join(join),
-            transform,
-            color.with_alpha(color.components[3] * opacity),
-            None,
-            &outline,
-        );
-    }
-}
 impl RenderWedge for Triangle {
     fn render_geometry(
         &self,
@@ -308,16 +244,9 @@ impl RenderWedge for Triangle {
                 &outline,
             );
         }
-        stroke_outline(
-            scene,
-            transform,
-            opacity,
-            self.stroke,
-            self.stroke_width,
-            self.line_cap,
-            self.line_join,
-            outline,
-        );
+        if let Some((style, color)) = self.outline(opacity) {
+            scene.stroke(&style, transform, color, None, &outline);
+        }
     }
 }
 impl RenderWedge for Chevron {
@@ -337,16 +266,15 @@ impl RenderWedge for Chevron {
             return;
         };
         let geometry = geometry.canvas();
-        stroke_outline(
-            scene,
-            transform,
-            opacity,
-            self.stroke,
-            self.stroke_width,
-            self.line_cap,
-            self.line_join,
-            geometry.elements(),
-        );
+        if let Some((style, color)) = self.outline(opacity) {
+            scene.stroke(
+                &style,
+                transform,
+                color,
+                None,
+                &geometry.elements(),
+            );
+        }
     }
 }
 /// Draws sampled 2D scenes into a `vello::Scene`. Keep one per window and
