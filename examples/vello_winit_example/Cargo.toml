@@ -10,7 +10,7 @@ publish = false
 motiongfx_2d = { workspace = true }
 vello_motiongfx = { workspace = true }
 vello_winit_motiongfx = { workspace = true, features = ["audio"] }
-motiongfx_audio = { workspace = true, features = ["fundsp", "rustysynth"] }
+motiongfx_audio = { workspace = true, features = ["fundsp"] }
 motiongfx = { workspace = true, default-features = true }
 peniko_motiongfx = { workspace = true }
 vello = { workspace = true }

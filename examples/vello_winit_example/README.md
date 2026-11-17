@@ -130,10 +130,7 @@ function that calls `on_step` with the slice after every comparison or swap,
 plus a `Step`: the slot it is working on (`active`: the value being carried,
 scanned or inserted) and the slot it compared it with (`compared`). Each
 algorithm decides which is which; every step is shown the same way. Steps
-are `STEP_HOLD` apart. Highlights are shades of each bar's own HSL colour:
-the active bar turns much lighter (`ACTIVE`) and the compared bar mostly
-grey (`COMPARED`), then both fade back to their colours (`BAR`) over
-`FADE_TIME`, leaving a short trail behind the cursor. Bars a step swapped start sliding to their new
+are `STEP_HOLD` apart. Bars a step swapped start sliding to their new
 slots at the same time, over `MOVE_TIME`, without holding up the next step:
 the fades and the slides are two lanes run with `all`, and each is marked
 `.interrupt()`, so a bar the cursor revisits lights up again and a bar that
@@ -145,14 +142,8 @@ follows each bar's height on a three-octave pentatonic scale, held for
 `NOTE_TIME`. Steps are 20 ms apart, so several notes overlap at once,
 often of the same pitch; each is its own voice. The interruption cuts the
 fade but never the note. The final left-to-right sweep climbs the scale.
-The notes use a fundsp sine synth; pass a SoundFont to hear it instead:
-
-```sh
-cargo run -p vello_winit_example --example sorting -- path/to/piano.sf2
-```
-
-Sound plays while time moves forwards and stops on a pause or seek
-(`Window::audio()`); no SoundFont is included in the repository.
+The notes use a fundsp sine synth. Sound plays while time moves forwards
+and stops on a pause or seek (`Window::audio()`).
 
 Run from the workspace root:
 

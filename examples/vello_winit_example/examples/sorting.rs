@@ -21,9 +21,6 @@
 //!
 //! To add an algorithm, write a function with the same signature as
 //! [`bubble_sort`] and add it to [`ALGORITHMS`].
-//!
-//! The notes use a built-in sine synth. To hear a SoundFont instead, pass
-//! its path: `cargo run --example sorting -- path/to/piano.sf2`.
 
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
@@ -32,8 +29,8 @@ use motiongfx_2d::{
     colors::{WHITE, hsl},
     wait,
 };
+use motiongfx_audio::Instrument;
 use motiongfx_audio::fundsp::prelude32::{adsr_live, sine_hz};
-use motiongfx_audio::{Instrument, SoundFont};
 use std::time::Duration;
 use vello_winit_motiongfx::Window;
 
@@ -80,7 +77,7 @@ const COMPARED: Shade = Shade {
 };
 /// How long a bar the cursor visited takes to fade back to its own colour,
 /// leaving a short trail behind the cursor.
-const FADE_TIME: Duration = ms(500);
+const FADE_TIME: Duration = ms(100);
 /// How long the bars take to scatter before the next algorithm.
 const SHUFFLE_TIME: Duration = ms(800);
 /// Pause before each sort starts.
@@ -98,6 +95,8 @@ const PENTATONIC: [u8; 5] = [0, 2, 4, 7, 9];
 const LOWEST_NOTE: u8 = 48;
 /// How many scale notes the bars span (three octaves).
 const SCALE_NOTES: usize = 15;
+/// Each note's peak level. Many notes overlap, so this stays low.
+const VOLUME: f32 = 0.1;
 
 // ---------------------------------------------------------------------------
 // The algorithms
@@ -433,14 +432,17 @@ fn build_animation(instrument: &Instrument) -> CompiledScene {
                 // The cursor lights the bar, which then fades back, and
                 // plays the bar's note. If the cursor returns before the
                 // fade ends, it lights up again; the interruption cuts
-                // the fade, never the note, which always rings out.
+                // the fade, never the note, which always rings out. The
+                // fade starts slowly so a bar lit on every step (such as
+                // selection sort's smallest so far) stays steadily lit
+                // instead of flickering between each step's first frames.
                 cursor.push(
                     all([
                         chain([
                             bar.set_fill(bar_color(value, shade)),
                             bar.fill_to(bar_color(value, BAR))
                                 .over(FADE_TIME)
-                                .ease(ease::cubic::ease_out),
+                                .ease(ease::cubic::ease_in_out),
                         ]),
                         instrument
                             .note(bar_note(value))
@@ -518,21 +520,14 @@ impl SplitMix64 {
 /// overlap.
 fn sine_instrument() -> Instrument {
     Instrument::synth(|hz| {
-        0.15 * (sine_hz(hz) * adsr_live(0.005, 0.05, 0.4, 0.1))
+        VOLUME * (sine_hz(hz) * adsr_live(0.005, 0.05, 0.4, 0.1))
     })
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // A SoundFont given on the command line, otherwise the sine synth.
-    let instrument = match std::env::args().nth(1) {
-        Some(path) => SoundFont::load(path)?.program(0),
-        None => sine_instrument(),
-    };
-    let animation = build_animation(&instrument);
-
     Window::new("MotionGfx | Sorting", (1280.0, 720.0))
         .audio()
-        .run(animation)?;
+        .run(build_animation(&sine_instrument()))?;
     Ok(())
 }
 
