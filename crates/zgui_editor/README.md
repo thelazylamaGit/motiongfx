@@ -50,6 +50,17 @@ At narrow widths the transport bar leaves things out rather than wrapping:
 the frame counter below 720 px, the total time below 560 px, and the start
 and end buttons below 440 px.
 
+## Tests
+
+Interaction tests (`src/headless.rs`) run the real timeline, style sheets,
+layout, event routing and frame clock over zgui's headless platform, with a
+renderer that draws nothing and a clock the test steps frame by frame. They
+press and drag on the track's laid-out box and check what the view and clock
+did: scrubbing, scrolling past the edges, paging during playback, and the
+shuttle. They need no window or graphics device, so they run with
+`cargo test`; they don't check how anything looks, the Vello preview, or how
+sound plays.
+
 ## Dependency on the zgui fork
 
 This crate uses a local checkout of zgui at `../../zgui` (next to the

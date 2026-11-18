@@ -31,6 +31,7 @@ zgui = { path = "../../zgui/crates/zgui" }
 zgui-ui = { path = "../../zgui/crates/zgui-ui" }
 zgui-ui-icons = { path = "../../zgui/crates/zgui-ui-icons" }
 zgui-ui-primitives = { path = "../../zgui/crates/zgui-ui-primitives" }
+zgui-platform-headless = { path = "../../zgui/crates/zgui-platform-headless" }
 zgui-ui-tokens = { path = "../../zgui/crates/zgui-ui-tokens" }
 
 # bevy

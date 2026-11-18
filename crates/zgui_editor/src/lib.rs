@@ -22,6 +22,8 @@
 
 mod controls;
 mod editor;
+#[cfg(test)]
+mod headless;
 mod preview;
 mod timeline;
 

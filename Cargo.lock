@@ -9253,6 +9253,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "zgui-platform-headless"
+version = "0.1.0"
+dependencies = [
+ "accesskit",
+ "zgui-geom",
+ "zgui-platform",
+ "zgui-vocab",
+]
+
+[[package]]
 name = "zgui-platform-wayland"
 version = "0.1.0"
 dependencies = [
@@ -9671,6 +9681,7 @@ dependencies = [
  "vello_motiongfx",
  "vello_winit_motiongfx",
  "zgui",
+ "zgui-platform-headless",
  "zgui-ui",
  "zgui-ui-icons",
  "zgui-ui-primitives",

@@ -95,6 +95,35 @@ impl ClockInner {
 }
 
 impl Clock {
+    /// A silent clock for `config`, at the start and playing.
+    ///
+    /// # Panics
+    ///
+    /// Outside a window, which is what paces its frames.
+    pub(crate) fn new(config: PlaybackConfig) -> Self {
+        let playback = Playback::new(config);
+        let start = playback.state();
+        let clock = Self {
+            inner: Rc::new(RefCell::new(ClockInner {
+                playback,
+                last_frame: None,
+                backward: false,
+                chosen_speed: 1.0,
+                shuttle: 1.0,
+                #[cfg(feature = "audio")]
+                audio: None,
+            })),
+            state: RwSignal::new_local(start),
+            speed: RwSignal::new_local(1.0),
+            wanted: Rc::new(Cell::new(start.time)),
+            timers: Timers::current()
+                .expect("the editor is built in a window"),
+            frame: Rc::new(RefCell::new(None)),
+        };
+        clock.publish(start);
+        clock
+    }
+
     /// Apply a control's change, then publish the new state.
     fn change(&self, edit: impl FnOnce(&mut ClockInner)) {
         let after = {
@@ -270,8 +299,6 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
     ));
     let config = PlaybackConfig::new(setup.animation.duration())
         .with_mode(setup.playback_mode);
-    let playback = Playback::new(config);
-    let start = playback.state();
     #[cfg(feature = "audio")]
     let (audio, status) = if setup.audio {
         match vello_winit_motiongfx::audio::AudioSync::open(
@@ -291,31 +318,17 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
     #[cfg(not(feature = "audio"))]
     let status = SoundStatus::None;
 
-    let wanted = Rc::new(Cell::new(start.time));
-    let clock = Clock {
-        inner: Rc::new(RefCell::new(ClockInner {
-            playback,
-            last_frame: None,
-            backward: false,
-            chosen_speed: 1.0,
-            shuttle: 1.0,
-            #[cfg(feature = "audio")]
-            audio,
-        })),
-        state: RwSignal::new_local(start),
-        speed: RwSignal::new_local(1.0),
-        wanted: Rc::clone(&wanted),
-        timers: Timers::current()
-            .expect("the editor is built in a window"),
-        frame: Rc::new(RefCell::new(None)),
-    };
-    clock.publish(start);
+    let clock = Clock::new(config);
+    #[cfg(feature = "audio")]
+    {
+        clock.inner.borrow_mut().audio = audio;
+    }
 
     let preview = Preview::new(
         setup.animation,
         setup.renderer,
         setup.canvas,
-        wanted,
+        Rc::clone(&clock.wanted),
     );
 
     // Shortcuts work before anything is focused: register the root for

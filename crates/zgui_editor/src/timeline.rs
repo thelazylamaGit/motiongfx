@@ -98,7 +98,17 @@ impl Viewport {
         }
     }
 
-    fn end(self) -> f64 {
+    #[cfg(test)]
+    pub(crate) fn start(self) -> f64 {
+        self.start
+    }
+
+    #[cfg(test)]
+    pub(crate) fn length(self) -> f64 {
+        self.length
+    }
+
+    pub(crate) fn end(self) -> f64 {
         self.start + self.length
     }
 
@@ -107,7 +117,7 @@ impl Viewport {
     }
 
     /// The time at `fraction` of the track's width.
-    fn time_at(self, fraction: f64) -> f64 {
+    pub(crate) fn time_at(self, fraction: f64) -> f64 {
         self.start + fraction * self.length
     }
 
@@ -125,7 +135,7 @@ impl Viewport {
 
     /// Zoomed in by `factor` (out, below one), keeping the time at
     /// `anchor` (a fraction of the width) where it is.
-    fn zoomed(self, factor: f64, anchor: f64) -> Self {
+    pub(crate) fn zoomed(self, factor: f64, anchor: f64) -> Self {
         let pinned = self.time_at(anchor);
         let shortest =
             (FRAME * MIN_FRAMES).as_secs_f64().min(self.duration);
@@ -384,6 +394,8 @@ pub(crate) fn timeline(
     // Pointer positions arrive in window CSS pixels and boxes in device
     // pixels, so the track's window box and the scale relate them.
     let track = NodeRef::new();
+    #[cfg(test)]
+    crate::headless::TRACK.set(Some(track));
     let locate = move |x_css: f32, y_css: f32| {
         let bounds = track.window_bounds()?;
         let scale = track.scale();

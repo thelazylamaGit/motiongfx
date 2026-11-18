@@ -25,5 +25,9 @@ zgui-ui-icons = { workspace = true }
 zgui-ui-primitives = { workspace = true }
 zgui-ui-tokens = { workspace = true }
 
+[dev-dependencies]
+# Drives the timeline in tests with no window or graphics device.
+zgui-platform-headless = { workspace = true }
+
 [lints]
 workspace = true
