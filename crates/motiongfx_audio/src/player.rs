@@ -1,6 +1,6 @@
 use crate::Score;
 use crate::engine::{Engine, Voice};
-use crate::score::frames;
+use crate::score::{ScoreEvent, frames};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -20,7 +20,8 @@ enum Command {
 
 /// The host-thread half of live playback. Each frame the host reports how
 /// the play clock moved with [`advance`](Self::advance), or stops sound
-/// with [`stop_all`](Self::stop_all) on a seek, pause or reverse. The
+/// with [`stop_all`](Self::stop_all) on a seek, pause or change of
+/// direction. The
 /// [`Mixer`] it was created with renders the sound on the audio thread.
 ///
 /// Voices are built here, so the audio thread never allocates, and
@@ -75,57 +76,69 @@ impl Player {
         (player, mixer)
     }
 
-    /// The play clock moved forwards from `from` to `to`: start the events
-    /// that begin in `from..to`, each at its exact offset.
+    /// The play clock moved from `from` to `to`: start the events the
+    /// playhead reached, each at its exact offset.
+    ///
+    /// Forwards, those are the events that begin in `from..to`.
+    /// Backwards (`to` before `from`), the score plays mirrored: an event
+    /// starts when the playhead reaches its end, so the events in
+    /// `to..from` come in reverse order, though each sounds forwards for
+    /// its usual length.
     ///
     /// Successive calls continue seamlessly, even when `from` isn't the
     /// previous `to`: report a loop's wrap as `advance(previous, end)`
-    /// then `advance(loop_start, now)`. After [`stop_all`](Self::stop_all),
-    /// the next call starts afresh a moment ahead of the audio thread.
-    /// A range with `to` before `from` is ignored.
+    /// then `advance(loop_start, now)`, and a ping-pong's turn as
+    /// `advance(previous, end)` then `advance(end, now)`. After
+    /// [`stop_all`](Self::stop_all), the next call starts afresh a moment
+    /// ahead of the audio thread.
     pub fn advance(&mut self, from: Duration, to: Duration) {
         self.collect_finished();
         if self.stop_pending {
             self.stop_all();
-        }
-        if to < from {
-            return;
         }
         let anchor = *self.anchor.get_or_insert_with(|| Anchor {
             frame: self.rendered.load(Ordering::Acquire)
                 + frames(LATENCY, self.sample_rate),
             elapsed: Duration::ZERO,
         });
+        let rate = self.sample_rate;
+        // Play time passes the same way in either direction.
         let at = |time: Duration| {
             anchor.frame
-                + frames(
-                    anchor.elapsed + (time - from),
-                    self.sample_rate,
-                )
+                + frames(anchor.elapsed + time.abs_diff(from), rate)
         };
-        for event in self.score.starting_in(from, to) {
-            let start = at(event.start);
-            let release =
-                start + frames(event.length, self.sample_rate);
-            let Some(voice) =
-                event.sound.voice(self.sample_rate, start, release)
-            else {
-                continue;
-            };
-            // A full queue means the audio thread has stalled; skip the
-            // event rather than block.
-            let _ = self.commands.push(Command::Start(voice));
+        let commands = &mut self.commands;
+        let mut start = |event: &ScoreEvent, reached: Duration| {
+            let start = at(reached);
+            let release = start + frames(event.length, rate);
+            if let Some(voice) =
+                event.sound.voice(rate, start, release)
+            {
+                // A full queue means the audio thread has stalled; skip
+                // the event rather than block.
+                let _ = commands.push(Command::Start(voice));
+            }
+        };
+        if to >= from {
+            for event in self.score.starting_in(from, to) {
+                start(event, event.start);
+            }
+        } else {
+            for event in self.score.ending_in(to, from) {
+                start(event, event.end());
+            }
         }
         self.anchor = Some(Anchor {
-            elapsed: anchor.elapsed + (to - from),
+            elapsed: anchor.elapsed + from.abs_diff(to),
             ..anchor
         });
     }
 
     /// Fade out every voice over 5 ms and drop any waiting to start, for a
-    /// seek, pause or reverse. Nothing plays until the next
-    /// [`advance`](Self::advance), which starts only events that begin
-    /// after its `from`; notes already under way are not restarted.
+    /// seek, pause or change of direction. Nothing plays until the next
+    /// [`advance`](Self::advance), which starts only events the playhead
+    /// reaches after its `from`; notes already under way are not
+    /// restarted.
     pub fn stop_all(&mut self) {
         self.collect_finished();
         self.anchor = None;

@@ -1,5 +1,6 @@
-//! Drives a scene's sound from the preview clock: sound plays during
-//! forward playback only, and stops on a pause, seek or reverse.
+//! Drives a scene's sound from the preview clock: sound plays while time
+//! moves, mirrored while it moves backwards, and stops on a pause, seek
+//! or change of direction.
 
 use crate::{PlaybackMode, PlaybackState};
 use motiongfx_audio::{AudioOutput, Score};
@@ -73,28 +74,38 @@ fn actions(
     last: Option<PlaybackState>,
     mode: PlaybackMode,
 ) -> [Option<Action>; 3] {
-    let forwards =
-        |state: PlaybackState| state.playing && !state.reversing;
-    if !forwards(before) {
+    if !before.playing {
         // Stop when something changed since the last tick (a pause, a
-        // seek, the turn of a ping-pong). Reaching the end of a single
-        // play changes nothing, so its last notes ring out.
+        // seek). Reaching the end of a single play changes nothing, so
+        // its last notes ring out.
         let changed = last != Some(before);
         return [changed.then_some(Action::Stop), None, None];
     }
-    // Resuming, or the first tick: start afresh at the current time, not
-    // where the sound last stopped.
-    let resumed =
-        (!last.is_some_and(forwards)).then_some(Action::Stop);
+    // Resuming, the first tick, or a change of direction from the
+    // controls: start afresh at the current time, not where the sound
+    // last stopped. A ping-pong's own turn happens within a tick, below,
+    // and plays on.
+    let continuing = last.is_some_and(|last| {
+        last.playing && last.reversing == before.reversing
+    });
+    let resumed = (!continuing).then_some(Action::Stop);
     let (from, to, end) = (before.time, after.time, after.duration);
-    if after.reversing {
-        // Ping-pong turned at the end; nothing plays on the way back.
+    let turned = after.playing && after.reversing != before.reversing;
+    if turned {
+        // A ping-pong turned at one end and is on its way back.
+        let edge = if before.reversing {
+            Duration::ZERO
+        } else {
+            end
+        };
         [
             resumed,
-            Some(Action::Advance(from, end)),
-            Some(Action::Stop),
+            Some(Action::Advance(from, edge)),
+            Some(Action::Advance(edge, to)),
         ]
-    } else if to >= from {
+    } else if before.reversing || to >= from {
+        // Backwards, or forwards without wrapping; a backward play that
+        // reached the start has stopped there, with nothing to wrap.
         [resumed, Some(Action::Advance(from, to)), None]
     } else {
         // A loop wrapped: play to the end, then on from the loop start.
@@ -188,20 +199,47 @@ mod tests {
     }
 
     #[test]
-    fn ping_pong_plays_forwards_only() {
+    fn ping_pong_plays_on_through_both_turns() {
         let mode = PlaybackMode::PingPong;
-        let turned = PlaybackState {
+        let back = |seconds| PlaybackState {
             reversing: true,
-            ..at(9, true)
+            ..at(seconds, true)
+        };
+        // Turning at the end plays up to it, then back from it.
+        assert_eq!(
+            run(at(9, true), back(9), Some(at(9, true)), mode),
+            [advance(9, 10), advance(10, 9)]
+        );
+        assert_eq!(
+            run(back(9), back(8), Some(back(9)), mode),
+            [advance(9, 8)]
+        );
+        // And at the start, back down to it, then forwards again.
+        assert_eq!(
+            run(back(1), at(1, true), Some(back(1)), mode),
+            [advance(1, 0), advance(0, 1)]
+        );
+    }
+
+    #[test]
+    fn reversing_from_the_controls_restarts_the_sound() {
+        let once = PlaybackMode::Once;
+        let back = PlaybackState {
+            reversing: true,
+            ..at(5, true)
+        };
+        let earlier = PlaybackState {
+            time: Duration::from_secs(4),
+            ..back
         };
         assert_eq!(
-            run(at(9, true), turned, Some(at(9, true)), mode),
-            [advance(9, 10), Action::Stop]
+            run(back, earlier, Some(at(5, true)), once),
+            [Action::Stop, advance(5, 4)]
         );
-        let back = PlaybackState {
-            time: Duration::from_secs(8),
-            ..turned
-        };
-        assert_eq!(run(turned, back, Some(turned), mode), []);
+        // Reaching the start stops there without wrapping.
+        assert_eq!(
+            run(earlier, at(0, false), Some(earlier), once),
+            [advance(4, 0)]
+        );
     }
 }

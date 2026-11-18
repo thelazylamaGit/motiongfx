@@ -77,8 +77,10 @@ summed into stereo and clamped to ±1.
   this; no audio device is needed.
 - `Player::new(score, sample_rate)` returns a `Player` for the host thread
   and a `Mixer` for any audio callback. Each frame the host calls
-  `player.advance(from, to)` while time moves forwards, and
-  `player.stop_all()` on a seek, pause or reverse. Events start at their
+  `player.advance(from, to)` while time moves, and `player.stop_all()` on a
+  seek, pause or change of direction. Backwards (`to` before `from`), the
+  score plays mirrored: each event starts as the playhead reaches its end,
+  so notes come in reverse order, each still sounding forwards. Events start at their
   exact sample offset, a constant 30 ms behind the clock. Loop wraps
   continue seamlessly when reported as `advance(previous, end)` then
   `advance(loop_start, now)`.

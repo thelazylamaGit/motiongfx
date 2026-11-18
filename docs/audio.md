@@ -160,9 +160,18 @@ most; samples end with their data, or fade over 5 ms at `start + length`.
 A synth graph with no gate input fades at note-off. Above 32 voices the
 oldest fades out over 5 ms (a hard cut clicks). The mix is clamped to ±1.
 
-**Seek, pause, reverse.** `stop_all` fades every voice over 5 ms and drops
-waiting ones. Resuming starts only events after the new time. Notes already
-under way aren't restarted. Visual sampling never depends on sound.
+**Seek, pause, change of direction.** `stop_all` fades every voice over
+5 ms and drops waiting ones. Resuming starts only events after the new
+time. Notes already under way aren't restarted. Visual sampling never
+depends on sound.
+
+**Backwards.** `advance(from, to)` with `to` before `from` plays the score
+mirrored: an event starts as the playhead reaches its end and sounds
+forwards for its usual length, so a melody comes in reverse order. `Score`
+keeps a second index of its events sorted by end for this (4 bytes per
+event). Reversing each sound itself would mean rendering synth and
+SoundFont voices ahead of time, since they only run forwards; that isn't
+done.
 
 ### Dependencies
 
@@ -186,7 +195,10 @@ after each advance. A pure function turns that into player calls:
 - moving forwards: `advance(before, after)`; after a pause or on the first
   tick, `stop_all` first so the player re-anchors;
 - a loop wrap: `advance(before, end)` then `advance(loop_start, after)`;
-- ping-pong turning: advance to the end, then stop; nothing plays backwards;
+- moving backwards: `advance(before, after)`, which plays mirrored;
+- ping-pong turning: `advance(before, edge)` then `advance(edge, after)`,
+  where the edge is the end or the start it turned at; a change of direction
+  from the controls (the editor's J and L) re-anchors with `stop_all`;
 - not moving: `stop_all` if anything changed since the last tick (pause,
   seek, focus loss). Reaching the end of a single play changes nothing, so
   its last notes ring out.

@@ -187,6 +187,38 @@ fn a_loop_wrap_keeps_the_spacing_between_events() {
 }
 
 #[test]
+fn playing_backwards_starts_events_at_their_ends_in_reverse_order() {
+    // A 100 ms event at 0 and a 50 ms one at 200 ms; play back from 400.
+    let scene = compile([all([
+        dc(0.1, ms(100)).play(),
+        dc(0.2, ms(50)).play().delay(ms(200)),
+        wait(ms(400)),
+    ])]);
+    let (mut player, mut mixer) =
+        Player::new(Score::new(&scene), RATE);
+    player.advance(ms(400), ms(300));
+    player.advance(ms(300), ms(0));
+    let mut audio = vec![0.0; 2 * frames(ms(600))];
+    mixer.render(&mut audio);
+    let audio = left(&audio);
+    let latency = frames(ms(30));
+    // The later event's end (250 ms) is reached 150 ms in, the earlier
+    // one's (100 ms) 300 ms in; each plays forwards at its own length.
+    let later = latency + frames(ms(150));
+    let earlier = latency + frames(ms(300));
+    assert_eq!(audio[later - 1], 0.0);
+    close(audio[later], 0.2, "the later event first");
+    assert_eq!(audio[later + frames(ms(50)) + 1], 0.0);
+    assert_eq!(audio[earlier - 1], 0.0);
+    close(audio[earlier], 0.1, "then the earlier one");
+    close(
+        audio[earlier + frames(ms(99))],
+        0.1,
+        "for its full length",
+    );
+}
+
+#[test]
 fn offline_render_covers_the_scene_and_release_tails() {
     let sine = sine();
     let scene = compile([chain([

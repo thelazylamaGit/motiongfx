@@ -12,9 +12,11 @@ step by 250ms, and Home/End seek to the endpoints. Seeking pauses playback.
 
 With the `audio` feature, `Window::new(..).audio().run(animation)` plays the
 scene's sound events (notes and samples from `motiongfx_audio`) through the
-default output device. Sound follows the clock: it plays while time moves
-forwards, continues across loop wraps, and stops on a pause, seek, focus
-loss or ping-pong reverse; resuming starts only events after the new time.
+default output device. Sound follows the clock: it plays while time moves,
+continues across loop wraps and ping-pong turns, and stops on a pause, seek
+or focus loss; resuming starts only events after the new time. Moving
+backwards, the score plays mirrored: each event starts when the playhead
+reaches its end, so notes come in reverse order but each sounds forwards.
 At the natural end of a single play, the last notes ring out. If no device
 can be opened, the preview runs silently and prints why to stderr. The
 sound itself (scheduling, voices, the device stream) lives in

@@ -25,6 +25,9 @@ use std::time::Duration;
 #[derive(Clone)]
 pub struct Score {
     events: Box<[ScoreEvent]>,
+    /// Indices into `events`, sorted by when each ends, for playing
+    /// backwards.
+    by_end: Box<[u32]>,
     duration: Duration,
 }
 
@@ -33,6 +36,12 @@ pub(crate) struct ScoreEvent {
     pub(crate) start: Duration,
     pub(crate) length: Duration,
     pub(crate) sound: Sound,
+}
+
+impl ScoreEvent {
+    pub(crate) fn end(&self) -> Duration {
+        self.start + self.length
+    }
 }
 
 impl Score {
@@ -46,9 +55,16 @@ impl Score {
                 length: event.length,
                 sound: event.payload.clone(),
             })
+            .collect::<Box<[ScoreEvent]>>();
+        let mut by_end: Box<[u32]> = (0..events.len())
+            .map(|index| {
+                u32::try_from(index).expect("fewer than 2^32 events")
+            })
             .collect();
+        by_end.sort_by_key(|&index| events[index as usize].end());
         Self {
             events,
+            by_end,
             duration: scene.duration(),
         }
     }
@@ -72,6 +88,21 @@ impl Score {
         let first = self.events.partition_point(|e| e.start < from);
         let end = self.events.partition_point(|e| e.start < to);
         &self.events[first..end.max(first)]
+    }
+
+    /// The events that end in `after..=until`, exclusive of `after`: what
+    /// the playhead reaches moving backwards from `until` to `after`.
+    pub(crate) fn ending_in(
+        &self,
+        after: Duration,
+        until: Duration,
+    ) -> impl Iterator<Item = &ScoreEvent> {
+        let end = |index: &u32| self.events[*index as usize].end();
+        let first = self.by_end.partition_point(|i| end(i) <= after);
+        let last = self.by_end.partition_point(|i| end(i) <= until);
+        self.by_end[first..last.max(first)]
+            .iter()
+            .map(|&index| &self.events[index as usize])
     }
 
     /// Render every event offline into interleaved stereo at
