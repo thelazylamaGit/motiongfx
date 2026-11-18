@@ -391,12 +391,14 @@ pub(crate) const SHEET: &str = zgui::css!(
         background-color: #1e2128;
     }
 
+    /* A canvas keeps its default 300 x 150 unless it is given a size, so
+       insets alone would not stretch it over the track. */
     .playhead {
         position: absolute;
         left: 0;
-        right: 0;
         top: 0;
-        bottom: 0;
+        width: 100%;
+        height: 100%;
     }"
 );
 
