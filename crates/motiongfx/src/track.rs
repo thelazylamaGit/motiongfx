@@ -182,9 +182,10 @@ pub struct TrackFragment {
     /// fragments without cues.
     cues: Vec<(CueId, Duration)>,
     /// Clips that cut a running clip on the same field instead of
-    /// conflicting with it; see [`Self::interrupting`]. Empty (no
+    /// conflicting with it, each with the group it was marked in (the
+    /// group's smallest clip ID); see [`Self::interrupting`]. Empty (no
     /// allocation) in fragments that don't interrupt.
-    interrupting: Vec<ActionId>,
+    interrupting: Vec<(ActionId, ActionId)>,
 }
 
 impl TrackFragment {
@@ -267,14 +268,31 @@ impl TrackFragment {
     ///
     /// The running clip is cut where this one starts: up to the cut it
     /// follows its original timing, and the interrupting clip starts
-    /// from the value it had reached. A clip starting at the same
-    /// instant, or on an aliasing field path, still conflicts.
+    /// from the value it had reached. The fragment's clips form one
+    /// group: a clip of an interrupting group that started earlier, which
+    /// would start while this one runs (such as the rest of the chain
+    /// this one cut), is dropped, since this fragment has taken over the
+    /// field by then. Otherwise a clip starting at the same instant, or
+    /// on an aliasing field path, still conflicts.
+    ///
+    /// Marking a fragment again makes all its clips one group.
     #[must_use = "This method consumes the fragment and returns a marked one."]
     pub fn interrupting(mut self) -> Self {
-        for sequence in self.sequences.values() {
-            self.interrupting
-                .extend(sequence.clips.iter().map(|clip| clip.id));
-        }
+        let group = self
+            .sequences
+            .values()
+            .flat_map(|sequence| sequence.clips.iter())
+            .map(|clip| clip.id)
+            .min();
+        let Some(group) = group else {
+            return self;
+        };
+        self.interrupting = self
+            .sequences
+            .values()
+            .flat_map(|sequence| sequence.clips.iter())
+            .map(|clip| (clip.id, group))
+            .collect();
         self
     }
 
@@ -470,13 +488,14 @@ type ConflictReport = ();
 /// returning each cut clip's ID with the fraction of its original
 /// duration it keeps.
 ///
-/// Sequences must be sorted by start. A clip is cut when the next one is
-/// marked interrupting and starts strictly inside it. Clips that start
-/// together, or that still overlap after cutting, are left for
-/// `resolve_conflicts`.
+/// Sequences must be sorted by start. First, clips an interrupting group
+/// took over are dropped; see [`drop_taken_over`]. Then a clip is cut
+/// when the next one is marked interrupting and starts strictly inside
+/// it. Clips that start together, or that still overlap after cutting,
+/// are left for `resolve_conflicts`.
 fn cut_interrupted(
     sequences: &mut [(ActionKey, Sequence)],
-    mut interrupting: Vec<ActionId>,
+    mut interrupting: Vec<(ActionId, ActionId)>,
 ) -> Vec<(ActionId, f32)> {
     let mut cuts = Vec::new();
     if interrupting.is_empty() {
@@ -484,10 +503,36 @@ fn cut_interrupted(
     }
     interrupting.sort_unstable();
 
+    let group_of = |id: ActionId| {
+        interrupting
+            .binary_search_by_key(&id, |&(clip, _)| clip)
+            .ok()
+            .map(|found| interrupting[found].1)
+    };
+    // When each group starts: its earliest clip's start.
+    let mut group_starts = sequences
+        .iter()
+        .flat_map(|(_, sequence)| sequence.clips.iter())
+        .filter_map(|clip| Some((group_of(clip.id)?, clip.start)))
+        .collect::<Vec<_>>();
+    // Sorted by group, then start, so dedup keeps each group's earliest.
+    group_starts.sort_unstable();
+    group_starts.dedup_by_key(|&mut (group, _)| group);
+    let started = |id: ActionId| {
+        let group = group_of(id)?;
+        group_starts
+            .binary_search_by_key(&group, |&(group, _)| group)
+            .ok()
+            .map(|found| group_starts[found].1)
+    };
+
+    // Scratch buffers reused across sequences.
+    let mut scratch = Scratch::default();
     for (_, sequence) in sequences.iter_mut() {
+        drop_taken_over(sequence, &started, &mut scratch);
         for index in 1..sequence.len() {
             let clip = sequence.clips[index];
-            if interrupting.binary_search(&clip.id).is_err() {
+            if group_of(clip.id).is_none() {
                 continue;
             }
             let previous = &mut sequence.clips[index - 1];
@@ -504,6 +549,76 @@ fn cut_interrupted(
         }
     }
     cuts
+}
+
+/// Drops each clip of an interrupting group that starts while (or as) a
+/// clip of a later-starting interrupting group runs. That group has
+/// taken over the field by then, so the rest of the earlier one no longer
+/// applies: a new "fade in, then out" that starts mid-way through an
+/// earlier one replaces the earlier fade-out instead of conflicting with
+/// it.
+///
+/// `started` gives an interrupting clip's group start, or `None` for a
+/// clip that doesn't interrupt, which is never dropped. `sequence` must
+/// be sorted by start. Clips of the latest-starting group are never
+/// dropped, so the sequence stays non-empty.
+fn drop_taken_over(
+    sequence: &mut Sequence,
+    started: &impl Fn(ActionId) -> Option<Duration>,
+    scratch: &mut Scratch,
+) {
+    let Scratch {
+        clips,
+        running,
+        dropped,
+    } = scratch;
+    clips.clear();
+    clips.extend(sequence.clips.iter().copied());
+    running.clear();
+    dropped.clear();
+    // Clips starting together all count as running before any of them is
+    // checked, so a group taking over at that instant is seen.
+    for together in clips.chunk_by(|a, b| a.start == b.start) {
+        let start = together[0].start;
+        running.retain(|(earlier, _)| earlier.end() > start);
+        running.extend(
+            together
+                .iter()
+                .filter(|clip| clip.duration > Duration::ZERO)
+                .filter_map(|&clip| Some((clip, started(clip.id)?))),
+        );
+        for clip in together {
+            let Some(group_start) = started(clip.id) else {
+                continue;
+            };
+            if running.iter().any(|&(_, other)| group_start < other) {
+                dropped.push(clip.id);
+                running.retain(|(running, _)| running.id != clip.id);
+            }
+        }
+    }
+    if dropped.is_empty() {
+        return;
+    }
+    dropped.sort_unstable();
+    let kept = clips
+        .iter()
+        .copied()
+        .filter(|clip| dropped.binary_search(&clip.id).is_err())
+        .collect();
+    sequence.clips = NonEmpty::from_vec(kept).expect(
+        "clips of the latest-starting group are never dropped",
+    );
+}
+
+/// Buffers [`drop_taken_over`] reuses across sequences: the sequence's
+/// clips as a slice, the interrupting clips still running with their
+/// group's start, and the clips dropped.
+#[derive(Default)]
+struct Scratch {
+    clips: Vec<ActionClip>,
+    running: Vec<(ActionClip, Duration)>,
+    dropped: Vec<ActionId>,
 }
 
 /// The kept fraction of every clip in `clip_arena`, by index: 1 for

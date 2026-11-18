@@ -280,7 +280,10 @@ impl<M: 'static> Animation<M> {
     /// The running animation is cut where this one starts: up to there it
     /// follows its own timing, and this one starts from the value it had
     /// reached. Only an animation that started earlier is cut; two that
-    /// start at the same moment still overlap. An animation of `x` does
+    /// start at the same moment still overlap. The rest of an earlier
+    /// interrupting animation that would start while this one runs (such
+    /// as the fade-out after the fade-in it cut) is dropped, so a repeated
+    /// "fade in, then out" can retrigger mid-fade. An animation of `x` does
     /// not cut one of the whole `position`; that is still an overlap.
     ///
     /// The value carries over at a cut, but not the speed: this animation

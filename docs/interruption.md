@@ -45,15 +45,26 @@ Rules:
    reached at the cut.
 3. Only an animation that started **strictly earlier** is cut. Two starting at
    the same instant still overlap (neither is newer), and stay an error.
-4. Only the **same property** is cut so far. An interrupter on an aliasing
+4. An interrupter **takes over** the property from interrupting animations
+   that started earlier: their parts that would start while (or as) it runs
+   are dropped. "Started" means the whole `.interrupt()`ed animation's
+   start, so the parts of one `chain` never take over from each other.
+   This is what lets a repeated pulse retrigger, such as the sorting
+   cursor's `chain([fill_to(WHITE), fill_to(color)]).delay(clock)
+   .interrupt()` arriving while the previous visit is still fading in: the
+   new visit cuts that fade-in and drops its fade-out, which has not
+   started yet. Without this, that fade-out could be neither cut (it starts
+   later) nor kept. Parts that start after the interrupter ends, and
+   animations not marked `.interrupt()`, are untouched.
+5. Only the **same property** is cut so far. An interrupter on an aliasing
    path (`position.x` and `position`) is still an `Overlap` error; phase 2
    below.
-5. An interrupting animation that overlaps nothing behaves like a normal one.
-6. Cutting never changes group timing: `chain`/`all`/`flow` use the reserved
+6. An interrupting animation that overlaps nothing behaves like a normal one.
+7. Cutting never changes group timing: `chain`/`all`/`flow` use the reserved
    durations, so the next step of a chain starts when it would have anyway.
-7. Interruptions chain: A cut by B, B cut by C, each starting from its
+8. Interruptions chain: A cut by B, B cut by C, each starting from its
    predecessor's value at the cut.
-8. A zero-length interrupter (`.set(..)`) cuts and jumps. A discrete property
+9. A zero-length interrupter (`.set(..)`) cuts and jumps. A discrete property
    keeps its start value up to the cut, as its jump interpolation already
    does before the end.
 
@@ -99,8 +110,12 @@ The `Overlap` message now suggests `.interrupt()` for the later animation.
   rejected: measured at 40 bytes, it would pad to 48 on every clip.
 - **Cutting.** `TrackFragment::compile` sorts each property's clips by start
   (one pass when already sorted), then `cut_interrupted` walks each sequence
-  once: a clip marked interrupting that starts strictly inside the clip
-  before it shortens that clip to end where it starts, recording the
+  once: first `drop_taken_over` sweeps it in start order, dropping each
+  interrupting clip that starts while (or as) a clip of a later-starting
+  interrupting group runs. `interrupting` stores each clip's group (the
+  smallest clip ID of the fragment it was marked in), and a group starts
+  at its earliest clip. Then a clip marked interrupting that starts
+  strictly inside the clip before it shortens that clip to end where it starts, recording the
   fraction kept. This runs **before** `resolve_conflicts`, so a cut clip no
   longer overlaps and is not reported; everything still overlapping
   (same-instant, aliasing) is resolved and reported as before.

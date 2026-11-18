@@ -216,3 +216,31 @@ fn assert_no_cuts(track: &Track) {
         }
     }
 }
+
+#[test]
+fn an_interrupter_takes_over_the_rest_of_an_earlier_chain() {
+    let mut registry = Registry::new();
+    let mut builder = registry.create_builder::<World>();
+    // A pulse up to 10 and back, and the same pulse again 1 s later,
+    // both interrupting. The second cuts the first's rise at 1 (5) and
+    // drops its fall over [2, 4], which would start while the second
+    // pulse rises.
+    let pulse = |builder: &mut TimelineBuilder<'_, World>| {
+        [slide_x(builder, 10.0, s(2)), slide_x(builder, 0.0, s(2))]
+            .ord_chain()
+    };
+    let a = pulse(&mut builder).interrupting();
+    let b = pulse(&mut builder).interrupting();
+    let track = [a, delay(s(1), b)].ord_all().compile();
+    #[cfg(feature = "diagnostics")]
+    assert!(track.conflicts().is_empty(), "{:?}", track.conflicts());
+    let timeline = builder.compile(track);
+    let (mut timeline, mut world) = bake(&registry, timeline);
+    let mut x = |t| x_at(&registry, &mut timeline, &mut world, t);
+
+    close(x(0.5), 2.5, "the first rise");
+    close(x(2.0), 7.5, "the second rise, halfway from 5 to 10");
+    close(x(3.5), 7.5, "the second fall, a quarter of the way");
+    close(x(5.0), 0.0, "the second fall's end");
+    close(x(2.0), 7.5, "the second rise again after seeking back");
+}

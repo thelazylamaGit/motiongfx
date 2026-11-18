@@ -194,9 +194,10 @@ after each advance. A pure function turns that into player calls:
 ## Sorting example
 
 `build_animation(&Instrument)`: `main` picks a SoundFont from the first
-argument, otherwise a quiet sine. Each cursor step is
-`all([fade chain, instrument.note(bar_note(value)).over(NOTE_TIME)])
-.delay(clock).interrupt()`. Pitch follows height on a three-octave
+argument, otherwise a quiet sine. Each lit bar in a step is
+`all([fade chain, instrument.note(bar_note(value)).over(NOTE_TIME)])`; a
+step groups these with its slides under one `.interrupt()`, and the steps
+run in `flow(STEP_HOLD, ..)`. Pitch follows height on a three-octave
 pentatonic scale from C3, and notes last 80 ms. The final sweep puts the
 note inside the existing `any` so it doesn't slow the sweep.
 

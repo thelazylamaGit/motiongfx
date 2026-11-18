@@ -264,6 +264,30 @@ fn an_interrupting_change_takes_over_from_where_the_running_one_is() {
 }
 
 #[test]
+fn a_retriggered_pulse_takes_over_mid_fade() {
+    // Each pulse rises to 10 over 100 ms, then falls to 0. The second
+    // starts at 50 (x = 5), cutting the first's rise and replacing its
+    // fall, which would start while the second rises.
+    let pulse = |at| {
+        chain([x(0).to(10.0), x(0).to(0.0)])
+            .delay(ms(at))
+            .interrupt()
+    };
+    let mut animation = scene().compile([all([pulse(0), pulse(50)])]);
+    close(item(&mut animation, 100, 0).x, 7.5);
+    close(item(&mut animation, 150, 0).x, 10.0);
+    close(item(&mut animation, 200, 0).x, 5.0);
+    close(item(&mut animation, 25, 0).x, 2.5);
+
+    // Retriggered exactly as the first starts falling: the second still
+    // takes over, since it started later, and rises from the top.
+    let mut animation =
+        scene().compile([all([pulse(0), pulse(100)])]);
+    close(item(&mut animation, 150, 0).x, 10.0);
+    close(item(&mut animation, 250, 0).x, 5.0);
+}
+
+#[test]
 fn interrupting_changes_starting_together_still_overlap() {
     let result = scene().try_compile([all([
         x(0).to(10.0),

@@ -27,7 +27,7 @@ use motiongfx_2d::{
     Animation, Color, CompiledScene, Handle, Rectangle, Scene, Text,
     all, any, chain,
     colors::{WHITE, hsl},
-    wait,
+    flow, wait,
 };
 use motiongfx_audio::Instrument;
 use motiongfx_audio::fundsp::prelude32::{adsr_live, sine_hz};
@@ -39,7 +39,7 @@ use vello_winit_example::Window;
 // ---------------------------------------------------------------------------
 
 /// Number of bars; any positive count works.
-const BAR_COUNT: usize = 128;
+const BAR_COUNT: usize = 64;
 /// Seed for the shuffles, so every run shows the same choreography.
 const SEED: u64 = 0x5EED;
 
@@ -60,23 +60,10 @@ const MOVE_TIME: Duration = ms(100);
 /// Time between steps. A sort takes thousands of steps, so this sets its
 /// length.
 const STEP_HOLD: Duration = ms(20);
-/// How a bar looks normally: its hue at full saturation, mid lightness.
-const BAR: Shade = Shade {
-    saturation: 1.0,
-    lightness: 0.5,
-};
-/// The bar a step is working on: its own hue, much lighter.
-const ACTIVE: Shade = Shade {
-    saturation: 1.0,
-    lightness: 1.0,
-};
-/// The bar it is compared with: its own hue, mostly greyed out.
-const COMPARED: Shade = Shade {
-    saturation: 1.0,
-    lightness: 1.0,
-};
-/// How long a bar the cursor visited takes to fade back to its own colour,
-/// leaving a short trail behind the cursor.
+/// How long a bar takes to turn white when the cursor reaches it.
+const LIGHT_TIME: Duration = ms(40);
+/// How long it then takes to fade back to its own colour, leaving a short
+/// trail behind the cursor.
 const FADE_TIME: Duration = ms(100);
 /// How long the bars take to scatter before the next algorithm.
 const SHUFFLE_TIME: Duration = ms(800);
@@ -288,19 +275,10 @@ fn bar_height(value: usize) -> f64 {
     (value + 1) as f64 / BAR_COUNT as f64 * MAX_HEIGHT
 }
 
-/// The saturation and lightness of a bar's colour; its hue always comes
-/// from its value. Highlights are shades of the bar's own colour.
-#[derive(Clone, Copy)]
-struct Shade {
-    saturation: f32,
-    lightness: f32,
-}
-
-/// Colour for `value` in `shade`: hue follows height, so sorted bars form
-/// a rainbow.
-fn bar_color(value: usize, shade: Shade) -> Color {
+/// Colour for `value`: hue follows height, so sorted bars form a rainbow.
+fn bar_color(value: usize) -> Color {
     let hue = 360.0 * value as f32 / BAR_COUNT as f32;
-    hsl(hue, shade.saturation, shade.lightness)
+    hsl(hue, 1.0, 0.5)
     // oklch(0.7, 0.3, hue)
 }
 
@@ -383,7 +361,7 @@ fn build_animation(instrument: &Instrument) -> CompiledScene {
             scene.add(
                 Rectangle::new(BAR_WIDTH, height)
                     .position((slot_x(slot), BASELINE + height / 2.0))
-                    .fill(bar_color(value, BAR)),
+                    .fill(bar_color(value)),
             )
         })
         .collect();
@@ -407,61 +385,42 @@ fn build_animation(instrument: &Instrument) -> CompiledScene {
         steps.push(title.set_content(algorithm.name));
         steps.push(wait(PAUSE_BEFORE));
 
-        // Two lanes that run side by side, each change starting at the
-        // step that made it: the cursor's fades, and the swaps' slides.
-        let mut cursor = Vec::new();
-        let mut slides = Vec::new();
-        // When the current step starts, from the start of the sort.
-        let mut clock = Duration::ZERO;
-
+        // One animation per step of the sort, started `STEP_HOLD` apart.
+        let mut sort = Vec::new();
         // The sort owns `order` mutably for the call; the closure borrows
-        // `bars`, `shown`, `cursor`, `slides` and `clock`, which are
-        // separate variables, so the borrows don't overlap.
+        // `bars`, `shown` and `sort`, which are separate variables, so the
+        // borrows don't overlap.
         (algorithm.sort)(&mut order, &mut |current, step| {
-            let lit =
-                [(step.active, ACTIVE), (step.compared, COMPARED)];
-            // A slot swapped with itself shows only as active.
+            // A slot swapped with itself lights up once.
+            let lit = [step.active, step.compared];
             let lit = if step.active == step.compared {
                 &lit[..1]
             } else {
                 &lit[..]
             };
-            for &(slot, shade) in lit {
+            // Each lit bar turns white, fades back and plays its note,
+            // while any swapped bars slide to their new slots.
+            let visits = lit.iter().map(|&slot| {
                 let value = current[slot];
                 let bar = bars[value];
-                // The cursor lights the bar, which then fades back, and
-                // plays the bar's note. If the cursor returns before the
-                // fade ends, it lights up again; the interruption cuts
-                // the fade, never the note, which always rings out. The
-                // fade starts slowly so a bar lit on every step (such as
-                // selection sort's smallest so far) stays steadily lit
-                // instead of flickering between each step's first frames.
-                cursor.push(
-                    all([
-                        chain([
-                            bar.set_fill(bar_color(value, shade)),
-                            bar.fill_to(bar_color(value, BAR))
-                                .over(FADE_TIME)
-                                .ease(ease::cubic::ease_in_out),
-                        ]),
-                        instrument
-                            .note(bar_note(value))
-                            .over(NOTE_TIME),
-                    ])
-                    .delay(clock)
-                    .interrupt(),
-                );
-            }
-            // Likewise, a bar can swap again before its last slide ends;
-            // the new slide takes over from where it is.
-            slides.extend(
-                move_bars(&bars, &shown, current, MOVE_TIME)
-                    .map(|moves| moves.delay(clock).interrupt()),
-            );
+                all([
+                    chain([
+                        bar.fill_to(WHITE).over(LIGHT_TIME),
+                        bar.fill_to(bar_color(value)).over(FADE_TIME),
+                    ]),
+                    instrument.note(bar_note(value)).over(NOTE_TIME),
+                ])
+            });
+            let slides = move_bars(&bars, &shown, current, MOVE_TIME);
+            // Steps come faster than fades and slides finish, so a step
+            // takes over a bar from where the last one left it: a bar
+            // lit again mid-fade lights up from there, and a bar swapped
+            // again mid-slide turns towards its new slot. Notes always
+            // ring out.
+            sort.push(all(visits.chain(slides)).interrupt());
             shown.copy_from_slice(current);
-            clock += STEP_HOLD;
         });
-        steps.push(all([all(cursor), all(slides)]));
+        steps.push(flow(STEP_HOLD, sort));
         debug_assert!(
             order.is_sorted(),
             "{} left bars unsorted",
@@ -473,18 +432,18 @@ fn build_animation(instrument: &Instrument) -> CompiledScene {
         // Sorted now, so value order is left-to-right order: sweep across,
         // climbing the scale. The `any` moves on after 15 ms while the
         // fade and the note carry on.
-        for (value, bar) in bars.iter().enumerate() {
-            steps.extend([
-                bar.set_fill(bar_color(value, ACTIVE)),
-                any([
-                    wait(ms(15)),
-                    bar.set_fill(bar_color(value, BAR))
-                        .over(FADE_TIME)
-                        .ease(ease::cubic::ease_out),
+        steps.push(flow(
+            ms(15),
+            bars.iter().enumerate().map(|(value, bar)| {
+                all([
+                    chain([
+                        bar.set_fill(WHITE),
+                        bar.fill_to(bar_color(value)).over(FADE_TIME),
+                    ]),
                     instrument.note(bar_note(value)).over(NOTE_TIME),
-                ]),
-            ]);
-        }
+                ])
+            }),
+        ));
         steps.push(wait(PAUSE_AFTER));
     }
     scene.compile(steps)
