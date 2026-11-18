@@ -1,15 +1,18 @@
 //! The transport bar's right-hand controls: the playing speed and the
-//! volume.
+//! volume. Both are zgui_ui components (a dropdown menu and a popover);
+//! their colours come from the editor's theme.
 
 use zgui::prelude::*;
 use zgui::reactive::{RenderEffect, UnsyncCallback};
 use zgui::view::ClassName;
 use zgui_ui::prelude::*;
 use zgui_ui_icons::prelude::*;
-use zgui_ui_icons::set::chevron::CHEVRON_DOWN;
 use zgui_ui_primitives::{Align, Placement, Side};
 
-use crate::editor::Clock;
+use crate::clock::Clock;
+use crate::icons::{
+    CHEVRON_DOWN, VOLUME_HIGH, VOLUME_LOW, VOLUME_MUTED,
+};
 
 /// The speeds the menu offers.
 const SPEEDS: [f64; 7] = [0.1, 0.25, 0.5, 1.0, 1.5, 2.0, 4.0];
@@ -86,8 +89,8 @@ impl Sound {
     }
 }
 
-/// The speed menu: a compact trigger showing the speed, amber whenever
-/// time isn't running at 1x.
+/// The speed menu: a compact trigger showing the speed, in the accent
+/// colour whenever time isn't running at 1x.
 pub(crate) fn speed_menu(clock: Clock) -> impl IntoView {
     let speed = clock.speed;
     let chosen = RwSignal::new_local(value_of(1.0));
@@ -153,6 +156,8 @@ pub(crate) fn volume_control(sound: Sound) -> impl IntoView {
     }
 }
 
+/// The speaker button and the popover it opens: mute, a level slider and
+/// the level as a percentage.
 fn volume_popover(sound: Sound) -> impl IntoView {
     let icon = Signal::derive_local(move || sound.icon());
     view! {
@@ -204,51 +209,15 @@ fn speed_label(speed: f64) -> String {
     format!("{text}×")
 }
 
-/// A speaker: the body, then whatever comes out of it.
-macro_rules! speaker {
-    () => {
-        "M3 9 L7 9 L12 5 L12 19 L7 15 L3 15 Z "
-    };
-}
-
-/// The small wave in front of the speaker, as a band between two arcs.
-macro_rules! near_wave {
-    () => {
-        "M15.54 8.46 A5 5 0 0 1 15.54 15.54 L14.26 14.26 A3.2 3.2 0 0 0 14.26 9.74 Z "
-    };
-}
-
-const VOLUME_LOW: IconData = IconData::new(
-    "volume-low",
-    24.0,
-    concat!(speaker!(), near_wave!()),
-);
-
-const VOLUME_HIGH: IconData = IconData::new(
-    "volume-high",
-    24.0,
-    concat!(
-        speaker!(),
-        near_wave!(),
-        "M18.01 5.99 A8.5 8.5 0 0 1 18.01 18.01 L16.74 16.74 A6.7 6.7 0 0 0 16.74 7.26 Z"
-    ),
-);
-
-/// The speaker with a cross where the waves would be: two bars wound the
-/// same way, so where they overlap stays filled.
-const VOLUME_MUTED: IconData = IconData::new(
-    "volume-muted",
-    24.0,
-    concat!(
-        speaker!(),
-        "M20.23 14.79 L15.71 10.27 L16.77 9.21 L21.29 13.73 Z ",
-        "M21.29 10.27 L16.77 14.79 L15.71 13.73 L20.23 9.21 Z"
-    ),
-);
-
-/// How the controls look.
+/// How the controls look. Rules that adjust a zgui_ui component name a
+/// parent too (`.transport .speed`): a component installs its own sheet
+/// when it first appears, after this one, so an equally specific rule here
+/// would lose to it.
 pub(crate) const SHEET: &str = zgui::css!(
-    ".transport .speed {
+    "/* The speed menu's trigger: the speed, in the accent while it isn't
+       1x. */
+
+    .transport .speed {
         flex-shrink: 0;
         gap: 2px;
         padding: 0 6px 0 8px;
@@ -256,35 +225,42 @@ pub(crate) const SHEET: &str = zgui::css!(
     }
 
     .speed__value {
-        white-space: nowrap;
         min-width: 30px;
+        white-space: nowrap;
     }
 
     .transport .speed--changed {
-        color: #f2b84a;
+        color: var(--zui-color-primary);
     }
 
     .speed__hint {
         font-weight: normal;
-        opacity: 0.7;
+        color: var(--zui-color-muted-foreground);
     }
 
+    /* The volume popover: mute, slider, level. The popover has a fixed
+       width, so the slider takes up whatever the other two leave and the
+       padding is the same on both sides. */
+
     .volume__row {
+        width: 100%;
         align-items: center;
         gap: 10px;
     }
 
     .volume .volume__slider {
-        width: 140px;
+        flex-grow: 1;
+        min-width: 0;
     }
 
     .volume__value {
+        flex-shrink: 0;
         width: 36px;
-        font-size: 12px;
-        font-variant-numeric: tabular-nums;
         white-space: nowrap;
         text-align: right;
-        color: #9aa1b1;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        color: var(--zui-color-muted-foreground);
     }"
 );
 

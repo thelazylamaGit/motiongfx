@@ -50,6 +50,26 @@ At narrow widths the transport bar leaves things out rather than wrapping:
 the frame counter below 720 px, the total time below 560 px, and the start
 and end buttons below 440 px.
 
+## Look and code layout
+
+`Window::color_scheme` picks the dark palette (the default), the light one,
+or the desktop's (`ColorScheme::System`). The palettes live in `theme.rs` as
+zgui_ui design tokens, so the library's menus, popovers, buttons and slider
+share the timeline's greys and amber accent. Each part keeps its own style
+sheet beside its code and names only tokens, and the track's canvases take
+their colours from CSS, so nothing in Rust knows a colour.
+
+| File | What it holds |
+|---|---|
+| `lib.rs` | `Window`, the builder |
+| `editor.rs` | the editor view and its keys |
+| `clock.rs` | playback: direction, speed, shuttle, and the sound it drives |
+| `controls.rs` | the speed menu and the volume popover |
+| `theme.rs` | the palettes and the window's rules |
+| `icons.rs` | the transport and speaker icons |
+| `preview.rs` | Vello rendering into the zgui surface |
+| `timeline/` | the transport bar and track: `viewport`, `pointer`, `draw`, `ruler`, `timecode`, `style` |
+
 ## Tests
 
 Interaction tests (`src/headless.rs`) run the real timeline, style sheets,

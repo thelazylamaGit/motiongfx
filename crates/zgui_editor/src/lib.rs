@@ -20,15 +20,19 @@
 //! ```
 #![warn(missing_docs)]
 
+mod clock;
 mod controls;
 mod editor;
 #[cfg(test)]
 mod headless;
+mod icons;
 mod preview;
+mod theme;
 mod timeline;
 
 use vello::kurbo::Size;
 pub use vello_winit_motiongfx::PlaybackMode;
+pub use zgui_ui_tokens::prelude::ColorScheme;
 
 /// What stopped the editor: a desktop that would not open a window, or a
 /// machine with no usable graphics device.
@@ -41,6 +45,7 @@ pub struct Window {
     canvas: Size,
     playback_mode: PlaybackMode,
     renderer: vello_motiongfx::Renderer,
+    color_scheme: ColorScheme,
     #[cfg(feature = "audio")]
     audio: bool,
 }
@@ -71,16 +76,18 @@ impl Window {
             canvas: Size::new(width, height),
             playback_mode: PlaybackMode::Once,
             renderer: vello_motiongfx::Renderer::default(),
+            color_scheme: ColorScheme::Dark,
             #[cfg(feature = "audio")]
             audio: false,
         }
     }
 
     /// Play the scene's sound events (notes and samples from
-    /// `motiongfx_audio`) through the default output device. Sound plays
-    /// while time moves forwards and stops on a pause, seek or reverse.
-    /// If the device can't be opened, the editor runs silently and says
-    /// why on stderr.
+    /// `motiongfx_audio`) through the default output device. Sound follows
+    /// the clock: forwards, mirrored while playing backwards, and at the
+    /// playing speed as a change of tempo; a pause or seek stops it. If
+    /// the device can't be opened, the editor runs silently, says why on
+    /// stderr, and shows its volume control disabled.
     #[cfg(feature = "audio")]
     pub fn audio(mut self) -> Self {
         self.audio = true;
@@ -90,6 +97,13 @@ impl Window {
     /// Play once (the default), loop, ping-pong, or loop after an intro.
     pub fn playback_mode(mut self, mode: PlaybackMode) -> Self {
         self.playback_mode = mode;
+        self
+    }
+
+    /// Use the dark editor colours (the default), the light ones, or
+    /// whichever the desktop is set to.
+    pub fn color_scheme(mut self, scheme: ColorScheme) -> Self {
+        self.color_scheme = scheme;
         self
     }
 
@@ -124,6 +138,7 @@ impl Window {
             renderer: self.renderer,
             canvas: self.canvas,
             playback_mode: self.playback_mode,
+            color_scheme: self.color_scheme,
             #[cfg(feature = "audio")]
             audio: self.audio,
         });
@@ -133,7 +148,7 @@ impl Window {
                 width as f32,
                 (height + timeline::HEIGHT) as f32,
             )
-            .with_stylesheet(editor::SHEET)
+            .with_stylesheet(theme::SHEET)
             .with_stylesheet(timeline::SHEET)
             .with_stylesheet(controls::SHEET)
             // zgui builds the view once per window; this app opens one.

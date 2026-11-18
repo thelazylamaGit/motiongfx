@@ -16,10 +16,11 @@ use zgui::render::{RenderTarget, Renderer};
 use zgui::runtime::{AppError, Runtime};
 use zgui::vocab::{PointerAction, PointerEvent, Timestamp};
 use zgui_platform_headless::Harness;
-use zgui_ui_tokens::prelude::*;
+use zgui_ui_tokens::prelude::ColorScheme;
 
+use crate::clock::Clock;
 use crate::controls::{self, Sound, SoundStatus};
-use crate::editor::{self, Clock};
+use crate::theme::{self, EditorThemeProps};
 use crate::timeline::{self, Viewport, timeline};
 
 thread_local! {
@@ -55,28 +56,29 @@ impl Rig {
         let handler = zgui::app()
             .with_title("timeline")
             .with_size(width, timeline::HEIGHT as f32)
-            .with_stylesheet(editor::SHEET)
+            .with_stylesheet(theme::SHEET)
             .with_stylesheet(timeline::SHEET)
             .with_stylesheet(controls::SHEET)
-            .with_renderer(Box::new(|_surface: &Arc<dyn Surface>, target| {
-                let mut renderer = Nothing::default();
-                renderer.configure(target);
-                Ok::<_, AppError>(Box::new(renderer) as Box<dyn Renderer>)
-            }))
+            .with_renderer(Box::new(
+                |_surface: &Arc<dyn Surface>, target| {
+                    let mut renderer = Nothing::default();
+                    renderer.configure(target);
+                    Ok::<_, AppError>(
+                        Box::new(renderer) as Box<dyn Renderer>
+                    )
+                },
+            ))
             .into_handler(move || {
                 let clock = Clock::new(PlaybackConfig::new(duration));
                 // Paused at the start, as a person scrubbing would be.
                 clock.toggle();
-                let viewport = RwSignal::new_local(Viewport::whole(duration));
+                let viewport =
+                    RwSignal::new_local(Viewport::whole(duration));
                 let sound = Sound::new(SoundStatus::None, &clock);
                 *slot.borrow_mut() = Some((clock.clone(), viewport));
                 let bar = timeline(clock, viewport, sound);
                 view! {
-                    ThemeProvider(
-                        scheme = RwSignal::new_local(ColorScheme::Dark),
-                        light = Signal::derive_local(|| Preset::default().light()),
-                        dark = Signal::derive_local(|| Preset::default().dark())
-                    ) {
+                    EditorTheme(scheme = ColorScheme::Dark) {
                         column(class = "editor") {
                             box(class = "preview") {}
                             {bar}
