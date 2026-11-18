@@ -16,8 +16,20 @@ examples run in either host. Run them in the editor with the examples crate's
 cargo run -p vello_winit_example --example sorting --features zgui
 ```
 
-Keys: Space plays and pauses, the left and right arrows step one frame (one
-second with Shift), Home and End jump to the ends.
+Keys:
+
+- Space plays and pauses. J plays backwards, K pauses, L plays forwards;
+  with K held, J and L step one frame.
+- The left and right arrows step one frame (one second with Shift); Home and
+  End jump to the ends.
+- `=` and `-` zoom the timeline around the playhead, `\` fits the whole
+  animation.
+
+On the track, Ctrl+wheel (Cmd on macOS) or Alt+wheel zooms around the
+pointer, down to four frames across, and the wheel scrolls through time.
+Scrubbing samples the animation at the exact time under the pointer, not at
+whole frames. While zoomed, a navigator bar under the lane shows and drags
+the visible range, and the view turns a page when the playhead leaves it.
 
 ## Dependency on the zgui fork
 

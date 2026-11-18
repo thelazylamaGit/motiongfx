@@ -1,13 +1,18 @@
 //! The timeline under the preview: transport buttons and timecode above a
-//! ruler and lane with a draggable playhead.
+//! ruler and lane with a draggable playhead. The track zooms from the
+//! whole animation down to a few frames.
 
+use std::cell::Cell;
+use std::rc::Rc;
 use std::time::Duration;
 
 use vello_winit_motiongfx::PlaybackState;
 use zgui::canvas::zgui_color::Color;
 use zgui::canvas::{Brush, ShapeBuilder};
-use zgui::elements::kurbo::{Rect, RoundedRect, Shape as _};
+use zgui::elements::kurbo::{BezPath, Rect, RoundedRect, Shape as _};
+use zgui::geom::CssPx;
 use zgui::prelude::*;
+use zgui::reactive::RenderEffect;
 use zgui::view::CustomPropertyName;
 use zgui_ui::prelude::*;
 use zgui_ui_icons::prelude::*;
@@ -18,12 +23,15 @@ use crate::editor::Clock;
 /// sizing the window.
 pub(crate) const HEIGHT: f64 = 104.0;
 
-/// The frame rate the timecode and frame steps count in.
+/// The frame rate the timecode, ruler and frame steps count in.
 const FPS: u32 = 60;
 
 /// One frame at [`FPS`].
 pub(crate) const FRAME: Duration =
     Duration::from_nanos(1_000_000_000 / FPS as u64);
+
+/// The ruler's height; ticks stand on its bottom edge.
+const RULER: f64 = 26.0;
 
 /// Where the lane starts below the track's top, and ends above its
 /// bottom; the stylesheet's `.lane` uses the same numbers.
@@ -33,10 +41,203 @@ const LANE_BOTTOM: f64 = 12.0;
 /// Where the playhead's knob sits below the track's top.
 const HEAD_TOP: f64 = 12.0;
 
-/// The timeline for `clock`.
-pub(crate) fn timeline(clock: Clock) -> impl IntoView {
+/// The navigator bar under the lane, shown while zoomed: its top above
+/// the track's bottom, and its height.
+const NAV_RAISE: f64 = 8.0;
+const NAV_HEIGHT: f64 = 4.0;
+
+/// The narrowest the navigator's thumb gets, so it can still be grabbed.
+const THUMB_MIN: f64 = 16.0;
+
+/// How much `=` and `-` zoom per press.
+pub(crate) const ZOOM_STEP: f64 = 1.5;
+
+/// How much one CSS pixel of wheel zooms, as an exponent, so zooming in
+/// and back out by the same amount returns to the same view.
+const WHEEL_ZOOM: f64 = 0.004;
+
+/// CSS pixels per wheel notch, for wheels that report notches.
+const LINE: f32 = 40.0;
+
+/// The fewest frames the track can be zoomed to show.
+const MIN_FRAMES: u32 = 4;
+
+/// Frame stripes appear on the lane once a frame is this many CSS pixels
+/// wide.
+const STRIPE_MIN: f64 = 8.0;
+
+/// The stretch of the animation the track shows, in seconds.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Viewport {
+    start: f64,
+    length: f64,
+    duration: f64,
+}
+
+impl Viewport {
+    /// The whole of an animation `duration` long.
+    pub(crate) fn whole(duration: Duration) -> Self {
+        let duration = duration.as_secs_f64();
+        Self {
+            start: 0.0,
+            length: duration,
+            duration,
+        }
+    }
+
+    fn end(self) -> f64 {
+        self.start + self.length
+    }
+
+    fn is_zoomed(self) -> bool {
+        self.length < self.duration
+    }
+
+    /// The time at `fraction` of the track's width.
+    fn time_at(self, fraction: f64) -> f64 {
+        self.start + fraction * self.length
+    }
+
+    /// Where `seconds` falls, as a fraction of the track's width.
+    fn fraction_of(self, seconds: f64) -> f64 {
+        (seconds - self.start) / self.length
+    }
+
+    fn starting_at(self, start: f64) -> Self {
+        Self {
+            start: start.clamp(0.0, self.duration - self.length),
+            ..self
+        }
+    }
+
+    /// Zoomed in by `factor` (out, below one), keeping the time at
+    /// `anchor` (a fraction of the width) where it is.
+    fn zoomed(self, factor: f64, anchor: f64) -> Self {
+        let pinned = self.time_at(anchor);
+        let shortest =
+            (FRAME * MIN_FRAMES).as_secs_f64().min(self.duration);
+        let length =
+            (self.length / factor).clamp(shortest, self.duration);
+        Self { length, ..self }.starting_at(pinned - anchor * length)
+    }
+
+    /// Zoomed by `factor` around `seconds`: in place when it is in view,
+    /// otherwise centred on it.
+    pub(crate) fn zoomed_around(
+        self,
+        factor: f64,
+        seconds: f64,
+    ) -> Self {
+        let anchor = self.fraction_of(seconds);
+        if (0.0..=1.0).contains(&anchor) {
+            self.zoomed(factor, anchor)
+        } else {
+            let zoomed = self.zoomed(factor, 0.5);
+            zoomed.starting_at(seconds - zoomed.length / 2.0)
+        }
+    }
+
+    /// The whole animation.
+    pub(crate) fn fitted(self) -> Self {
+        Self {
+            start: 0.0,
+            length: self.duration,
+            ..self
+        }
+    }
+
+    fn panned(self, seconds: f64) -> Self {
+        self.starting_at(self.start + seconds)
+    }
+
+    /// Turned a page, if need be, so `seconds` is in view: how an editor
+    /// keeps up with the playhead.
+    fn following(self, seconds: f64) -> Self {
+        if seconds > self.end() {
+            self.starting_at(seconds)
+        } else if seconds < self.start {
+            self.starting_at(seconds - self.length)
+        } else {
+            self
+        }
+    }
+
+    /// Slid just far enough that `seconds` is in view: how the track
+    /// scrolls while the playhead is dragged past its edge.
+    fn reaching(self, seconds: f64) -> Self {
+        if seconds > self.end() {
+            self.starting_at(seconds - self.length)
+        } else if seconds < self.start {
+            self.starting_at(seconds)
+        } else {
+            self
+        }
+    }
+}
+
+/// What a press on the track started.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Drag {
+    Idle,
+    /// Moving the playhead.
+    Scrub,
+    /// Moving the navigator's thumb, held `grab` seconds after the
+    /// view's start.
+    Navigate {
+        grab: f64,
+    },
+}
+
+/// Where a pointer is over the track.
+#[derive(Clone, Copy, Debug)]
+struct Spot {
+    /// Across the track, as a fraction of its width.
+    fraction: f64,
+    /// Down from the track's top, in CSS pixels.
+    y: f64,
+    /// The track's size, in CSS pixels.
+    width: f64,
+    height: f64,
+}
+
+/// The timeline for `clock`, showing `viewport`.
+pub(crate) fn timeline(
+    clock: Clock,
+    viewport: RwSignal<Viewport, LocalStorage>,
+) -> impl IntoView {
     let state = clock.state;
     let duration = state.get_untracked().duration;
+
+    // Turn the page when the playhead leaves the view. Only the time is
+    // tracked, so panning away while paused stays put.
+    let follow = RenderEffect::new(move |_| {
+        let time = state.get().time.as_secs_f64();
+        let now = viewport.get_untracked();
+        let next = now.following(time);
+        if next != now {
+            viewport.set(next);
+        }
+    });
+    on_cleanup_local(move || drop(follow));
+
+    // What moves only with the view: the ruler's ticks, frame stripes and
+    // the navigator. A canvas can't draw text, so labels are elements.
+    let marks =
+        zgui::elements::canvas().class("marks").draw(move |cx| {
+            let view = viewport.get();
+            let (width, height) = (
+                f64::from(cx.size.width.0),
+                f64::from(cx.size.height.0),
+            );
+            if width <= 0.0 {
+                return;
+            }
+            draw_ticks(cx, view, width);
+            draw_stripes(cx, view, width, height);
+            if view.is_zoomed() {
+                draw_navigator(cx, view, width, height);
+            }
+        });
 
     // The playhead and the played part of the lane are one vector drawing
     // rather than positioned boxes: boxes snap to whole device pixels one
@@ -44,69 +245,116 @@ pub(crate) fn timeline(clock: Clock) -> impl IntoView {
     // pixel as they move.
     let playhead =
         zgui::elements::canvas().class("playhead").draw(move |cx| {
-            let state = state.get();
-            let fraction = (state.time.as_secs_f64()
-                / state.duration.as_secs_f64())
-            .clamp(0.0, 1.0);
             let (width, height) = (
                 f64::from(cx.size.width.0),
                 f64::from(cx.size.height.0),
             );
-            let x = fraction * width;
-            let played =
-                Rect::new(0.0, LANE_TOP, x, height - LANE_BOTTOM);
-            if played.width() > 0.0 {
-                cx.scene.push(
-                    ShapeBuilder::new(
-                        RoundedRect::from_rect(played, 4.0)
-                            .to_path(0.1),
-                    )
-                    .fill(Brush::Solid(Color::srgb(
-                        0.95, 0.72, 0.29, 0.16,
-                    )))
-                    .build(),
-                );
+            if width <= 0.0 {
+                return;
             }
-            let mut head =
-                Rect::new(x - 1.0, HEAD_TOP, x + 1.0, height - 6.0)
-                    .to_path(0.1);
-            head.extend(
-                RoundedRect::new(
-                    x - 6.0,
-                    HEAD_TOP,
-                    x + 6.0,
-                    HEAD_TOP + 12.0,
-                    3.0,
-                )
-                .path_elements(0.1),
-            );
-            cx.scene.push(
-                ShapeBuilder::new(head)
-                    .fill(Brush::Solid(Color::srgb(
-                        0.95, 0.72, 0.29, 1.0,
-                    )))
-                    .build(),
+            draw_playhead(
+                cx,
+                viewport.get(),
+                state.get(),
+                width,
+                height,
             );
         });
 
     // Pointer positions arrive in window CSS pixels and boxes in device
     // pixels, so the track's window box and the scale relate them.
     let track = NodeRef::new();
-    let dragging = RwSignal::new_local(false);
-    let scrub = clock.clone();
-    let seek_to = move |x_css: f32| {
-        let Some(bounds) = track.window_bounds() else {
-            return;
-        };
-        if bounds.size.width.0 <= 0.0 {
-            return;
+    let locate = move |x_css: f32, y_css: f32| {
+        let bounds = track.window_bounds()?;
+        let scale = track.scale();
+        if bounds.size.width.0 <= 0.0 || scale <= 0.0 {
+            return None;
         }
-        let x = x_css * track.scale();
-        let fraction =
-            f64::from((x - bounds.origin.x.0) / bounds.size.width.0);
-        scrub.seek(duration.mul_f64(fraction.clamp(0.0, 1.0)));
+        Some(Spot {
+            fraction: f64::from(
+                (x_css * scale - bounds.origin.x.0)
+                    / bounds.size.width.0,
+            ),
+            y: f64::from((y_css * scale - bounds.origin.y.0) / scale),
+            width: f64::from(bounds.size.width.0 / scale),
+            height: f64::from(bounds.size.height.0 / scale),
+        })
     };
-    let seek_down = seek_to.clone();
+
+    let drag = Rc::new(Cell::new(Drag::Idle));
+    let scrub = clock.clone();
+    // The view slides first, so a drag past either edge scrolls the track
+    // rather than pinning the playhead to it.
+    let scrub_to = move |fraction: f64| {
+        let view = viewport.get_untracked();
+        let time = view.time_at(fraction).clamp(0.0, view.duration);
+        let next = view.reaching(time);
+        if next != view {
+            viewport.set(next);
+        }
+        scrub.seek(Duration::from_secs_f64(time));
+    };
+    // The navigator spans the whole animation, so the pointer's fraction
+    // of the width is a fraction of the duration.
+    let navigate_to = move |fraction: f64, grab: f64| {
+        let view = viewport.get_untracked();
+        let next = view.starting_at(fraction * view.duration - grab);
+        if next != view {
+            viewport.set(next);
+        }
+    };
+    let press = {
+        let drag = drag.clone();
+        let scrub_to = scrub_to.clone();
+        move |spot: Spot| {
+            let view = viewport.get_untracked();
+            if view.is_zoomed() && spot.y >= spot.height - LANE_BOTTOM
+            {
+                // Grabbing the thumb keeps it under the pointer; pressing
+                // beside it centres it there first.
+                let at = spot.fraction * view.duration;
+                let grab = if (view.start..=view.end()).contains(&at)
+                {
+                    at - view.start
+                } else {
+                    view.length / 2.0
+                };
+                drag.set(Drag::Navigate { grab });
+                navigate_to(spot.fraction, grab);
+            } else {
+                drag.set(Drag::Scrub);
+                scrub_to(spot.fraction);
+            }
+        }
+    };
+    let drag_to = {
+        let drag = drag.clone();
+        move |spot: Spot| match drag.get() {
+            Drag::Idle => {}
+            Drag::Scrub => scrub_to(spot.fraction),
+            Drag::Navigate { grab } => {
+                navigate_to(spot.fraction, grab)
+            }
+        }
+    };
+    let (release, cancel) = (drag.clone(), drag);
+    // Ctrl (Cmd on macOS) or Alt with the wheel zooms around the pointer,
+    // as in most editors; the plain wheel scrolls through time whichever
+    // way it turns.
+    let wheel = move |spot: Spot, dx: f64, dy: f64, zoom: bool| {
+        let view = viewport.get_untracked();
+        let next = if zoom {
+            view.zoomed(
+                (-dy * WHEEL_ZOOM).exp(),
+                spot.fraction.clamp(0.0, 1.0),
+            )
+        } else {
+            view.panned((dx + dy) / spot.width * view.length)
+        };
+        if next != view {
+            viewport.set(next);
+        }
+    };
 
     let (start, back, play, forward, end) = (
         clock.clone(),
@@ -165,77 +413,287 @@ pub(crate) fn timeline(clock: Clock) -> impl IntoView {
                 text(class = "timecode") {{move || timecode(state.get().time)}}
                 text(class = "timecode timecode--total") {{format!("/ {}", timecode(duration))}}
                 box(class = "transport__spacer")
-                text(class = "transport__meta") {{move || frame_text(state.get())}}
+                text(class = "transport__meta") {{move || meta_text(state.get(), viewport.get())}}
             }
             box(
                 class = "track",
                 node_ref = track,
                 on:pointer_down = move |ev| {
-                    ev.capture_pointer();
-                    dragging.set(true);
-                    seek_down(ev.position.x.0);
+                    if let Some(spot) = locate(ev.position.x.0, ev.position.y.0) {
+                        ev.capture_pointer();
+                        press(spot);
+                    }
                 },
                 on:pointer_move = move |ev| {
-                    if dragging.get_untracked() {
-                        seek_to(ev.position.x.0);
+                    if let Some(spot) = locate(ev.position.x.0, ev.position.y.0) {
+                        drag_to(spot);
                     }
                 },
                 on:pointer_up = move |ev| {
-                    dragging.set(false);
+                    release.set(Drag::Idle);
                     ev.release_pointer();
                 },
                 on:pointer_cancel = move |ev| {
-                    dragging.set(false);
+                    cancel.set(Drag::Idle);
                     ev.release_pointer();
+                },
+                on:wheel = move |ev| {
+                    if let Some(spot) = locate(ev.position.x.0, ev.position.y.0) {
+                        let delta = ev.delta.to_pixels(CssPx(LINE));
+                        let modifiers = ev.modifiers;
+                        wheel(
+                            spot,
+                            f64::from(delta.width.0),
+                            f64::from(delta.height.0),
+                            modifiers.primary() || modifiers.control() || modifiers.alt(),
+                        );
+                    }
                 }
             ) {
-                box(class = "ruler") {{ruler(duration)}}
+                box(class = "ruler") {{move || labels(viewport.get())}}
                 box(class = "lane") {}
+                {marks.into_view()}
                 {playhead.into_view()}
             }
         }
     }
 }
 
-/// The ruler's ticks: a labelled major tick every `major` seconds and
-/// minor ticks between, spaced so a short scene and a long one both read.
-fn ruler(duration: Duration) -> Vec<impl View> {
-    let seconds = duration.as_secs_f64();
-    let major =
-        [0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0]
-            .into_iter()
-            .find(|step| seconds / step <= 12.0)
-            .unwrap_or(600.0);
-    let minor = major / 5.0;
-    let count = (seconds / minor).floor() as u32;
-    (0..=count)
-        .map(|index| {
-            let at = f64::from(index) * minor;
-            let is_major = index % 5 == 0;
-            let place = Attrs::new().custom_property(
-                property("mg-at"),
-                Some(format!("{:.4}%", at / seconds * 100.0)),
+fn fill(cx: &mut DrawCx<'_>, path: BezPath, color: Color) {
+    if !path.is_empty() {
+        cx.scene.push(
+            ShapeBuilder::new(path).fill(Brush::Solid(color)).build(),
+        );
+    }
+}
+
+/// The ruler's ticks along its bottom edge, each one device pixel wide so
+/// they stay sharp at any display scale.
+fn draw_ticks(cx: &mut DrawCx<'_>, view: Viewport, width: f64) {
+    let scale = f64::from(cx.scale).max(1.0);
+    let (major, divisions) = ruler_step(view.length);
+    let minor = major / f64::from(divisions);
+    let mut majors = BezPath::new();
+    let mut minors = BezPath::new();
+    let first = (view.start / minor).floor() as i64;
+    let last = (view.end() / minor).ceil() as i64;
+    for index in first..=last {
+        let at = index as f64 * minor;
+        if at > view.duration + 1e-9 {
+            break;
+        }
+        let x =
+            (view.fraction_of(at) * width * scale).round() / scale;
+        if !(0.0..=width).contains(&x) {
+            continue;
+        }
+        let is_major = index.rem_euclid(i64::from(divisions)) == 0;
+        let (path, height) = if is_major {
+            (&mut majors, 11.0)
+        } else {
+            (&mut minors, 5.0)
+        };
+        path.extend(
+            Rect::new(x, RULER - height, x + 1.0 / scale, RULER)
+                .path_elements(0.1),
+        );
+    }
+    fill(cx, minors, Color::srgb(0.21, 0.23, 0.27, 1.0));
+    fill(cx, majors, Color::srgb(0.35, 0.38, 0.44, 1.0));
+}
+
+/// Every other frame shaded on the lane, once frames are wide enough to
+/// tell apart.
+fn draw_stripes(
+    cx: &mut DrawCx<'_>,
+    view: Viewport,
+    width: f64,
+    height: f64,
+) {
+    let frame = FRAME.as_secs_f64();
+    if frame / view.length * width < STRIPE_MIN {
+        return;
+    }
+    let mut stripes = BezPath::new();
+    let first = (view.start / frame).floor() as i64;
+    let last = (view.end() / frame).ceil() as i64;
+    for index in
+        (first..=last).filter(|index| index.rem_euclid(2) == 1)
+    {
+        let at = index as f64 * frame;
+        let left = (view.fraction_of(at) * width).max(0.0);
+        let right = (view.fraction_of(at + frame) * width).min(width);
+        if right > left {
+            stripes.extend(
+                Rect::new(
+                    left,
+                    LANE_TOP,
+                    right,
+                    height - LANE_BOTTOM,
+                )
+                .path_elements(0.1),
             );
-            let label = is_major.then(|| ruler_label(at));
-            view! {
-                box(
-                    class = if is_major { "tick tick--major" } else { "tick" },
-                    {..place}
-                ) {
-                    {label.map(|label| view! { text(class = "tick__label") {{label}} })}
+        }
+    }
+    fill(cx, stripes, Color::srgb(1.0, 1.0, 1.0, 0.03));
+}
+
+/// The navigator: the whole animation as a bar, with the view as a thumb
+/// to drag.
+fn draw_navigator(
+    cx: &mut DrawCx<'_>,
+    view: Viewport,
+    width: f64,
+    height: f64,
+) {
+    let top = height - NAV_RAISE;
+    let bar =
+        RoundedRect::new(0.0, top, width, top + NAV_HEIGHT, 2.0);
+    fill(cx, bar.to_path(0.1), Color::srgb(0.13, 0.15, 0.18, 1.0));
+    let mut left = view.start / view.duration * width;
+    let mut right = view.end() / view.duration * width;
+    let shortfall = THUMB_MIN - (right - left);
+    if shortfall > 0.0 {
+        left = (left - shortfall / 2.0)
+            .clamp(0.0, (width - THUMB_MIN).max(0.0));
+        right = left + THUMB_MIN;
+    }
+    let thumb =
+        RoundedRect::new(left, top, right, top + NAV_HEIGHT, 2.0);
+    fill(cx, thumb.to_path(0.1), Color::srgb(0.35, 0.38, 0.44, 1.0));
+}
+
+/// The played part of the lane and the playhead; while zoomed, also the
+/// playhead's place on the navigator.
+fn draw_playhead(
+    cx: &mut DrawCx<'_>,
+    view: Viewport,
+    state: PlaybackState,
+    width: f64,
+    height: f64,
+) {
+    let time = state.time.as_secs_f64();
+    let x = view.fraction_of(time) * width;
+    let played = Rect::new(
+        0.0,
+        LANE_TOP,
+        x.clamp(0.0, width),
+        height - LANE_BOTTOM,
+    );
+    if played.width() > 0.0 {
+        fill(
+            cx,
+            RoundedRect::from_rect(played, 4.0).to_path(0.1),
+            Color::srgb(0.95, 0.72, 0.29, 0.16),
+        );
+    }
+    let mut head = BezPath::new();
+    // The knob may overhang the track's ends by half its width, so a
+    // playhead at the very start or end isn't cut in half.
+    if (-6.0..=width + 6.0).contains(&x) {
+        head.extend(
+            Rect::new(
+                x - 1.0,
+                HEAD_TOP,
+                x + 1.0,
+                height - LANE_BOTTOM,
+            )
+            .path_elements(0.1),
+        );
+        head.extend(
+            RoundedRect::new(
+                x - 6.0,
+                HEAD_TOP,
+                x + 6.0,
+                HEAD_TOP + 12.0,
+                3.0,
+            )
+            .path_elements(0.1),
+        );
+    }
+    if view.is_zoomed() {
+        let at = time / view.duration * width;
+        let top = height - NAV_RAISE;
+        head.extend(
+            Rect::new(
+                at - 1.0,
+                top - 1.0,
+                at + 1.0,
+                top + NAV_HEIGHT + 1.0,
+            )
+            .path_elements(0.1),
+        );
+    }
+    fill(cx, head, Color::srgb(0.95, 0.72, 0.29, 1.0));
+}
+
+/// The ruler's step between labelled ticks and how many parts it splits
+/// into: the finest that labels at most ten ticks across the view, so the
+/// ruler reads the same at every zoom.
+fn ruler_step(length: f64) -> (f64, u32) {
+    const F: f64 = 1.0 / FPS as f64;
+    const STEPS: [(f64, u32); 16] = [
+        (F, 1),
+        (2.0 * F, 2),
+        (5.0 * F, 5),
+        (10.0 * F, 2),
+        (15.0 * F, 3),
+        (30.0 * F, 2),
+        (1.0, 4),
+        (2.0, 4),
+        (5.0, 5),
+        (10.0, 5),
+        (15.0, 3),
+        (30.0, 6),
+        (60.0, 6),
+        (120.0, 4),
+        (300.0, 5),
+        (600.0, 5),
+    ];
+    STEPS
+        .into_iter()
+        .find(|(major, _)| length / major <= 10.0)
+        .unwrap_or((1200.0, 4))
+}
+
+/// The labels of the major ticks in `view`.
+fn labels(view: Viewport) -> Vec<impl View> {
+    let (major, _) = ruler_step(view.length);
+    let first = (view.start / major - 1e-9).ceil() as i64;
+    let last = (view.end() / major + 1e-9).floor() as i64;
+    (first..=last)
+        .filter_map(|index| {
+            let at = index as f64 * major;
+            let fraction = view.fraction_of(at);
+            // The last label would hang off the track's end.
+            (fraction < 0.98).then(|| {
+                let place = Attrs::new().custom_property(
+                    property("mg-at"),
+                    Some(format!("{:.4}%", fraction * 100.0)),
+                );
+                view! {
+                    text(class = "tick__label", {..place}) {{ruler_label(at)}}
                 }
-            }
-            .into_view()
+                .into_view()
+            })
         })
         .collect()
 }
 
-/// A ruler label: whole seconds as `3s`, others to the tenth.
+/// A ruler label: `3s`, `1m05s`, or with frames, `3s 15f` or `15f`.
 fn ruler_label(seconds: f64) -> String {
-    if seconds.fract() == 0.0 {
-        format!("{seconds:.0}s")
+    let frames = (seconds * f64::from(FPS)).round() as u64;
+    let fps = u64::from(FPS);
+    let (whole, frame) = (frames / fps, frames % fps);
+    let base = if whole >= 60 {
+        format!("{}m{:02}s", whole / 60, whole % 60)
     } else {
-        format!("{seconds:.1}s")
+        format!("{whole}s")
+    };
+    match (whole, frame) {
+        (_, 0) => base,
+        (0, frame) => format!("{frame}f"),
+        (_, frame) => format!("{base} {frame}f"),
     }
 }
 
@@ -247,13 +705,18 @@ fn timecode(time: Duration) -> String {
     format!("{minutes:02}:{:02}:{:02}", rest / fps, rest % fps)
 }
 
-/// `frame 74 / 300`.
-fn frame_text(state: PlaybackState) -> String {
-    format!(
+/// `frame 74 / 300  ·  60 fps`, led by the zoom while zoomed in.
+fn meta_text(state: PlaybackState, view: Viewport) -> String {
+    let frames = format!(
         "frame {} / {}  ·  {FPS} fps",
         frame_of(state.time),
         frame_of(state.duration)
-    )
+    );
+    if view.is_zoomed() {
+        format!("{:.1}×  ·  {frames}", view.duration / view.length)
+    } else {
+        frames
+    }
 }
 
 /// The frame `time` falls in. Rounded, so a seek to a frame's start
@@ -355,27 +818,15 @@ pub(crate) const SHEET: &str = zgui::css!(
         left: 0;
         right: 0;
         top: 0;
-        height: 26px;
-    }
-
-    .tick {
-        position: absolute;
-        left: var(--mg-at, 0%);
-        bottom: 0;
-        width: 1px;
-        height: 5px;
-        background-color: #353a45;
-    }
-
-    .tick--major {
-        height: 11px;
-        background-color: #596071;
+        height: 26px; /* RULER */
+        overflow: hidden;
     }
 
     .tick__label {
         position: absolute;
-        left: 4px;
-        bottom: 3px;
+        left: var(--mg-at, 0%);
+        margin-left: 4px;
+        bottom: 6px;
         font-size: 10px;
         font-variant-numeric: tabular-nums;
         color: #7d8597;
@@ -393,7 +844,7 @@ pub(crate) const SHEET: &str = zgui::css!(
 
     /* A canvas keeps its default 300 x 150 unless it is given a size, so
        insets alone would not stretch it over the track. */
-    .playhead {
+    .marks, .playhead {
         position: absolute;
         left: 0;
         top: 0;
@@ -405,6 +856,14 @@ pub(crate) const SHEET: &str = zgui::css!(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ten_seconds() -> Viewport {
+        Viewport::whole(Duration::from_secs(10))
+    }
+
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-9
+    }
 
     #[test]
     fn timecode_counts_minutes_seconds_and_frames() {
@@ -424,8 +883,61 @@ mod tests {
     }
 
     #[test]
-    fn rulers_label_whole_and_fractional_seconds() {
+    fn rulers_label_seconds_minutes_and_frames() {
         assert_eq!(ruler_label(3.0), "3s");
-        assert_eq!(ruler_label(2.5), "2.5s");
+        assert_eq!(ruler_label(65.0), "1m05s");
+        assert_eq!(ruler_label(2.5), "2s 30f");
+        assert_eq!(ruler_label(0.25), "15f");
+    }
+
+    #[test]
+    fn zooming_keeps_the_time_under_the_pointer() {
+        let view = ten_seconds().zoomed(4.0, 0.3);
+        assert!(close(view.length, 2.5));
+        assert!(close(view.time_at(0.3), 3.0));
+        let back = view.zoomed(0.25, 0.3);
+        assert!(close(back.start, 0.0) && close(back.length, 10.0));
+    }
+
+    #[test]
+    fn zoom_stops_at_a_few_frames_and_at_the_whole() {
+        let near = ten_seconds().zoomed(1e9, 0.5);
+        assert!(close(
+            near.length,
+            (FRAME * MIN_FRAMES).as_secs_f64()
+        ));
+        assert_eq!(ten_seconds().zoomed(0.1, 0.5), ten_seconds());
+    }
+
+    #[test]
+    fn zooming_around_a_time_out_of_view_centres_it() {
+        let view = ten_seconds().zoomed(10.0, 0.0);
+        let zoomed = view.zoomed_around(1.0, 6.0);
+        assert!(close(zoomed.time_at(0.5), 6.0));
+    }
+
+    #[test]
+    fn the_view_stays_inside_the_animation() {
+        let view = ten_seconds().zoomed(5.0, 0.5);
+        assert_eq!(view.panned(-100.0).start, 0.0);
+        assert!(close(view.panned(100.0).end(), 10.0));
+        assert_eq!(view.fitted(), ten_seconds());
+    }
+
+    #[test]
+    fn playback_turns_pages_and_scrubbing_slides() {
+        let view = ten_seconds().zoomed(5.0, 0.0);
+        assert_eq!(view.following(1.0), view);
+        assert!(close(view.following(2.5).start, 2.5));
+        assert!(close(view.reaching(2.5).end(), 2.5));
+    }
+
+    #[test]
+    fn the_ruler_labels_at_most_ten_ticks() {
+        for length in [4.0 / 60.0, 0.5, 3.0, 10.0, 75.0, 900.0] {
+            let (major, _) = ruler_step(length);
+            assert!(length / major <= 10.0, "{length}");
+        }
+        assert!(close(ruler_step(4.0 / 60.0).0, 1.0 / 60.0));
     }
 }

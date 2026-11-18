@@ -16,7 +16,7 @@ use zgui::vocab::Timestamp;
 use zgui_ui_tokens::prelude::*;
 
 use crate::preview::Preview;
-use crate::timeline::{FRAME, timeline};
+use crate::timeline::{FRAME, Viewport, ZOOM_STEP, timeline};
 
 /// How far Shift with an arrow key moves the time.
 const SHIFT_STEP: Duration = Duration::from_secs(1);
@@ -50,18 +50,32 @@ struct ClockInner {
     /// When the last playing frame ran, so the next one advances by the
     /// time between them. `None` until playback (re)starts.
     last_frame: Option<Timestamp>,
+    /// Playing backwards. The shared clock only plays forwards, so it is
+    /// held paused and moved by seeks while this is set.
+    backward: bool,
     #[cfg(feature = "audio")]
     audio: Option<vello_winit_motiongfx::audio::AudioSync>,
 }
 
+impl ClockInner {
+    fn state(&self) -> PlaybackState {
+        let mut state = self.playback.state();
+        if self.backward {
+            state.playing = true;
+            state.reversing = true;
+        }
+        state
+    }
+}
+
 impl Clock {
     /// Apply a control's change, then publish the new state.
-    fn change(&self, edit: impl FnOnce(&mut Playback)) {
+    fn change(&self, edit: impl FnOnce(&mut ClockInner)) {
         let after = {
             let mut inner = self.inner.borrow_mut();
-            edit(&mut inner.playback);
+            edit(&mut inner);
             inner.last_frame = None;
-            let after = inner.playback.state();
+            let after = inner.state();
             // A pause or seek reaches the sound as a tick that didn't move,
             // which is how the winit preview reports it too.
             #[cfg(feature = "audio")]
@@ -77,14 +91,20 @@ impl Clock {
     fn tick(&self, at: Timestamp) {
         let after = {
             let mut inner = self.inner.borrow_mut();
-            let before = inner.playback.state();
+            let before = inner.state();
             let delta =
                 inner.last_frame.map_or(Duration::ZERO, |last| {
                     at.saturating_since(last)
                 });
             inner.last_frame = Some(at);
-            inner.playback.advance(delta);
-            let after = inner.playback.state();
+            if inner.backward {
+                let time = before.time.saturating_sub(delta);
+                inner.playback.seek(time);
+                inner.backward = !time.is_zero();
+            } else {
+                inner.playback.advance(delta);
+            }
+            let after = inner.state();
             #[cfg(feature = "audio")]
             if let Some(audio) = &mut inner.audio {
                 audio.update(before, after);
@@ -114,7 +134,10 @@ impl Clock {
 
     /// Pause at `time`.
     pub(crate) fn seek(&self, time: Duration) {
-        self.change(|playback| playback.seek(time));
+        self.change(|inner| {
+            inner.backward = false;
+            inner.playback.seek(time);
+        });
     }
 
     /// Pause `frames` frames from the current time.
@@ -132,13 +155,45 @@ impl Clock {
         });
     }
 
+    /// Play if paused, pause if playing either way.
     pub(crate) fn toggle(&self) {
-        self.change(Playback::toggle);
+        self.change(|inner| {
+            if inner.backward {
+                inner.backward = false;
+            } else {
+                inner.playback.toggle();
+            }
+        });
+    }
+
+    /// Play forwards, or backwards with `forward` false; backwards stops
+    /// at the start. Already playing that way, nothing changes, so the
+    /// frame loop runs on without a hitch.
+    pub(crate) fn play(&self, forward: bool) {
+        let state = self.state.get_untracked();
+        if state.playing && state.reversing != forward {
+            return;
+        }
+        self.change(|inner| {
+            if forward {
+                inner.backward = false;
+                if !inner.playback.state().playing {
+                    inner.playback.toggle();
+                }
+            } else {
+                inner.playback.pause();
+                inner.backward =
+                    !inner.playback.state().time.is_zero();
+            }
+        });
     }
 }
 
 /// The editor: the preview filling the window above the timeline.
 pub(crate) fn editor(setup: Setup) -> impl IntoView {
+    let viewport = RwSignal::new_local(Viewport::whole(
+        setup.animation.duration(),
+    ));
     let config = PlaybackConfig::new(setup.animation.duration())
         .with_mode(setup.playback_mode);
     let playback = Playback::new(config);
@@ -159,6 +214,7 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
         inner: Rc::new(RefCell::new(ClockInner {
             playback,
             last_frame: None,
+            backward: false,
             #[cfg(feature = "audio")]
             audio,
         })),
@@ -190,6 +246,17 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
     on_cleanup_local(move || drop(registration));
 
     let keys = clock.clone();
+    // K toggles playback. While it is held, J and L step one frame, as in
+    // most editors; the time K was pressed at is kept so a step lands a
+    // frame from there, not from wherever the toggle has since played to.
+    let holding_k: Rc<Cell<Option<Duration>>> =
+        Rc::new(Cell::new(None));
+    let released_k = Rc::clone(&holding_k);
+    let zoom = move |change: fn(Viewport, f64) -> Viewport,
+                     time: Duration| {
+        viewport
+            .update(|view| *view = change(*view, time.as_secs_f64()));
+    };
     view! {
         ThemeProvider(
             scheme = RwSignal::new_local(ColorScheme::Dark),
@@ -200,6 +267,40 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
                 class = "editor",
                 node_ref = root,
                 on:key_down = move |ev| {
+                    let time = keys.state.get_untracked().time;
+                    if !ev.modifiers.primary() {
+                        match ev.physical.code() {
+                            Some(KeyCode::KeyJ | KeyCode::KeyL) => {
+                                let forward = ev.physical.code() == Some(KeyCode::KeyL);
+                                if let Some(pressed_at) = holding_k.get() {
+                                    if keys.state.get_untracked().playing {
+                                        keys.seek(pressed_at);
+                                    }
+                                    keys.step(if forward { 1 } else { -1 });
+                                } else if !ev.repeat {
+                                    keys.play(forward);
+                                }
+                                return;
+                            }
+                            Some(KeyCode::KeyK) => {
+                                if !ev.repeat {
+                                    holding_k.set(Some(time));
+                                    keys.toggle();
+                                }
+                                return;
+                            }
+                            Some(KeyCode::Equal | KeyCode::NumpadAdd) => {
+                                return zoom(|view, at| view.zoomed_around(ZOOM_STEP, at), time);
+                            }
+                            Some(KeyCode::Minus | KeyCode::NumpadSubtract) => {
+                                return zoom(|view, at| view.zoomed_around(1.0 / ZOOM_STEP, at), time);
+                            }
+                            Some(KeyCode::Backslash) => {
+                                return zoom(|view, _| view.fitted(), time);
+                            }
+                            _ => {}
+                        }
+                    }
                     let later = match &ev.key {
                         Key::Named(NamedKey::Space) => return keys.toggle(),
                         Key::Named(NamedKey::Home) => return keys.seek(Duration::ZERO),
@@ -215,10 +316,15 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
                     } else {
                         keys.step(if later { 1 } else { -1 });
                     }
+                },
+                on:key_up = move |ev| {
+                    if ev.physical.code() == Some(KeyCode::KeyK) {
+                        released_k.set(None);
+                    }
                 }
             ) {
                 {zgui::elements::surface().class("preview").renderer(preview).into_view()}
-                {timeline(clock)}
+                {timeline(clock, viewport)}
             }
         }
     }
