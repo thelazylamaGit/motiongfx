@@ -4,8 +4,8 @@ An editor window for MotionGfx animations, built with
 [zgui](https://github.com/zortax/zgui). The scene renders with Vello straight
 into a zgui surface on zgui's own GPU device (no copy), above a timeline:
 transport buttons (start, previous frame, play/pause, next frame, end), a
-`MM:SS:FF` timecode and frame counter at 60 fps, and a ruler and lane with a
-playhead you drag to scrub.
+`MM:SS:FF` timecode and frame counter at 60 fps, a speed menu, a volume
+control, and a ruler and lane with a playhead you drag to scrub.
 
 `Window` has the same builder as `vello_winit_motiongfx::Window` (`new`,
 `playback_mode`, `renderer`, and `audio` with the `audio` feature), so the
@@ -18,8 +18,10 @@ cargo run -p vello_winit_example --example sorting --features zgui
 
 Keys:
 
-- Space plays and pauses. J plays backwards, K pauses, L plays forwards;
-  with K held, J and L step one frame.
+- Space and K play and pause. L plays forwards and J backwards; pressed
+  again in the direction already playing, they shuttle faster (2x, 4x,
+  8x). With K held, J and L step one frame.
+- M mutes and unmutes.
 - The left and right arrows step one frame (one second with Shift); Home and
   End jump to the ends.
 - `=` and `-` zoom the timeline around the playhead, `\` fits the whole
@@ -30,6 +32,23 @@ pointer, down to four frames across, and the wheel scrolls through time.
 Scrubbing samples the animation at the exact time under the pointer, not at
 whole frames. While zoomed, a navigator bar under the lane shows and drags
 the visible range, and the view turns a page when the playhead leaves it.
+Dragging the playhead past either end of the track scrolls it, faster the
+further past the pointer is. Ruler labels keep about 72 px apart at any zoom
+or window width.
+
+The speed menu sets how fast time runs (0.1x to 4x); the shuttle multiplies
+it. The trigger turns amber whenever time isn't running at 1x. Sound follows
+as a change of tempo: events come sooner or later and notes are held shorter
+or longer, but keep their pitch.
+
+The volume control appears only when the window plays audio
+(`Window::audio`) and the scene has sound events. If no audio device opens,
+it is shown disabled and says so. Its slider is perceptual: the level is
+cubed into a gain, so equal steps sound roughly equal.
+
+At narrow widths the transport bar leaves things out rather than wrapping:
+the frame counter below 720 px, the total time below 560 px, and the start
+and end buttons below 440 px.
 
 ## Dependency on the zgui fork
 

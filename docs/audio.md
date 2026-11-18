@@ -203,6 +203,19 @@ after each advance. A pure function turns that into player calls:
   seek, focus loss). Reaching the end of a single play changes nothing, so
   its last notes ring out.
 
+`AudioSync::open` returns `Ok(None)` for a scene without sound and an error
+when the device fails, so the editor can show its volume control disabled
+rather than hide it.
+
+**Speed and volume (editor).** `Player::set_speed` makes play time map to
+sound time at that rate from the next `advance`: the anchor counts sound
+time, so a change mid-play is seamless. Event onsets and note lengths scale;
+pitch doesn't, because notes are synthesised from events rather than
+resampled. Sample plays keep their own length. `Player::set_volume` stores a
+gain in an `AtomicU32` the mixer reads once per callback and ramps to over at
+most 10 ms; at unity the mixer skips the multiply. Neither allocates on the
+audio thread.
+
 ## Sorting example
 
 `build_animation(&Instrument)`: `main` picks a SoundFont from the first

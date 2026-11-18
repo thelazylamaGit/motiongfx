@@ -2,7 +2,7 @@
 //! ruler and lane with a draggable playhead. The track zooms from the
 //! whole animation down to a few frames.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -13,10 +13,12 @@ use zgui::elements::kurbo::{BezPath, Rect, RoundedRect, Shape as _};
 use zgui::geom::CssPx;
 use zgui::prelude::*;
 use zgui::reactive::RenderEffect;
-use zgui::view::CustomPropertyName;
+use zgui::view::{CustomPropertyName, FrameHandle};
+use zgui::vocab::Timestamp;
 use zgui_ui::prelude::*;
 use zgui_ui_icons::prelude::*;
 
+use crate::controls::{Sound, speed_menu, volume_control};
 use crate::editor::Clock;
 
 /// The timeline's height in logical pixels, added below the canvas when
@@ -65,6 +67,17 @@ const MIN_FRAMES: u32 = 4;
 /// Frame stripes appear on the lane once a frame is this many CSS pixels
 /// wide.
 const STRIPE_MIN: f64 = 8.0;
+
+/// The room each ruler label is given, in CSS pixels.
+const LABEL_GAP: f64 = 72.0;
+
+/// How fast the track scrolls while the playhead is dragged past its
+/// edge, in CSS pixels per second: a base, plus this much per pixel the
+/// pointer is past the edge, up to a limit. Further out scrolls faster,
+/// as in most editors.
+const EDGE_BASE: f64 = 150.0;
+const EDGE_GAIN: f64 = 12.0;
+const EDGE_MAX: f64 = 2400.0;
 
 /// The stretch of the animation the track shows, in seconds.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -153,22 +166,13 @@ impl Viewport {
     /// Turned a page, if need be, so `seconds` is in view: how an editor
     /// keeps up with the playhead.
     fn following(self, seconds: f64) -> Self {
-        if seconds > self.end() {
+        // The clock rounds time to the nanosecond, so a seek to an edge
+        // can land a hair outside it; that is still on this page.
+        const SLACK: f64 = 1e-6;
+        if seconds > self.end() + SLACK {
             self.starting_at(seconds)
-        } else if seconds < self.start {
+        } else if seconds < self.start - SLACK {
             self.starting_at(seconds - self.length)
-        } else {
-            self
-        }
-    }
-
-    /// Slid just far enough that `seconds` is in view: how the track
-    /// scrolls while the playhead is dragged past its edge.
-    fn reaching(self, seconds: f64) -> Self {
-        if seconds > self.end() {
-            self.starting_at(seconds - self.length)
-        } else if seconds < self.start {
-            self.starting_at(seconds)
         } else {
             self
         }
@@ -188,6 +192,109 @@ enum Drag {
     },
 }
 
+/// Scrolls the track, frame by frame, while the playhead is dragged past
+/// either end of a zoomed view. The scroll is paced by time, not by how
+/// often the pointer reports, so it is smooth and doesn't run away.
+#[derive(Clone)]
+struct EdgeScroll {
+    /// How far past the edge the pointer is, in CSS pixels: negative
+    /// before the start, zero inside.
+    overshoot: Rc<Cell<f64>>,
+    /// The track's width in CSS pixels.
+    width: Rc<Cell<f64>>,
+    last: Rc<Cell<Option<Timestamp>>>,
+    frame: Rc<RefCell<Option<FrameHandle>>>,
+    timers: Timers,
+}
+
+impl EdgeScroll {
+    fn new() -> Self {
+        Self {
+            overshoot: Rc::default(),
+            width: Rc::default(),
+            last: Rc::default(),
+            frame: Rc::default(),
+            timers: Timers::current()
+                .expect("the timeline is built in a window"),
+        }
+    }
+
+    /// The pointer is `overshoot` pixels past an edge of a track `width`
+    /// wide; start scrolling if it has just gone past.
+    fn reach(
+        &self,
+        overshoot: f64,
+        width: f64,
+        viewport: RwSignal<Viewport, LocalStorage>,
+        clock: &Clock,
+    ) {
+        self.width.set(width);
+        let was = self.overshoot.replace(overshoot);
+        if overshoot != 0.0 && was == 0.0 {
+            self.last.set(None);
+            self.arm(viewport, clock.clone());
+        } else if overshoot == 0.0 {
+            self.stop();
+        }
+    }
+
+    fn stop(&self) {
+        self.overshoot.set(0.0);
+        self.frame.borrow_mut().take();
+    }
+
+    fn arm(
+        &self,
+        viewport: RwSignal<Viewport, LocalStorage>,
+        clock: Clock,
+    ) {
+        let edge = self.clone();
+        let next = self.timers.request_frame(move |at| {
+            if edge.step(at, viewport, &clock) {
+                edge.arm(viewport, clock);
+            }
+        });
+        *self.frame.borrow_mut() = Some(next);
+    }
+
+    /// Scroll for the time since the last frame and keep the playhead on
+    /// the edge; whether to keep going.
+    fn step(
+        &self,
+        at: Timestamp,
+        viewport: RwSignal<Viewport, LocalStorage>,
+        clock: &Clock,
+    ) -> bool {
+        let overshoot = self.overshoot.get();
+        let width = self.width.get();
+        if overshoot == 0.0 || width <= 0.0 {
+            return false;
+        }
+        // A long gap (a stall, a window drag) shouldn't jump the view.
+        let elapsed =
+            self.last.replace(Some(at)).map_or(0.0, |last| {
+                at.saturating_since(last).as_secs_f64().min(0.05)
+            });
+        let view = viewport.get_untracked();
+        let pixels = (EDGE_BASE + overshoot.abs() * EDGE_GAIN)
+            .min(EDGE_MAX)
+            * elapsed;
+        let next = view.panned(
+            overshoot.signum() * pixels / width * view.length,
+        );
+        if next != view {
+            viewport.set(next);
+        }
+        let edge = if overshoot > 0.0 {
+            next.end()
+        } else {
+            next.start
+        };
+        clock.seek(Duration::from_secs_f64(edge));
+        true
+    }
+}
+
 /// Where a pointer is over the track.
 #[derive(Clone, Copy, Debug)]
 struct Spot {
@@ -200,18 +307,28 @@ struct Spot {
     height: f64,
 }
 
-/// The timeline for `clock`, showing `viewport`.
+/// The timeline for `clock`, showing `viewport`, with the volume control
+/// for `sound`.
 pub(crate) fn timeline(
     clock: Clock,
     viewport: RwSignal<Viewport, LocalStorage>,
+    sound: Sound,
 ) -> impl IntoView {
     let state = clock.state;
     let duration = state.get_untracked().duration;
+    // The track's width, which decides how many ruler labels fit.
+    let track_width = RwSignal::new_local(0.0);
 
     // Turn the page when the playhead leaves the view. Only the time is
     // tracked, so panning away while paused stays put.
+    let drag = Rc::new(Cell::new(Drag::Idle));
+    // While a drag is on, it decides what is in view.
+    let dragging = drag.clone();
     let follow = RenderEffect::new(move |_| {
         let time = state.get().time.as_secs_f64();
+        if dragging.get() != Drag::Idle {
+            return;
+        }
         let now = viewport.get_untracked();
         let next = now.following(time);
         if next != now {
@@ -231,6 +348,9 @@ pub(crate) fn timeline(
             );
             if width <= 0.0 {
                 return;
+            }
+            if track_width.get_untracked() != width {
+                track_width.set(width);
             }
             draw_ticks(cx, view, width);
             draw_stripes(cx, view, width, height);
@@ -281,18 +401,29 @@ pub(crate) fn timeline(
         })
     };
 
-    let drag = Rc::new(Cell::new(Drag::Idle));
     let scrub = clock.clone();
-    // The view slides first, so a drag past either edge scrolls the track
-    // rather than pinning the playhead to it.
-    let scrub_to = move |fraction: f64| {
-        let view = viewport.get_untracked();
-        let time = view.time_at(fraction).clamp(0.0, view.duration);
-        let next = view.reaching(time);
-        if next != view {
-            viewport.set(next);
+    let edge = EdgeScroll::new();
+    // Inside the track the playhead follows the pointer. Past either end
+    // of a zoomed view it waits on the edge while the track scrolls under
+    // it, at a pace set by how far past the pointer is.
+    let scrub_to = {
+        let edge = edge.clone();
+        move |spot: Spot| {
+            let view = viewport.get_untracked();
+            let overshoot = if !view.is_zoomed() {
+                0.0
+            } else if spot.fraction < 0.0 {
+                spot.fraction * spot.width
+            } else {
+                (spot.fraction - 1.0).max(0.0) * spot.width
+            };
+            if overshoot == 0.0 {
+                let time =
+                    view.time_at(spot.fraction.clamp(0.0, 1.0));
+                scrub.seek(Duration::from_secs_f64(time));
+            }
+            edge.reach(overshoot, spot.width, viewport, &scrub);
         }
-        scrub.seek(Duration::from_secs_f64(time));
     };
     // The navigator spans the whole animation, so the pointer's fraction
     // of the width is a fraction of the duration.
@@ -323,7 +454,7 @@ pub(crate) fn timeline(
                 navigate_to(spot.fraction, grab);
             } else {
                 drag.set(Drag::Scrub);
-                scrub_to(spot.fraction);
+                scrub_to(spot);
             }
         }
     };
@@ -331,13 +462,20 @@ pub(crate) fn timeline(
         let drag = drag.clone();
         move |spot: Spot| match drag.get() {
             Drag::Idle => {}
-            Drag::Scrub => scrub_to(spot.fraction),
+            Drag::Scrub => scrub_to(spot),
             Drag::Navigate { grab } => {
                 navigate_to(spot.fraction, grab)
             }
         }
     };
-    let (release, cancel) = (drag.clone(), drag);
+    let release = {
+        let edge = edge.clone();
+        move || {
+            drag.set(Drag::Idle);
+            edge.stop();
+        }
+    };
+    let cancel = release.clone();
     // Ctrl (Cmd on macOS) or Alt with the wheel zooms around the pointer,
     // as in most editors; the plain wheel scrolls through time whichever
     // way it turns.
@@ -356,7 +494,8 @@ pub(crate) fn timeline(
         }
     };
 
-    let (start, back, play, forward, end) = (
+    let (start, back, play, forward, end, speed) = (
+        clock.clone(),
         clock.clone(),
         clock.clone(),
         clock.clone(),
@@ -371,6 +510,7 @@ pub(crate) fn timeline(
                     Button(
                         variant = ButtonVariant::Ghost,
                         size = ButtonSize::IconSm,
+                        class = "transport__jump",
                         on:click = move |_| start.seek(Duration::ZERO)
                     ) {
                         Icon(icon = TO_START, label = "Go to start")
@@ -405,6 +545,7 @@ pub(crate) fn timeline(
                     Button(
                         variant = ButtonVariant::Ghost,
                         size = ButtonSize::IconSm,
+                        class = "transport__jump",
                         on:click = move |_| end.seek(duration)
                     ) {
                         Icon(icon = TO_END, label = "Go to end")
@@ -414,6 +555,10 @@ pub(crate) fn timeline(
                 text(class = "timecode timecode--total") {{format!("/ {}", timecode(duration))}}
                 box(class = "transport__spacer")
                 text(class = "transport__meta") {{move || meta_text(state.get(), viewport.get())}}
+                row(class = "transport__controls") {
+                    {speed_menu(speed)}
+                    {volume_control(sound)}
+                }
             }
             box(
                 class = "track",
@@ -430,11 +575,11 @@ pub(crate) fn timeline(
                     }
                 },
                 on:pointer_up = move |ev| {
-                    release.set(Drag::Idle);
+                    release();
                     ev.release_pointer();
                 },
                 on:pointer_cancel = move |ev| {
-                    cancel.set(Drag::Idle);
+                    cancel();
                     ev.release_pointer();
                 },
                 on:wheel = move |ev| {
@@ -450,7 +595,7 @@ pub(crate) fn timeline(
                     }
                 }
             ) {
-                box(class = "ruler") {{move || labels(viewport.get())}}
+                box(class = "ruler") {{move || labels(viewport.get(), track_width.get())}}
                 box(class = "lane") {}
                 {marks.into_view()}
                 {playhead.into_view()}
@@ -471,7 +616,7 @@ fn fill(cx: &mut DrawCx<'_>, path: BezPath, color: Color) {
 /// they stay sharp at any display scale.
 fn draw_ticks(cx: &mut DrawCx<'_>, view: Viewport, width: f64) {
     let scale = f64::from(cx.scale).max(1.0);
-    let (major, divisions) = ruler_step(view.length);
+    let (major, divisions) = ruler_step(view.length, width);
     let minor = major / f64::from(divisions);
     let mut majors = BezPath::new();
     let mut minors = BezPath::new();
@@ -628,9 +773,11 @@ fn draw_playhead(
 }
 
 /// The ruler's step between labelled ticks and how many parts it splits
-/// into: the finest that labels at most ten ticks across the view, so the
-/// ruler reads the same at every zoom.
-fn ruler_step(length: f64) -> (f64, u32) {
+/// into, for `length` seconds across `width` CSS pixels: the finest that
+/// gives each label [`LABEL_GAP`] of room, so the ruler reads the same at
+/// every zoom and window size. Before the first layout, when the width is
+/// still zero, it allows ten labels.
+fn ruler_step(length: f64, width: f64) -> (f64, u32) {
     const F: f64 = 1.0 / FPS as f64;
     const STEPS: [(f64, u32); 16] = [
         (F, 1),
@@ -650,15 +797,21 @@ fn ruler_step(length: f64) -> (f64, u32) {
         (300.0, 5),
         (600.0, 5),
     ];
+    let most = if width > 0.0 {
+        (width / LABEL_GAP).max(1.0)
+    } else {
+        10.0
+    };
     STEPS
         .into_iter()
-        .find(|(major, _)| length / major <= 10.0)
+        .find(|(major, _)| length / major <= most)
         .unwrap_or((1200.0, 4))
 }
 
-/// The labels of the major ticks in `view`.
-fn labels(view: Viewport) -> Vec<impl View> {
-    let (major, _) = ruler_step(view.length);
+/// The labels of the major ticks in `view`, across a track `width` CSS
+/// pixels wide.
+fn labels(view: Viewport, width: f64) -> Vec<impl View> {
+    let (major, _) = ruler_step(view.length, width);
     let first = (view.start / major - 1e-9).ceil() as i64;
     let last = (view.end() / major + 1e-9).floor() as i64;
     (first..=last)
@@ -773,9 +926,13 @@ pub(crate) const SHEET: &str = zgui::css!(
         gap: 10px;
         padding: 0 12px;
         border-bottom: 1px solid #22252d;
+        overflow: hidden;
     }
 
-    .transport__buttons {
+    /* Nothing in the bar wraps: what doesn't fit is shortened or, below
+       the widths at the end of this sheet, left out, least needed first. */
+    .transport__buttons, .transport__controls {
+        flex-shrink: 0;
         align-items: center;
         gap: 2px;
     }
@@ -785,6 +942,8 @@ pub(crate) const SHEET: &str = zgui::css!(
     }
 
     .timecode {
+        flex-shrink: 0;
+        white-space: nowrap;
         font-size: 17px;
         font-variant-numeric: tabular-nums;
         color: #f1f3f7;
@@ -799,9 +958,14 @@ pub(crate) const SHEET: &str = zgui::css!(
 
     .transport__spacer {
         flex-grow: 1;
+        min-width: 0;
     }
 
     .transport__meta {
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
         font-size: 12px;
         font-variant-numeric: tabular-nums;
         color: #6c7383;
@@ -850,6 +1014,20 @@ pub(crate) const SHEET: &str = zgui::css!(
         top: 0;
         width: 100%;
         height: 100%;
+    }
+
+    @media (max-width: 720px) {
+        .transport__meta { display: none; }
+    }
+
+    @media (max-width: 560px) {
+        .timecode--total { display: none; }
+    }
+
+    @media (max-width: 440px) {
+        .transport .transport__jump { display: none; }
+        .transport { gap: 6px; padding: 0 8px; }
+        .track { margin: 0 12px; }
     }"
 );
 
@@ -925,19 +1103,52 @@ mod tests {
     }
 
     #[test]
-    fn playback_turns_pages_and_scrubbing_slides() {
-        let view = ten_seconds().zoomed(5.0, 0.0);
-        assert_eq!(view.following(1.0), view);
-        assert!(close(view.following(2.5).start, 2.5));
-        assert!(close(view.reaching(2.5).end(), 2.5));
+    fn a_seek_to_either_edge_stays_on_the_page() {
+        // The clock holds time as a `Duration`, which rounds to the
+        // nanosecond; an edge must survive that round trip.
+        let round_trip = |seconds: f64| {
+            Duration::from_secs_f64(seconds).as_secs_f64()
+        };
+        for zoom in [3.0, 7.0, 11.0, 37.0] {
+            for anchor in [0.13, 0.37, 0.61, 0.97] {
+                let view =
+                    Viewport::whole(Duration::from_secs_f64(13.7))
+                        .zoomed(zoom, anchor);
+                assert_eq!(
+                    view.following(round_trip(view.end())),
+                    view
+                );
+                assert_eq!(
+                    view.following(round_trip(view.start)),
+                    view
+                );
+            }
+        }
     }
 
     #[test]
-    fn the_ruler_labels_at_most_ten_ticks() {
-        for length in [4.0 / 60.0, 0.5, 3.0, 10.0, 75.0, 900.0] {
-            let (major, _) = ruler_step(length);
-            assert!(length / major <= 10.0, "{length}");
+    fn playback_turns_pages() {
+        let view = ten_seconds().zoomed(5.0, 0.0);
+        assert_eq!(view.following(1.0), view);
+        assert!(close(view.following(2.5).start, 2.5));
+    }
+
+    #[test]
+    fn ruler_labels_get_room_whatever_the_width() {
+        for width in [300.0, 860.0, 2000.0] {
+            for length in [4.0 / 60.0, 0.5, 3.0, 10.0, 75.0, 900.0] {
+                let (major, _) = ruler_step(length, width);
+                assert!(
+                    major / length * width >= LABEL_GAP,
+                    "{length} s across {width} px"
+                );
+            }
         }
-        assert!(close(ruler_step(4.0 / 60.0).0, 1.0 / 60.0));
+        // A narrow track labels less often than a wide one.
+        assert!(
+            ruler_step(10.0, 300.0).0 > ruler_step(10.0, 2000.0).0
+        );
+        // Before layout, about ten labels.
+        assert!(close(ruler_step(4.0 / 60.0, 0.0).0, 1.0 / 60.0));
     }
 }

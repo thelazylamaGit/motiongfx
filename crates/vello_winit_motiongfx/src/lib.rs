@@ -131,6 +131,10 @@ impl Window {
             .audio
             .then(|| {
                 audio::AudioSync::open(&animation, self.playback_mode)
+                    .unwrap_or_else(|error| {
+                        eprintln!("playing without sound: {error}");
+                        None
+                    })
             })
             .flatten();
         let mut app = VelloWinitApp::new(AnimationDemo {

@@ -20,6 +20,7 @@
 //! ```
 #![warn(missing_docs)]
 
+mod controls;
 mod editor;
 mod preview;
 mod timeline;
@@ -132,6 +133,7 @@ impl Window {
             )
             .with_stylesheet(editor::SHEET)
             .with_stylesheet(timeline::SHEET)
+            .with_stylesheet(controls::SHEET)
             // zgui builds the view once per window; this app opens one.
             .run(move || {
                 editor::editor(

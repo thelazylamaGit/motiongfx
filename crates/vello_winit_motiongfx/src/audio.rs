@@ -3,7 +3,7 @@
 //! or change of direction.
 
 use crate::{PlaybackMode, PlaybackState};
-use motiongfx_audio::{AudioOutput, Score};
+use motiongfx_audio::{AudioOutput, OutputError, Score};
 use std::time::Duration;
 
 /// The scene's audio output and what the clock did on the last tick.
@@ -15,27 +15,43 @@ pub struct AudioSync {
 
 impl AudioSync {
     /// Open the default output device for `animation`'s sound, or `None`
-    /// if it has none. A device that fails to open is reported on stderr
-    /// and the preview stays silent: it is still useful without sound.
+    /// if it has none.
+    ///
+    /// # Errors
+    ///
+    /// If the scene has sound but the device fails to open. A preview is
+    /// still useful without sound, so hosts report this and play on.
     pub fn open(
         animation: &motiongfx_2d::CompiledScene,
         mode: PlaybackMode,
-    ) -> Option<Self> {
+    ) -> Result<Option<Self>, OutputError> {
         let score = Score::new(animation);
         if score.is_empty() {
-            return None;
+            return Ok(None);
         }
-        match AudioOutput::open(score) {
-            Ok(output) => Some(Self {
-                output,
-                mode,
-                last: None,
-            }),
-            Err(error) => {
-                eprintln!("playing without sound: {error}");
-                None
-            }
-        }
+        let output = AudioOutput::open(score)?;
+        Ok(Some(Self {
+            output,
+            mode,
+            last: None,
+        }))
+    }
+
+    /// Play at `speed` times real time; see
+    /// [`Player::set_speed`](motiongfx_audio::Player::set_speed).
+    ///
+    /// # Panics
+    ///
+    /// If `speed` isn't a positive, finite number.
+    #[track_caller]
+    pub fn set_speed(&mut self, speed: f64) {
+        self.output.set_speed(speed);
+    }
+
+    /// Scale the whole mix by `gain`, from 0 to 1; see
+    /// [`Player::set_volume`](motiongfx_audio::Player::set_volume).
+    pub fn set_volume(&mut self, gain: f32) {
+        self.output.set_volume(gain);
     }
 
     /// The clock moved from `before` to `after` in one tick. `before` is

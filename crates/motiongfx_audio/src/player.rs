@@ -2,7 +2,7 @@ use crate::Score;
 use crate::engine::{Engine, Voice};
 use crate::score::{ScoreEvent, frames};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
 /// How far ahead of the mixer's position a resumed playback starts:
@@ -12,6 +12,9 @@ const LATENCY: Duration = Duration::from_millis(30);
 /// Room in each queue between the threads. Only a few voices are in
 /// flight at once; this covers bursts.
 const QUEUE: usize = 1024;
+/// How long a volume change takes to reach its new level, so it doesn't
+/// click.
+const VOLUME_RAMP: Duration = Duration::from_millis(10);
 
 enum Command {
     Start(Voice),
@@ -36,10 +39,14 @@ pub struct Player {
     anchor: Option<Anchor>,
     /// A `stop_all` that didn't fit in the queue, retried next time.
     stop_pending: bool,
+    /// Play time per second of sound.
+    speed: f64,
+    /// The master gain the mixer ramps to, as `f32` bits.
+    volume: Arc<AtomicU32>,
 }
 
 /// Where continuous playback stands: the mixer frame at which playback
-/// (re)started, and the play time since then.
+/// (re)started, and the sound time since then.
 #[derive(Clone, Copy)]
 struct Anchor {
     frame: u64,
@@ -66,12 +73,18 @@ impl Player {
             rendered: rendered.clone(),
             anchor: None,
             stop_pending: false,
+            speed: 1.0,
+            volume: Arc::new(AtomicU32::new(1.0_f32.to_bits())),
         };
         let mixer = Mixer {
             engine: Engine::new(),
             commands: receive,
             finished: send_back,
             rendered,
+            volume: player.volume.clone(),
+            gain: 1.0,
+            ramp: 1.0
+                / frames(VOLUME_RAMP, sample_rate).max(1) as f32,
         };
         (player, mixer)
     }
@@ -101,16 +114,22 @@ impl Player {
                 + frames(LATENCY, self.sample_rate),
             elapsed: Duration::ZERO,
         });
-        let rate = self.sample_rate;
-        // Play time passes the same way in either direction.
+        let (rate, speed) = (self.sample_rate, self.speed);
+        // Play time passes the same way in either direction, and turns
+        // into sound time at the playing speed.
         let at = |time: Duration| {
             anchor.frame
-                + frames(anchor.elapsed + time.abs_diff(from), rate)
+                + frames(
+                    anchor.elapsed
+                        + time.abs_diff(from).div_f64(speed),
+                    rate,
+                )
         };
         let commands = &mut self.commands;
         let mut start = |event: &ScoreEvent, reached: Duration| {
             let start = at(reached);
-            let release = start + frames(event.length, rate);
+            let release =
+                start + frames(event.length.div_f64(speed), rate);
             if let Some(voice) =
                 event.sound.voice(rate, start, release)
             {
@@ -129,9 +148,39 @@ impl Player {
             }
         }
         self.anchor = Some(Anchor {
-            elapsed: anchor.elapsed + from.abs_diff(to),
+            elapsed: anchor.elapsed
+                + from.abs_diff(to).div_f64(speed),
             ..anchor
         });
+    }
+
+    /// Play at `speed` times real time from the next
+    /// [`advance`](Self::advance) on. Events come sooner or later and
+    /// notes are held shorter or longer, but every sound keeps its pitch:
+    /// a change of tempo, not of tape speed.
+    ///
+    /// # Panics
+    ///
+    /// If `speed` isn't a positive, finite number.
+    #[track_caller]
+    pub fn set_speed(&mut self, speed: f64) {
+        assert!(
+            speed.is_finite() && speed > 0.0,
+            "a playing speed must be positive and finite, not {speed}"
+        );
+        self.speed = speed;
+    }
+
+    /// Scale the whole mix by `gain`, from silent at 0 to as rendered at
+    /// 1 (values outside are clamped). The mixer ramps to it in at most
+    /// 10 ms.
+    pub fn set_volume(&mut self, gain: f32) {
+        let gain = if gain.is_nan() {
+            0.0
+        } else {
+            gain.clamp(0.0, 1.0)
+        };
+        self.volume.store(gain.to_bits(), Ordering::Relaxed);
     }
 
     /// Fade out every voice over 5 ms and drop any waiting to start, for a
@@ -172,11 +221,17 @@ pub struct Mixer {
     commands: rtrb::Consumer<Command>,
     finished: rtrb::Producer<Voice>,
     rendered: Arc<AtomicU64>,
+    volume: Arc<AtomicU32>,
+    /// The master gain right now, ramping towards `volume`.
+    gain: f32,
+    /// How far the gain moves per frame.
+    ramp: f32,
 }
 
 impl Mixer {
     /// Render the next `out.len() / 2` frames into `out` as interleaved
-    /// stereo, overwriting it. Samples are clamped to ±1.
+    /// stereo, overwriting it. Samples are clamped to ±1, then scaled by
+    /// the volume.
     pub fn render(&mut self, out: &mut [f32]) {
         let finished = &mut self.finished;
         // Freeing happens on the host thread; only if that queue is full
@@ -197,6 +252,16 @@ impl Mixer {
             }
         }
         self.engine.render(out, &mut discard);
+        let target =
+            f32::from_bits(self.volume.load(Ordering::Relaxed));
+        if self.gain != target || target != 1.0 {
+            for [left, right] in out.as_chunks_mut::<2>().0 {
+                self.gain +=
+                    (target - self.gain).clamp(-self.ramp, self.ramp);
+                *left *= self.gain;
+                *right *= self.gain;
+            }
+        }
         self.rendered.store(self.engine.frame(), Ordering::Release);
     }
 }

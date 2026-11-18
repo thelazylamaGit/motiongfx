@@ -30,6 +30,7 @@ zgui_editor = { version = "0.5.0", path = "crates/zgui_editor" }
 zgui = { path = "../../zgui/crates/zgui" }
 zgui-ui = { path = "../../zgui/crates/zgui-ui" }
 zgui-ui-icons = { path = "../../zgui/crates/zgui-ui-icons" }
+zgui-ui-primitives = { path = "../../zgui/crates/zgui-ui-primitives" }
 zgui-ui-tokens = { path = "../../zgui/crates/zgui-ui-tokens" }
 
 # bevy

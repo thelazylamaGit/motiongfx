@@ -83,7 +83,10 @@ summed into stereo and clamped to ±1.
   so notes come in reverse order, each still sounding forwards. Events start at their
   exact sample offset, a constant 30 ms behind the clock. Loop wraps
   continue seamlessly when reported as `advance(previous, end)` then
-  `advance(loop_start, now)`.
+  `advance(loop_start, now)`. `player.set_speed(s)` plays at `s` times real
+  time as a change of tempo (events sooner or later, notes held shorter or
+  longer, pitch unchanged), and `player.set_volume(g)` scales the mix by
+  `g`, ramped over at most 10 ms so it doesn't click.
 - `AudioOutput::open(score)` (feature `cpal`) does the same through the
   default output device.
 

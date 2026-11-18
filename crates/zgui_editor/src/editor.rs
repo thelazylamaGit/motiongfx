@@ -15,11 +15,16 @@ use zgui::view::FrameHandle;
 use zgui::vocab::Timestamp;
 use zgui_ui_tokens::prelude::*;
 
+use crate::controls::{Sound, SoundStatus};
 use crate::preview::Preview;
 use crate::timeline::{FRAME, Viewport, ZOOM_STEP, timeline};
 
 /// How far Shift with an arrow key moves the time.
 const SHIFT_STEP: Duration = Duration::from_secs(1);
+
+/// The shuttle's multipliers: each further press of J or L in the
+/// direction already playing takes the next.
+const SHUTTLE: [f64; 4] = [1.0, 2.0, 4.0, 8.0];
 
 /// What [`crate::Window::run`] hands to the view.
 pub(crate) struct Setup {
@@ -38,6 +43,8 @@ pub(crate) struct Clock {
     inner: Rc<RefCell<ClockInner>>,
     /// What the timeline shows.
     pub(crate) state: RwSignal<PlaybackState, LocalStorage>,
+    /// Play time per second: the chosen speed times the shuttle's.
+    pub(crate) speed: RwSignal<f64, LocalStorage>,
     /// What the preview draws.
     wanted: Rc<Cell<Duration>>,
     timers: Timers,
@@ -53,6 +60,10 @@ struct ClockInner {
     /// Playing backwards. The shared clock only plays forwards, so it is
     /// held paused and moved by seeks while this is set.
     backward: bool,
+    /// The speed chosen from the menu.
+    chosen_speed: f64,
+    /// What repeated J or L presses multiply it by; one of [`SHUTTLE`].
+    shuttle: f64,
     #[cfg(feature = "audio")]
     audio: Option<vello_winit_motiongfx::audio::AudioSync>,
 }
@@ -66,6 +77,21 @@ impl ClockInner {
         }
         state
     }
+
+    fn speed(&self) -> f64 {
+        self.chosen_speed * self.shuttle
+    }
+
+    /// Tell the sound the speed, after anything that may have changed it.
+    fn sync_speed(&mut self) {
+        #[cfg(feature = "audio")]
+        {
+            let speed = self.speed();
+            if let Some(audio) = &mut self.audio {
+                audio.set_speed(speed);
+            }
+        }
+    }
 }
 
 impl Clock {
@@ -74,6 +100,7 @@ impl Clock {
         let after = {
             let mut inner = self.inner.borrow_mut();
             edit(&mut inner);
+            inner.sync_speed();
             inner.last_frame = None;
             let after = inner.state();
             // A pause or seek reaches the sound as a tick that didn't move,
@@ -85,6 +112,25 @@ impl Clock {
             after
         };
         self.publish(after);
+        self.publish_speed();
+    }
+
+    /// Change the speed without disturbing playback: the frame loop runs
+    /// on and the sound keeps its place.
+    fn retime(&self, edit: impl FnOnce(&mut ClockInner)) {
+        {
+            let mut inner = self.inner.borrow_mut();
+            edit(&mut inner);
+            inner.sync_speed();
+        }
+        self.publish_speed();
+    }
+
+    fn publish_speed(&self) {
+        let speed = self.inner.borrow().speed();
+        if self.speed.get_untracked() != speed {
+            self.speed.set(speed);
+        }
     }
 
     /// One playing frame at `at`.
@@ -92,10 +138,12 @@ impl Clock {
         let after = {
             let mut inner = self.inner.borrow_mut();
             let before = inner.state();
-            let delta =
-                inner.last_frame.map_or(Duration::ZERO, |last| {
+            let delta = inner
+                .last_frame
+                .map_or(Duration::ZERO, |last| {
                     at.saturating_since(last)
-                });
+                })
+                .mul_f64(inner.speed());
             inner.last_frame = Some(at);
             if inner.backward {
                 let time = before.time.saturating_sub(delta);
@@ -136,6 +184,7 @@ impl Clock {
     pub(crate) fn seek(&self, time: Duration) {
         self.change(|inner| {
             inner.backward = false;
+            inner.shuttle = 1.0;
             inner.playback.seek(time);
         });
     }
@@ -158,6 +207,7 @@ impl Clock {
     /// Play if paused, pause if playing either way.
     pub(crate) fn toggle(&self) {
         self.change(|inner| {
+            inner.shuttle = 1.0;
             if inner.backward {
                 inner.backward = false;
             } else {
@@ -167,14 +217,21 @@ impl Clock {
     }
 
     /// Play forwards, or backwards with `forward` false; backwards stops
-    /// at the start. Already playing that way, nothing changes, so the
-    /// frame loop runs on without a hitch.
+    /// at the start. Already playing that way, the shuttle speeds up
+    /// instead, without disturbing playback.
     pub(crate) fn play(&self, forward: bool) {
         let state = self.state.get_untracked();
         if state.playing && state.reversing != forward {
+            self.retime(|inner| {
+                inner.shuttle = SHUTTLE
+                    .into_iter()
+                    .find(|&step| step > inner.shuttle)
+                    .unwrap_or(inner.shuttle);
+            });
             return;
         }
         self.change(|inner| {
+            inner.shuttle = 1.0;
             if forward {
                 inner.backward = false;
                 if !inner.playback.state().playing {
@@ -186,6 +243,23 @@ impl Clock {
                     !inner.playback.state().time.is_zero();
             }
         });
+    }
+
+    /// Play at `speed` times real time, with the shuttle back at 1x.
+    pub(crate) fn set_speed(&self, speed: f64) {
+        self.retime(|inner| {
+            inner.chosen_speed = speed;
+            inner.shuttle = 1.0;
+        });
+    }
+
+    /// Scale the sound by `gain`, from 0 to 1.
+    #[cfg_attr(not(feature = "audio"), allow(unused_variables))]
+    pub(crate) fn set_volume(&self, gain: f32) {
+        #[cfg(feature = "audio")]
+        if let Some(audio) = &mut self.inner.borrow_mut().audio {
+            audio.set_volume(gain);
+        }
     }
 }
 
@@ -199,15 +273,23 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
     let playback = Playback::new(config);
     let start = playback.state();
     #[cfg(feature = "audio")]
-    let audio = setup
-        .audio
-        .then(|| {
-            vello_winit_motiongfx::audio::AudioSync::open(
-                &setup.animation,
-                setup.playback_mode,
-            )
-        })
-        .flatten();
+    let (audio, status) = if setup.audio {
+        match vello_winit_motiongfx::audio::AudioSync::open(
+            &setup.animation,
+            setup.playback_mode,
+        ) {
+            Ok(Some(audio)) => (Some(audio), SoundStatus::Playing),
+            Ok(None) => (None, SoundStatus::None),
+            Err(error) => {
+                eprintln!("playing without sound: {error}");
+                (None, SoundStatus::NoDevice)
+            }
+        }
+    } else {
+        (None, SoundStatus::None)
+    };
+    #[cfg(not(feature = "audio"))]
+    let status = SoundStatus::None;
 
     let wanted = Rc::new(Cell::new(start.time));
     let clock = Clock {
@@ -215,10 +297,13 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
             playback,
             last_frame: None,
             backward: false,
+            chosen_speed: 1.0,
+            shuttle: 1.0,
             #[cfg(feature = "audio")]
             audio,
         })),
         state: RwSignal::new_local(start),
+        speed: RwSignal::new_local(1.0),
         wanted: Rc::clone(&wanted),
         timers: Timers::current()
             .expect("the editor is built in a window"),
@@ -245,6 +330,7 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
     );
     on_cleanup_local(move || drop(registration));
 
+    let sound = Sound::new(status, &clock);
     let keys = clock.clone();
     // K toggles playback. While it is held, J and L step one frame, as in
     // most editors; the time K was pressed at is kept so a step lands a
@@ -298,6 +384,7 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
                             Some(KeyCode::Backslash) => {
                                 return zoom(|view, _| view.fitted(), time);
                             }
+                            Some(KeyCode::KeyM) if !ev.repeat => return sound.toggle_mute(),
                             _ => {}
                         }
                     }
@@ -324,7 +411,7 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
                 }
             ) {
                 {zgui::elements::surface().class("preview").renderer(preview).into_view()}
-                {timeline(clock, viewport)}
+                {timeline(clock, viewport, sound)}
             }
         }
     }

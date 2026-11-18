@@ -58,6 +58,21 @@ impl AudioOutput {
     pub fn stop_all(&mut self) {
         self.player.stop_all();
     }
+
+    /// See [`Player::set_speed`].
+    ///
+    /// # Panics
+    ///
+    /// If `speed` isn't a positive, finite number.
+    #[track_caller]
+    pub fn set_speed(&mut self, speed: f64) {
+        self.player.set_speed(speed);
+    }
+
+    /// See [`Player::set_volume`].
+    pub fn set_volume(&mut self, gain: f32) {
+        self.player.set_volume(gain);
+    }
 }
 
 impl std::fmt::Debug for AudioOutput {

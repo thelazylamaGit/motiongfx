@@ -21,6 +21,8 @@ vello = { workspace = true }
 zgui = { workspace = true }
 zgui-ui = { workspace = true }
 zgui-ui-icons = { workspace = true }
+# Where popovers open; zgui-ui doesn't re-export it.
+zgui-ui-primitives = { workspace = true }
 zgui-ui-tokens = { workspace = true }
 
 [lints]

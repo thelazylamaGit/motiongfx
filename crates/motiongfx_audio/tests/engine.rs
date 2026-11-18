@@ -219,6 +219,52 @@ fn playing_backwards_starts_events_at_their_ends_in_reverse_order() {
 }
 
 #[test]
+fn a_slower_speed_spreads_events_and_holds_them_longer() {
+    // Events at 0 and 100 ms, 20 ms each, played at half speed.
+    let scene = compile([all([
+        dc(0.1, ms(20)).play(),
+        dc(0.2, ms(20)).play().delay(ms(100)),
+    ])]);
+    let (mut player, mut mixer) =
+        Player::new(Score::new(&scene), RATE);
+    player.set_speed(0.5);
+    player.advance(Duration::ZERO, ms(150));
+    let mut audio = vec![0.0; 2 * frames(ms(400))];
+    mixer.render(&mut audio);
+    let audio = left(&audio);
+    let latency = frames(ms(30));
+    // The second event comes 200 ms of sound after the first.
+    let second = latency + frames(ms(200));
+    assert_eq!(audio[second - 1], 0.0);
+    close(audio[second], 0.2, "the second event");
+    // Samples keep their own length; a timeline cut would stretch.
+    close(audio[latency + frames(ms(19))], 0.1, "the first sounds");
+}
+
+#[test]
+fn volume_ramps_to_its_new_level() {
+    let scene = compile([dc(0.4, s(1)).play()]);
+    let (mut player, mut mixer) =
+        Player::new(Score::new(&scene), RATE);
+    player.set_volume(0.5);
+    player.advance(Duration::ZERO, ms(10));
+    let mut audio = vec![0.0; 2 * frames(ms(100))];
+    mixer.render(&mut audio);
+    let audio = left(&audio);
+    let latency = frames(ms(30));
+    // The gain began its ramp before the sound started, so the sound
+    // starts already at the new level.
+    close(audio[latency], 0.2, "half volume");
+    player.set_volume(0.0);
+    let mut later = vec![0.0; 2 * frames(ms(20))];
+    mixer.render(&mut later);
+    let later = left(&later);
+    // The full range takes 10 ms, so half of it takes 5.
+    assert!(later[frames(ms(2))] > 0.0, "still ramping");
+    assert_eq!(later[frames(ms(6))], 0.0, "silent once ramped");
+}
+
+#[test]
 fn offline_render_covers_the_scene_and_release_tails() {
     let sine = sine();
     let scene = compile([chain([
