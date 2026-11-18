@@ -6,7 +6,7 @@ use motiongfx_2d::{
     Rectangle, Scene, Spring,
     colors::{BLUE, ORANGE},
 };
-use vello_winit_motiongfx::Window;
+use vello_winit_example::Window;
 
 fn build_animation() -> motiongfx_2d::CompiledScene {
     let mut scene = Scene::new();
@@ -30,7 +30,7 @@ fn build_animation() -> motiongfx_2d::CompiledScene {
     ])
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn main() -> Result<(), vello_winit_example::RunError> {
     let animation = build_animation();
 
     // Window size is separate from duration, which comes from the timeline.

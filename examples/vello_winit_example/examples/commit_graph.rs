@@ -7,7 +7,7 @@ use motiongfx_2d::{
     colors::{MAUVE, PASTEL_BLUE, TRANSPARENT},
     flow, wait,
 };
-use vello_winit_motiongfx::Window;
+use vello_winit_example::Window;
 
 struct Commit {
     dot: Handle<Circle>,
@@ -83,7 +83,7 @@ fn build_animation() -> motiongfx_2d::CompiledScene {
     ])
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn main() -> Result<(), vello_winit_example::RunError> {
     let animation = build_animation();
 
     Window::new("MotionGfx | Commit graph", (960.0, 540.0))

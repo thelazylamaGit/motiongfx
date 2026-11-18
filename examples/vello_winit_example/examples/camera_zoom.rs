@@ -7,7 +7,7 @@ use motiongfx_2d::{
     colors::{BLUE, TRANSPARENT, YELLOW},
     wait,
 };
-use vello_winit_motiongfx::Window;
+use vello_winit_example::Window;
 
 fn build_animation() -> motiongfx_2d::CompiledScene {
     let mut scene = Scene::new();
@@ -35,7 +35,7 @@ fn build_animation() -> motiongfx_2d::CompiledScene {
     ])
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn main() -> Result<(), vello_winit_example::RunError> {
     let animation = build_animation();
 
     // The 800px-high canvas leaves room to see the full 600px circle.

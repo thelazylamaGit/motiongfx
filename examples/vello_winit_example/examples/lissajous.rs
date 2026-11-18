@@ -12,7 +12,7 @@ use motiongfx_2d::{
     colors::{TRANSPARENT, WHITE},
     computed, flow, marker, signal, wait,
 };
-use vello_winit_motiongfx::{PlaybackMode, Window};
+use vello_winit_example::{PlaybackMode, Window};
 
 const N_X: usize = 12;
 const N_Y: usize = 6;
@@ -190,7 +190,7 @@ fn build_animation() -> CompiledScene {
     scene.compile([grid, marker("loop"), waves])
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn main() -> Result<(), vello_winit_example::RunError> {
     let animation = build_animation();
     let loop_start = animation.marker("loop").expect("loop marker");
     Window::new("MotionGfx | Lissajous table", CANVAS)

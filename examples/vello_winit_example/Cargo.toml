@@ -6,7 +6,12 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
+[features]
+# Open the examples in the zgui editor instead of the winit preview.
+zgui = ["dep:zgui_editor"]
+
 [dependencies]
+zgui_editor = { workspace = true, optional = true, features = ["audio"] }
 motiongfx_2d = { workspace = true }
 vello_motiongfx = { workspace = true }
 vello_winit_motiongfx = { workspace = true, features = ["audio"] }

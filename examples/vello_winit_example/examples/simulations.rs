@@ -14,7 +14,7 @@ use motiongfx_2d::{
     colors::{ORANGE, WHITE, YELLOW},
     signal, wait,
 };
-use vello_winit_motiongfx::Window;
+use vello_winit_example::Window;
 
 /// Pivot of the two rotation lines.
 const PIVOT: Point = Point::new(-220.0, 0.0);
@@ -109,7 +109,7 @@ fn build_animation() -> motiongfx_2d::CompiledScene {
     ])])
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn main() -> Result<(), vello_winit_example::RunError> {
     Window::new("MotionGfx | Simulations", (900.0, 540.0))
         .run(build_animation())
 }

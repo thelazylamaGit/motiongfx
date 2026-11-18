@@ -37,6 +37,14 @@ cargo run -p vello_winit_example --example simulations
 cargo run -p vello_winit_example --example sorting
 ```
 
+With the `zgui` feature, the examples that open `Window` run in the
+[zgui editor](../../crates/zgui_editor/README.md) instead of the winit preview
+(the `VelloDemo` ones always use winit):
+
+```sh
+cargo run -p vello_winit_example --example sorting --features zgui
+```
+
 The radius/area example mirrors the supplied signal relationships: radius
 starts at 3, grows to 4 over 2s, returns to 3 over 2s, then holds for 1s.
 It uses cubic in/out easing, matching Motion Canvas's signal tween default

@@ -35,6 +35,15 @@ engine, build a complete editor, or introduce ECS.
 | [`motiongfx_audio`](../crates/motiongfx_audio/README.md) | Sound events (notes on synth/SoundFont instruments, sample plays) as `Animation`s, voices, mixing, offline rendering and live playback (`Player`/`Mixer`; cpal output behind a feature). Depends on authoring only; no window or graphics. |
 | [`vello_motiongfx`](../crates/vello_motiongfx/README.md) | Vello drawing and renderer-owned caches. Consumes portable sampled models; exports only renderer types (objects come from `motiongfx_2d`). |
 | [`vello_winit_motiongfx`](../crates/vello_winit_motiongfx/README.md) | Native window/GPU setup, resize/DPI handling, playback clock, play/pause and scrubbing controls. These are shared host facilities, not required scene objects. With feature `audio`, `Window::audio()` drives `motiongfx_audio` from the clock. |
+| [`zgui_editor`](../crates/zgui_editor/README.md) | A zgui editor window with the same `Window` builder: Vello renders the sampled scene into a zgui `SurfaceRenderer` on zgui's own wgpu device, below which zgui widgets give the timeline. Reuses the playback clock and audio sync from `vello_winit_motiongfx`. Depends on a local zgui fork checkout (`../../zgui`). The examples use it with their `zgui` feature. |
+
+The two hosts have different jobs. `vello_winit_motiongfx` is the
+lightweight player: it is what a distributed single animation and the
+everyday example runs use, so it stays small in binary size and compile
+time, with its controls drawn by Vello and no UI framework. `zgui_editor` is
+the start of a larger editor and may grow its own playback model; it depends
+on the player crate, never the other way round, so editor work costs the
+player nothing.
 | [`motiongfx_scene`](../crates/motiongfx_scene/README.md) | Serializable scene/timeline documents, named registries and compilation into core actions. Distinct from live `motiongfx_authoring::Scene<M>`; not currently a dependency of native authoring. |
 | [`bevy_motiongfx`](../crates/bevy_motiongfx/README.md) | Separate Bevy integration. The Vello/Winit authoring path does not require Bevy. |
 | [`velyst_motiongfx`](../crates/velyst_motiongfx/README.md) | Existing Bevy/Velyst/Typst integration, currently excluded from the workspace pending dependency compatibility. Not yet the text implementation for this Vello host. |

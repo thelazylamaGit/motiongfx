@@ -23,6 +23,14 @@ vello_motiongfx = { version = "0.5.0", path = "crates/vello_motiongfx" }
 vello_winit_motiongfx = { version = "0.5.0", path = "crates/vello_winit_motiongfx" }
 bevy_motiongfx = { version = "0.5.0", path = "crates/bevy_motiongfx", default-features = false }
 peniko_motiongfx = { version = "0.5.0", path = "crates/peniko_motiongfx", default-features = false }
+zgui_editor = { version = "0.5.0", path = "crates/zgui_editor" }
+
+# zgui, from a local checkout of the fork next to this repository
+# (`../../zgui`), which adds the `SurfaceRenderer` hooks the editor uses.
+zgui = { path = "../../zgui/crates/zgui" }
+zgui-ui = { path = "../../zgui/crates/zgui-ui" }
+zgui-ui-icons = { path = "../../zgui/crates/zgui-ui-icons" }
+zgui-ui-tokens = { path = "../../zgui/crates/zgui-ui-tokens" }
 
 # bevy
 bevy = { version = "0.20", default-features = false }

@@ -6,7 +6,7 @@ use motiongfx::prelude::{ms, s};
 use motiongfx_2d::{
     FontWeight, Scene, Text, TextAlign, all, colors::*, wait,
 };
-use vello_winit_motiongfx::Window;
+use vello_winit_example::Window;
 
 fn build_animation() -> motiongfx_2d::CompiledScene {
     let mut scene = Scene::new();
@@ -36,7 +36,7 @@ fn build_animation() -> motiongfx_2d::CompiledScene {
     ])
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn main() -> Result<(), vello_winit_example::RunError> {
     let animation = build_animation();
 
     Window::new(

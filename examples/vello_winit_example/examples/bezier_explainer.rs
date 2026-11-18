@@ -9,7 +9,7 @@ use motiongfx_2d::{
     Scene, Text, all, chain, computed, signal, wait,
 };
 use vello::kurbo::Rect;
-use vello_winit_motiongfx::{PlaybackMode, Window};
+use vello_winit_example::{PlaybackMode, Window};
 
 const INK: Color = Color::from_rgb8(230, 235, 246);
 const MUTED: Color = Color::from_rgb8(146, 157, 184);
@@ -233,7 +233,7 @@ fn build_animation() -> motiongfx_2d::CompiledScene {
     ])
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn main() -> Result<(), vello_winit_example::RunError> {
     let animation = build_animation();
 
     Window::new(

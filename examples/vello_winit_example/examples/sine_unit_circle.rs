@@ -11,7 +11,7 @@ use motiongfx_2d::{
     colors::{BLUE, TRANSPARENT, WHITE},
     computed, signal, wait,
 };
-use vello_winit_motiongfx::Window;
+use vello_winit_example::Window;
 
 const TURNS: f64 = 8.5 * 0.25;
 const SEGMENTS: usize = 1088;

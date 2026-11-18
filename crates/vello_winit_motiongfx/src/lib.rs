@@ -36,7 +36,7 @@ use winit::window::Window as WinitWindow;
 
 pub use vello_motiongfx::lettering as labels;
 #[cfg(feature = "audio")]
-mod audio;
+pub mod audio;
 pub mod playback;
 use playback::PlaybackControls;
 pub use playback::{

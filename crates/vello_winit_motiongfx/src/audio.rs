@@ -6,7 +6,7 @@ use motiongfx_audio::{AudioOutput, Score};
 use std::time::Duration;
 
 /// The scene's audio output and what the clock did on the last tick.
-pub(crate) struct AudioSync {
+pub struct AudioSync {
     output: AudioOutput,
     mode: PlaybackMode,
     last: Option<PlaybackState>,
@@ -16,7 +16,7 @@ impl AudioSync {
     /// Open the default output device for `animation`'s sound, or `None`
     /// if it has none. A device that fails to open is reported on stderr
     /// and the preview stays silent: it is still useful without sound.
-    pub(crate) fn open(
+    pub fn open(
         animation: &motiongfx_2d::CompiledScene,
         mode: PlaybackMode,
     ) -> Option<Self> {
@@ -39,7 +39,7 @@ impl AudioSync {
 
     /// The clock moved from `before` to `after` in one tick. `before` is
     /// read after any input (pause, seek) since the previous tick.
-    pub(crate) fn update(
+    pub fn update(
         &mut self,
         before: PlaybackState,
         after: PlaybackState,

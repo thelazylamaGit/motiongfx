@@ -11,7 +11,7 @@ use motiongfx_2d::{
     computed, signal, wait,
 };
 use std::{sync::Arc, time::Duration};
-use vello_winit_motiongfx::Window;
+use vello_winit_example::Window;
 
 const WIDTH: f64 = 820.0;
 const HEIGHT: f64 = 50.0;
@@ -294,7 +294,7 @@ fn build_animation() -> CompiledScene {
     scene.compile(steps)
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn main() -> Result<(), vello_winit_example::RunError> {
     Window::new("MotionGfx | Spring lab", CANVAS)
         .run(build_animation())
 }

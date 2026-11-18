@@ -1,0 +1,27 @@
+[package]
+name = "zgui_editor"
+description = "A zgui editor window for previewing and scrubbing MotionGfx animations."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+# Play the scene's sound events (`Window::audio`) through the default
+# output device.
+audio = ["vello_winit_motiongfx/audio"]
+
+[dependencies]
+motiongfx_2d = { workspace = true }
+vello_motiongfx = { workspace = true }
+# The playback clock and audio sync the winit preview uses.
+vello_winit_motiongfx = { workspace = true }
+vello = { workspace = true }
+zgui = { workspace = true }
+zgui-ui = { workspace = true }
+zgui-ui-icons = { workspace = true }
+zgui-ui-tokens = { workspace = true }
+
+[lints]
+workspace = true

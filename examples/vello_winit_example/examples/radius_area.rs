@@ -9,7 +9,7 @@ use motiongfx_2d::{
     Circle, Color, Line, Scene, Text, TextAlign, TextStyle, Triangle,
     signal, wait,
 };
-use vello_winit_motiongfx::Window;
+use vello_winit_example::Window;
 
 const SCALE: f64 = 100.0;
 const RED: Color = Color::from_rgb8(225, 50, 56);
@@ -64,7 +64,7 @@ fn build_animation() -> motiongfx_2d::CompiledScene {
     ])
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn main() -> Result<(), vello_winit_example::RunError> {
     let animation = build_animation();
 
     Window::new(

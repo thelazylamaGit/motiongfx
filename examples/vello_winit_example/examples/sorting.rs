@@ -32,7 +32,7 @@ use motiongfx_2d::{
 use motiongfx_audio::Instrument;
 use motiongfx_audio::fundsp::prelude32::{adsr_live, sine_hz};
 use std::time::Duration;
-use vello_winit_motiongfx::Window;
+use vello_winit_example::Window;
 
 // ---------------------------------------------------------------------------
 // Settings

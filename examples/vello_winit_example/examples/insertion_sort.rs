@@ -5,7 +5,7 @@ use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
     Rectangle, Scene, Text, TextAlign, all, colors::PASTEL_BLUE, wait,
 };
-use vello_winit_motiongfx::Window;
+use vello_winit_example::Window;
 
 const VALUES: &[u32] = &[8, 4, 1, 2, 5, 6, 3, 7];
 
@@ -92,7 +92,7 @@ fn build_animation() -> motiongfx_2d::CompiledScene {
     scene.compile(steps)
 }
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+fn main() -> Result<(), vello_winit_example::RunError> {
     let animation = build_animation();
 
     Window::new("MotionGfx | Insertion sort", (900.0, 600.0))

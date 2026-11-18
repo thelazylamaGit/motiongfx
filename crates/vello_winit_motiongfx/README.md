@@ -18,7 +18,9 @@ loss or ping-pong reverse; resuming starts only events after the new time.
 At the natural end of a single play, the last notes ring out. If no device
 can be opened, the preview runs silently and prints why to stderr. The
 sound itself (scheduling, voices, the device stream) lives in
-`motiongfx_audio`; this crate only connects it to the clock.
+`motiongfx_audio`; this crate only connects it to the clock. Other hosts
+driving the same `Playback` clock (such as `zgui_editor`) use the public
+`audio::AudioSync` for the same behaviour.
 
 `VelloDemo` and `VelloWinitApp` remain available for custom immediate drawing
 and procedural demonstrations. Their playback clock is independent of an
