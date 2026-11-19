@@ -146,6 +146,10 @@ const ALGORITHMS: &[Algorithm] = &[
         name: "Radix sort (MSD)",
         sort: radix_sort,
     },
+    Algorithm {
+        name: "Merge sort",
+        sort: merge_sort,
+    },
 ];
 
 /// Sweeps adjacent pairs, swapping those out of order; each sweep carries
@@ -466,6 +470,76 @@ fn radix_sort_range(
     if bit > 0 {
         radix_sort_range(values, lo, zeros, bit - 1, on_step);
         radix_sort_range(values, zeros, hi, bit - 1, on_step);
+    }
+}
+
+/// Sorts each half, then merges the two sorted halves by repeatedly taking
+/// the smaller of their first values. Equal values keep their order, so the
+/// sort is stable. Reports every comparison: the value that is taken is
+/// active, compared with the other run's first value.
+fn merge_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
+    let len = values.len();
+    merge_sort_range(values, 0, len, on_step);
+}
+
+/// Sorts `values[lo..hi]` and leaves the rest alone.
+fn merge_sort_range<T: Ord>(
+    values: &mut [T],
+    lo: usize,
+    hi: usize,
+    on_step: OnStep<'_, T>,
+) {
+    if hi - lo <= 1 {
+        return;
+    }
+    let mid = lo + (hi - lo) / 2;
+    merge_sort_range(values, lo, mid, on_step);
+    merge_sort_range(values, mid, hi, on_step);
+    merge(values, lo, mid, hi, on_step);
+}
+
+/// Merges the sorted runs `values[lo..mid]` and `values[mid..hi]`.
+///
+/// A textbook merge copies into a second buffer. That would leave some
+/// values in both places partway through, and every step must show each
+/// bar in exactly one slot, so this merges in place instead: when the
+/// right run's first value is taken, it rotates in front of the rest of
+/// the left run, which shifts right one slot.
+fn merge<T: Ord>(
+    values: &mut [T],
+    lo: usize,
+    mid: usize,
+    hi: usize,
+    on_step: OnStep<'_, T>,
+) {
+    // `left..right` is what remains of the left run, `right..hi` of the
+    // right run, and everything before `left` is merged.
+    let mut left = lo;
+    let mut right = mid;
+    while left < right && right < hi {
+        // Taking the left value on a tie keeps the sort stable.
+        if values[left] <= values[right] {
+            on_step(
+                values,
+                Step {
+                    active: left,
+                    compared: right,
+                },
+            );
+        } else {
+            values[left..=right].rotate_right(1);
+            // The taken value is now at `left`, and the left run it beat
+            // starts just after it.
+            on_step(
+                values,
+                Step {
+                    active: left,
+                    compared: left + 1,
+                },
+            );
+            right += 1;
+        }
+        left += 1;
     }
 }
 
