@@ -14,7 +14,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `lissajous` | Lissajous table | Procedural path construction, reactive reference dots, nested timing, one-time grid intro and a looping curve chapter |
 | `procedural_wave_low_level` | Custom host integration | Direct Vello drawing from preview time; no MotionGfx timeline, with shared pause/seek controls |
 | `insertion_sort` | Canvas Commons sorting | Procedural creation, nested position targets, moving text labels, discrete pass captions |
-| `sorting` | Sorting visualizer | Coloured bars; different sorting algorithms run at build time and each pass becomes one step moving only the displaced bars |
+| `sorting` | Sorting visualizer | Coloured bars; ten sorting algorithms run at build time on a tracked array, and their recorded compares, swaps and buffer moves play back as beats |
 | `insertion_sort_low_level` | Previous annotated version | Same sorting choreography using raw MotionGfx and Vello calls |
 | `commit_graph` | Canvas Commons commit graph | A reusable circle/ring component, path reveal, staggered back easing, ordinary ring scale/opacity tracks |
 | `moving_square` | Manim `MovingAround` | Typed property handles, sequential translation, fill interpolation, relative scale, and rotation |
@@ -129,29 +129,38 @@ Authored Text uses cached real-font shaping. The original annotated low-level
 version retains the legacy immediate lettering and remains as
 `insertion_sort_low_level` for comparisons.
 
-The **sorting** example shuffles `BAR_COUNT` (128) bars with a seeded
-generator, then sorts them with bubble, selection and insertion sort in turn,
-reshuffling between them; the title names the current algorithm. Bar hue
-follows height, so the sorted bars form a rainbow. Bars are sharp-cornered
-`Rectangle`s: one fill each, no stroke. Each sort is an ordinary generic
-function that calls `on_step` with the slice after every comparison or swap,
-plus a `Step`: the slot it is working on (`active`: the value being carried,
-scanned or inserted) and the slot it compared it with (`compared`). Each
-algorithm decides which is which; every step is shown the same way. Steps
-are `STEP_HOLD` apart. Bars a step swapped start sliding to their new
-slots at the same time, over `MOVE_TIME`, without holding up the next step:
-the fades and the slides are two lanes run with `all`, and each is marked
-`.interrupt()`, so a bar the cursor revisits lights up again and a bar that
-swaps again mid-slide turns towards its new slot from wherever it is. To add an algorithm, write another function with the same signature
-and list it in `ALGORITHMS`.
+The **sorting** example shuffles `BAR_COUNT` (64) bars with a seeded
+generator, then sorts them with ten algorithms in turn (bubble, selection,
+insertion, comb, quick, bitonic, MSD radix, merge, counting and LSD radix
+sort), reshuffling between them; the title names the current algorithm. Bar
+hue follows height, so the sorted bars form a rainbow.
 
-Each step also plays a note (`motiongfx_audio`) for both bars, whose pitch
-follows each bar's height on a three-octave pentatonic scale, held for
-`NOTE_TIME`. Steps are 20 ms apart, so several notes overlap at once,
-often of the same pitch; each is its own voice. The interruption cuts the
-fade but never the note. The final left-to-right sweep climbs the scale.
-The notes use a fundsp sine synth. Sound plays while time moves forwards
-and stops on a pause or seek (`Window::audio()`).
+Each sort is ordinary Rust that works on a `Tracked` array: `less` compares
+two values, `swap` exchanges two slots, `read` reads a value as a key (for
+the radix and counting sorts) and `move_value` moves a value to or from a
+scratch buffer as long as the main row. Each call records an `Op`, so the
+algorithms read like their textbook versions and know nothing about
+animation. To add an algorithm, write a `fn(&mut Tracked)` and list it in
+`ALGORITHMS`.
+
+The scene plays the ops back in beats. A swap or move shares a beat with the
+comparison or read that decided it. Compared and read bars turn white and
+fade back; `SWAP_STYLE` chooses whether swapped bars slide or exchange
+heights, and `BUFFER_STYLE` whether the buffer is drawn as a second row
+(the main row shrinks to make room while a sort uses it) or hidden, in which
+case a value moved back overwrites the bar in its slot. Each sort lasts about
+`SORT_TIME`: beats are `SORT_TIME` divided by the sort's beat count apart,
+between `MIN_BEAT` and `MAX_BEAT`. Moves take `MOVE_TIME` without holding up
+the next beat, and each beat is marked `.interrupt()`, so a bar lit again
+mid-fade lights up from there and a bar moved again mid-slide turns towards
+its new place from wherever it is.
+
+Each lit bar also plays a note (`motiongfx_audio`) whose pitch follows its
+height on a three-octave pentatonic scale, held for `NOTE_TIME`. Beats come
+faster than notes end, so several overlap; each is its own voice. The
+interruption cuts the fade but never the note. The final left-to-right sweep
+climbs the scale. The notes use a fundsp sine synth. Sound plays while time
+moves forwards and stops on a pause or seek (`Window::audio()`).
 
 Run from the workspace root:
 
