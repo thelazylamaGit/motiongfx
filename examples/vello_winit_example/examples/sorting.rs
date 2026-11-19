@@ -138,6 +138,10 @@ const ALGORITHMS: &[Algorithm] = &[
         name: "Quick sort",
         sort: quick_sort,
     },
+    Algorithm {
+        name: "Bitonic sort",
+        sort: bitonic_sort,
+    },
 ];
 
 /// Sweeps adjacent pairs, swapping those out of order; each sweep carries
@@ -327,6 +331,72 @@ fn partition<T: Ord>(
         },
     );
     store
+}
+
+/// Sorts the two halves in opposite directions, then merges them. A merge
+/// compares pairs a fixed distance apart, so every comparison is chosen in
+/// advance and never depends on the values. That is why it runs well on
+/// parallel hardware. Splitting at the largest power of two below the length
+/// lets it sort any length, not just powers of two. Reports every
+/// comparison: the larger of the pair is active.
+fn bitonic_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
+    let len = values.len();
+    bitonic_sort_range(values, 0, len, true, on_step);
+}
+
+/// Sorts `values[lo..hi]` ascending or descending and leaves the rest alone.
+fn bitonic_sort_range<T: Ord>(
+    values: &mut [T],
+    lo: usize,
+    hi: usize,
+    ascending: bool,
+    on_step: OnStep<'_, T>,
+) {
+    if hi - lo <= 1 {
+        return;
+    }
+    let mid = lo + (hi - lo) / 2;
+    // Opposite directions make the whole range rise then fall (or fall
+    // then rise), which is the shape a bitonic merge sorts.
+    bitonic_sort_range(values, lo, mid, !ascending, on_step);
+    bitonic_sort_range(values, mid, hi, ascending, on_step);
+    bitonic_merge(values, lo, hi, ascending, on_step);
+}
+
+/// Sorts `values[lo..hi]`, which rises then falls (or the reverse), in the
+/// given direction.
+fn bitonic_merge<T: Ord>(
+    values: &mut [T],
+    lo: usize,
+    hi: usize,
+    ascending: bool,
+    on_step: OnStep<'_, T>,
+) {
+    let len = hi - lo;
+    if len <= 1 {
+        return;
+    }
+    // The largest power of two below `len`: half of it when `len` is itself
+    // a power of two.
+    let gap = 1 << (len - 1).ilog2();
+    for i in lo..hi - gap {
+        let j = i + gap;
+        let out_of_order = if ascending {
+            values[i] > values[j]
+        } else {
+            values[i] < values[j]
+        };
+        if out_of_order {
+            values.swap(i, j);
+        }
+        // An ascending merge leaves the larger value at `j`, a descending
+        // one at `i`.
+        let (active, compared) =
+            if ascending { (j, i) } else { (i, j) };
+        on_step(values, Step { active, compared });
+    }
+    bitonic_merge(values, lo, lo + gap, ascending, on_step);
+    bitonic_merge(values, lo + gap, hi, ascending, on_step);
 }
 
 // ---------------------------------------------------------------------------
