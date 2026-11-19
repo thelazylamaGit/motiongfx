@@ -1,14 +1,23 @@
 //! [`Rectangle`]: rectangles, optionally with rounded corners.
 use crate::*;
-/// A rectangle centred on its position. Create one with [`Rectangle::new`].
-/// Scale changes its size but not its stroke width.
+/// A rectangle placed by its [`anchor`](Self::anchor), its centre unless
+/// set otherwise. Create one with [`Rectangle::new`]. Scale changes its
+/// size but not its stroke width.
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct Rectangle {
     /// Width and height in canvas units.
     pub size: Size,
-    /// Position, scale and rotation. The position is the centre, in canvas units (y up).
+    /// Position, scale and rotation. The position is where the anchor sits,
+    /// in canvas units (y up).
     pub transform: crate::Transform,
+    /// The point of the rectangle that its position marks and that it
+    /// rotates and scales about, as a fraction of its half-size: `(0, 0)` is
+    /// the centre, `(0, -1)` the middle of the bottom edge and `(1, 1)` the
+    /// top-right corner (y up). Values beyond ±1 put the point outside the
+    /// rectangle. Children attached with `relative_to` hang off this point.
+    /// See [`anchor`](crate::anchor) for named points.
+    pub anchor: Vec2,
     /// Fill colour.
     pub fill: Color,
     /// 0 (invisible) to 1 (opaque); multiplies the fill and outline alpha.
@@ -30,6 +39,7 @@ impl Default for Rectangle {
         Self {
             size: Size::new(100.0, 100.0),
             transform: crate::Transform::default(),
+            anchor: anchor::CENTER,
             fill: Color::WHITE,
             opacity: 1.0,
             stroke: Color::TRANSPARENT,
@@ -58,6 +68,20 @@ impl Rectangle {
     /// applied to the size instead, so strokes keep their width.
     pub fn transform(&self) -> Affine {
         self.transform.without_scale()
+    }
+
+    /// The rectangle in its own coordinates, ready to draw with
+    /// [`transform`](Self::transform): scaled, and placed so its anchor is
+    /// at the origin. Like `transform`, y points down.
+    pub fn local_rect(&self) -> Rect {
+        let half = Vec2::new(self.size.width, self.size.height)
+            * (self.transform.scale / 2.0);
+        // The anchor's y points up, as positions do.
+        let shift = Vec2::new(
+            self.anchor.x * half.x,
+            -self.anchor.y * half.y,
+        );
+        Rect::new(-half.x, -half.y, half.x, half.y) - shift
     }
 
     /// A white rectangle from a `(width, height)` tuple, `Vec2` or `Size`.
@@ -115,6 +139,12 @@ impl<M: Model2d> SceneObject<M> for Rectangle {
 crate::properties::object!(Rectangle, RectangleId;
 transform(Rectangle.transform);
 set size: Size => new(Rectangle.size);
+get width: f64 => new(Rectangle.size.width);
+get height: f64 => new(Rectangle.size.height);
+/// Set the [`anchor`](Rectangle::anchor): a fixed point such as
+/// [`anchor::BOTTOM`](crate::anchor::BOTTOM), or a signal, computed value
+/// or property for it to follow.
+set anchor: Vec2 => new(Rectangle.anchor);
 set fill: Color => new(Rectangle.fill) shared;
 set opacity: f64 => new(Rectangle.opacity) shared;
 set radius: f64 => new(Rectangle.radius);
@@ -123,4 +153,29 @@ set stroke_width: f64 => new(Rectangle.stroke_width) shared;
 get line_cap: crate::Cap => discrete(Rectangle.line_cap);
 get line_join: crate::Join => discrete(Rectangle.line_join);
 );
+/// Named [`Rectangle::anchor`] points: which point of a rectangle its
+/// position marks and it turns and scales about.
+pub mod anchor {
+    use crate::Vec2;
+
+    /// The centre, the default.
+    pub const CENTER: Vec2 = Vec2::new(0.0, 0.0);
+    /// The middle of the top edge.
+    pub const TOP: Vec2 = Vec2::new(0.0, 1.0);
+    /// The middle of the bottom edge.
+    pub const BOTTOM: Vec2 = Vec2::new(0.0, -1.0);
+    /// The middle of the left edge.
+    pub const LEFT: Vec2 = Vec2::new(-1.0, 0.0);
+    /// The middle of the right edge.
+    pub const RIGHT: Vec2 = Vec2::new(1.0, 0.0);
+    /// The top-left corner.
+    pub const TOP_LEFT: Vec2 = Vec2::new(-1.0, 1.0);
+    /// The top-right corner.
+    pub const TOP_RIGHT: Vec2 = Vec2::new(1.0, 1.0);
+    /// The bottom-left corner.
+    pub const BOTTOM_LEFT: Vec2 = Vec2::new(-1.0, -1.0);
+    /// The bottom-right corner.
+    pub const BOTTOM_RIGHT: Vec2 = Vec2::new(1.0, -1.0);
+}
+
 crate::capability::capabilities!(Rectangle; Transformable, Fillable, Strokable, Fadable);

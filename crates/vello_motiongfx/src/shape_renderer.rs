@@ -5,7 +5,7 @@ use crate::triangle_geometry::CachedTriangle;
 use crate::{path_renderer, text_renderer};
 use motiongfx_2d::{
     Canvas, Chevron, Circle, DrawObject, EndpointTip, Geometry, Line,
-    Model2d, Point, Rect, Rectangle, Size, Triangle,
+    Model2d, Point, Rectangle, Size, Triangle,
 };
 use vello::kurbo::{
     Affine, Circle as CircleShape, Line as LineShape,
@@ -22,14 +22,9 @@ impl RenderRectangle for Rectangle {
             return;
         }
         let xf = screen * self.transform();
-        let half_w =
-            rectangle.size.width * rectangle.transform.scale / 2.0;
-        let half_h =
-            rectangle.size.height * rectangle.transform.scale / 2.0;
-        let shape = Rect::new(-half_w, -half_h, half_w, half_h)
-            .to_rounded_rect(
-                rectangle.radius * rectangle.transform.scale.abs(),
-            );
+        let shape = rectangle.local_rect().to_rounded_rect(
+            rectangle.radius * rectangle.transform.scale.abs(),
+        );
         let fill = rectangle.fill;
         scene.fill(
             Fill::NonZero,

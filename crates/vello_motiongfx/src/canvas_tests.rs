@@ -211,3 +211,41 @@ fn rectangle_opacity_fades_fill_and_outline_and_hides_at_zero() {
         );
     }
 }
+
+#[test]
+fn anchored_rectangle_turns_about_its_anchor() {
+    let mut renderer = Renderer::default();
+    let mut scene = Scene::new();
+    let quarter = std::f64::consts::FRAC_PI_2;
+    scene.add(
+        Rectangle::new(40.0, 20.0)
+            .anchor(motiongfx_2d::anchor::BOTTOM)
+            .position((10.0, 5.0))
+            .rotation(quarter),
+    );
+    let mut animation = scene.compile([wait(ms(0))]);
+    animation.sample(ms(0));
+    let size = Size::new(200.0, 200.0);
+    let mut actual = vello::Scene::new();
+    renderer.render(&animation, &mut actual, size, size, 1.0);
+
+    // The transform is the anchor point's (the canvas centre plus the
+    // position, y flipped) and the rotation, so the rectangle above its
+    // bottom edge turns about that edge, not about its centre.
+    let mut expected = vello::Scene::new();
+    expected.fill(
+        Fill::NonZero,
+        Affine::translate((110.0, 95.0)) * Affine::rotate(-quarter),
+        Color::WHITE,
+        None,
+        &Rect::new(-20.0, -20.0, 20.0, 0.0).to_rounded_rect(0.0),
+    );
+    assert_eq!(
+        actual.encoding().path_data,
+        expected.encoding().path_data
+    );
+    assert_eq!(
+        actual.encoding().transforms,
+        expected.encoding().transforms
+    );
+}

@@ -68,6 +68,21 @@ a `Vec2`, or a `Size`.
 `.position((x, y))` sets the initial center and `.radius(value)` sets a corner
 radius. Object handles expose typed getters: `position().to(point)`,
 `position().to_xy(x, y)`, `position_x().to(x)` and `position_y().to(y)`.
+Rectangles also have `width()` and `height()`, which animate one side of
+`size()`; like `position_x` and `position`, a side and the whole size overlap
+if animated at once.
+
+A rectangle's `.anchor(..)` chooses which of its points the position marks
+and the point it rotates and scales about, as a fraction of its half-size
+(y up): `anchor::CENTER` (the default), `anchor::BOTTOM`, `anchor::TOP_LEFT`
+and the other named points, or any `Vec2`. A bar anchored at its bottom edge
+grows upwards with just `bar.height().to(h)`:
+`Rectangle::new(w, h).anchor(anchor::BOTTOM).position((x, baseline))`. The
+anchor is an ordinary field: animate it with `bar.anchor().to(..)` or let it
+follow a signal. Because the position stays put, changing the anchor moves
+the rectangle so the new point sits at the position, as Motion Canvas's
+`offset` does. To turn around a point outside the rectangle, attach it with
+`relative_to` to a parent at that point and turn the parent.
 `shift(dx, dy)`, `scale_by(factor)` and `rotate(radians)` are relative helpers
 using the action-start value. `fill_to(color)` is an animated convenience;
 `set_fill(color)` is an immediate scheduled change. Which methods a handle
@@ -160,7 +175,7 @@ usual binding evaluation costs. No CSS cascade, selectors, layout, automatic
 inheritance or new crate is introduced.
 
 `Text::new("5").relative_to(bar).position((0.0, -40.0))` anchors text to a
-rectangle's center. Its position is then a local offset; it inherits the
+rectangle's anchor point (its center unless set otherwise). Its position is then a local offset; it inherits the
 rectangle's translation, rotation and scale automatically, without extra
 animation tracks or cache rebuilds. The text's own position/scale/rotation
 remain independently animatable, and its color/opacity stay independent.

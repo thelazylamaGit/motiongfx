@@ -260,6 +260,19 @@ framework are needed for these arguments.
 See the [tip API](../crates/motiongfx_2d/README.md#inline-endpoint-shapes)
 for geometry, short-line fitting and current attachment limitations.
 
+Rectangles have an `anchor`: the point their position marks and they rotate
+and scale about, as a fraction of their half-size (y up), centre by default.
+It combines placement and pivot, as Motion Canvas's `offset`, After Effects'
+anchor point and Unity's `pivot` do, because the common case (a bar growing
+from its baseline) needs both. Fractions rather than canvas units keep an edge
+anchor on that edge while the size animates. It is an ordinary animatable,
+signal-capable field; changing it with the position fixed moves the rectangle,
+and no helper compensates because the size and rotation it would need are
+only known when sampling. `Rectangle::local_rect` owns the anchored geometry so
+renderers only draw it, and `relative_to` children hang off the anchor point.
+It is on rectangles only: lines and paths have no box to take fractions of, so
+it is not part of `Transform`. Pivoting about an outside point uses a parent.
+
 Lines, paths, triangles, chevrons and rectangles expose typed `line_cap` (`Cap`)
 and `line_join` (`Join`)
 properties with round defaults, reactive inputs and discrete timeline changes.

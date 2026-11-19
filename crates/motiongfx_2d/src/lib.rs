@@ -137,4 +137,4 @@ pub mod prelude {
 mod canvas;
 mod rectangle;
 pub use canvas::{Canvas, DrawObject};
-pub use rectangle::{Rectangle, RectangleId};
+pub use rectangle::{Rectangle, RectangleId, anchor};
