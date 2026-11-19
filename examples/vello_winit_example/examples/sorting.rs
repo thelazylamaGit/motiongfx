@@ -25,7 +25,7 @@
 use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
     Animation, Color, CompiledScene, Handle, Rectangle, Scene, Text,
-    all, any, chain,
+    all, chain,
     colors::{WHITE, hsl},
     flow, wait,
 };
@@ -133,6 +133,10 @@ const ALGORITHMS: &[Algorithm] = &[
     Algorithm {
         name: "Comb sort",
         sort: comb_sort,
+    },
+    Algorithm {
+        name: "Quick sort",
+        sort: quick_sort,
     },
 ];
 
@@ -258,6 +262,71 @@ fn comb_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
             );
         }
     }
+}
+
+/// Picks the last value of a range as the pivot, moves everything no larger
+/// than it to its left, puts it between the two groups, and sorts each group
+/// the same way. Reports every comparison with the pivot: the scanned value
+/// is active. Then it reports the pivot moving into place, as active.
+fn quick_sort<T: Ord>(values: &mut [T], on_step: OnStep<'_, T>) {
+    let len = values.len();
+    quick_sort_range(values, 0, len, on_step);
+}
+
+/// Sorts `values[lo..hi]` and leaves the rest alone. It still gets the whole
+/// slice so the slots it reports are slots of the whole slice.
+fn quick_sort_range<T: Ord>(
+    values: &mut [T],
+    lo: usize,
+    hi: usize,
+    on_step: OnStep<'_, T>,
+) {
+    if hi - lo <= 1 {
+        return;
+    }
+    let pivot = partition(values, lo, hi, on_step);
+    quick_sort_range(values, lo, pivot, on_step);
+    quick_sort_range(values, pivot + 1, hi, on_step);
+}
+
+/// Splits `values[lo..hi]` around its last value and returns the pivot's
+/// final slot.
+fn partition<T: Ord>(
+    values: &mut [T],
+    lo: usize,
+    hi: usize,
+    on_step: OnStep<'_, T>,
+) -> usize {
+    let pivot = hi - 1;
+    // The next slot for a value no larger than the pivot.
+    let mut store = lo;
+    for j in lo..pivot {
+        let smaller = values[j] <= values[pivot];
+        if smaller {
+            values.swap(store, j);
+        }
+        // After a swap the scanned value is at `store`.
+        on_step(
+            values,
+            Step {
+                active: if smaller { store } else { j },
+                compared: pivot,
+            },
+        );
+        if smaller {
+            store += 1;
+        }
+    }
+    values.swap(store, pivot);
+    // Both slots are `store` when the pivot was already in place.
+    on_step(
+        values,
+        Step {
+            active: store,
+            compared: pivot,
+        },
+    );
+    store
 }
 
 // ---------------------------------------------------------------------------
