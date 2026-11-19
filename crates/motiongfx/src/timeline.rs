@@ -267,6 +267,17 @@ impl<W: 'static> Timeline<W> {
                 }
                 // `target_time` is out of bounds.
                 Err(index) => {
+                    // The whole range lies inside the gap between two
+                    // clips: the value written on entering the gap still
+                    // holds, so there is nothing to write. Strict, so a
+                    // sample exactly on a clip's edge still writes.
+                    if index > 0
+                        && index < clips.len()
+                        && time_range.start > clips[index - 1].end()
+                        && time_range.end < clips[index].start
+                    {
+                        continue;
+                    }
                     let clip_index = index.saturating_sub(1);
                     let clip = &clips[clip_index];
 
@@ -356,6 +367,23 @@ impl<W> Timeline<W> {
     #[inline]
     pub fn target_index(&self) -> usize {
         self.target_index
+    }
+
+    /// The sequences the last [`Self::queue_actions`] call queued: those
+    /// [`Self::sample_queued_actions`] writes. Anything derived from other
+    /// sequences can skip recalculating.
+    pub fn queued_keys(&self) -> impl Iterator<Item = &ActionKey> {
+        self.queue.keys()
+    }
+
+    /// How many sequences [`Self::queued_keys`] lists.
+    pub fn queued_len(&self) -> usize {
+        self.queue.len()
+    }
+
+    /// Whether the last [`Self::queue_actions`] call queued `key`.
+    pub fn is_queued(&self, key: &ActionKey) -> bool {
+        self.queue.contains_key(key)
     }
 
     /// Read-only action metadata for inspecting compiled targets.

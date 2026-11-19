@@ -157,3 +157,53 @@ fn parallel_branches_authored_out_of_time_order() {
         );
     }
 }
+
+/// Moving within the gap between two clips writes nothing: the value
+/// written on entering the gap still holds. Entering or leaving the gap
+/// does write, in either direction.
+#[test]
+fn moving_within_a_gap_writes_nothing() {
+    let mut registry = Registry::new();
+    let mut builder = registry.create_builder::<World>();
+
+    // A: [0,1] -> x=10.  gap [1,2].  B: [2,3] -> x=20.
+    let track = [
+        builder
+            .act_builder(CUBE, path!(Transform.translation.x), |_| {
+                10.0
+            })
+            .with_interp(lerp_f32)
+            .play(s(1)),
+        TrackFragment::silent(s(1)),
+        builder
+            .act_builder(CUBE, path!(Transform.translation.x), |_| {
+                20.0
+            })
+            .with_interp(lerp_f32)
+            .play(s(1)),
+    ]
+    .ord_chain();
+
+    let mut timeline = builder.compile(track.compile());
+    let mut world = world_starting_at(Vec3::default());
+    timeline.bake_actions(&registry, &world);
+
+    let mut x = |time| {
+        sample_at(&registry, &mut timeline, &mut world, time).x
+    };
+    assert_eq!(x(ms(500)), 5.0);
+    // Entering the gap writes A's end.
+    assert_eq!(x(ms(1500)), 10.0);
+    // Within it, in either direction, nothing is written.
+    for time in [ms(1600), ms(1200), ms(1900)] {
+        assert_eq!(x(time), 10.0);
+    }
+    // Leaving it forwards writes B; jumping back into it writes A's end.
+    assert_eq!(x(ms(2500)), 15.0);
+    assert_eq!(x(ms(1500)), 10.0);
+    // `x` borrows the timeline; check what the last sample queued.
+    drop(x);
+    assert_eq!(timeline.queued_len(), 1);
+    sample_at(&registry, &mut timeline, &mut world, ms(1700));
+    assert_eq!(timeline.queued_len(), 0);
+}

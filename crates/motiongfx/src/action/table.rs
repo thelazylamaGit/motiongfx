@@ -117,6 +117,11 @@ impl ActionTable {
     pub fn get_id<I: SubjectId>(&self, uid: &UId) -> Option<&I> {
         self.resources.get::<IdRegistry<I>>()?.get_id(uid)
     }
+
+    /// The [`UId`] the table gave `id`, if any action animates it.
+    pub fn get_uid<I: SubjectId>(&self, id: &I) -> Option<UId> {
+        self.resources.get::<IdRegistry<I>>()?.get_uid(id).copied()
+    }
 }
 
 impl ActionTable {
