@@ -14,19 +14,24 @@ use zgui::platform::{Surface, SurfaceEvent};
 use zgui::prelude::*;
 use zgui::render::{RenderTarget, Renderer};
 use zgui::runtime::{AppError, Runtime};
-use zgui::vocab::{PointerAction, PointerEvent, Timestamp};
+use zgui::vocab::{
+    KeyEvent, KeyState, PointerAction, PointerEvent, Timestamp,
+};
 use zgui_platform_headless::Harness;
 use zgui_ui_tokens::prelude::ColorScheme;
 
 use crate::clock::Clock;
 use crate::controls::{self, Sound, SoundStatus};
+use crate::editor::workspace;
 use crate::theme::{self, EditorThemeProps};
-use crate::timeline::{self, Viewport, timeline};
+use crate::timeline::{self, Viewport};
 
 thread_local! {
     /// The track the timeline under test built, so a test can aim the
     /// pointer at it rather than at its own arithmetic.
     pub(crate) static TRACK: Cell<Option<NodeRef>> = const { Cell::new(None) };
+    /// The play button, for a test that clicks it.
+    pub(crate) static PLAY: Cell<Option<NodeRef>> = const { Cell::new(None) };
 }
 
 /// What the view builds and the rig takes out once it is up.
@@ -76,13 +81,17 @@ impl Rig {
                     RwSignal::new_local(Viewport::whole(duration));
                 let sound = Sound::new(SoundStatus::None, &clock);
                 *slot.borrow_mut() = Some((clock.clone(), viewport));
-                let bar = timeline(clock, viewport, sound);
+                // The real window, keys and all, with an empty box where
+                // the GPU preview would be.
+                let editor = workspace(
+                    clock,
+                    viewport,
+                    sound,
+                    view! { box(class = "preview") {} },
+                );
                 view! {
                     EditorTheme(scheme = ColorScheme::Dark) {
-                        column(class = "editor") {
-                            box(class = "preview") {}
-                            {bar}
-                        }
+                        {editor}
                     }
                 }
             })
@@ -162,6 +171,38 @@ impl Rig {
             timestamp: Timestamp::ORIGIN,
         });
         self.harness.settle(16);
+    }
+
+    /// Press and release the named `key`.
+    fn key(&mut self, key: NamedKey, code: KeyCode) {
+        for state in [KeyState::Pressed, KeyState::Released] {
+            self.harness.deliver_to_first(SurfaceEvent::Key {
+                state,
+                event: KeyEvent::named(key, PhysicalKey::Code(code)),
+                modifiers: Modifiers::NONE,
+                timestamp: Timestamp::ORIGIN,
+            });
+            self.harness.settle(16);
+        }
+    }
+
+    /// Click the middle of `node`.
+    fn click(&mut self, node: NodeRef) {
+        let bounds = node.window_bounds().expect("it is laid out");
+        let scale = node.scale();
+        let at = Point::new(
+            CssPx(
+                (bounds.origin.x.0 + bounds.size.width.0 / 2.0)
+                    / scale,
+            ),
+            CssPx(
+                (bounds.origin.y.0 + bounds.size.height.0 / 2.0)
+                    / scale,
+            ),
+        );
+        self.pointer(PointerAction::Moved, at);
+        self.pointer(PointerAction::Pressed, at);
+        self.pointer(PointerAction::Released, at);
     }
 
     /// Run `count` refreshes of the frame clock.
@@ -316,6 +357,25 @@ fn repeated_presses_shuttle_faster_and_a_pause_resets() {
         1.0,
         "the shuttle multiplies the chosen speed"
     );
+}
+
+#[test]
+fn space_plays_and_pauses_even_after_clicking_a_button() {
+    let mut rig = Rig::open(Duration::from_secs(10), 900.0);
+    let playing =
+        |rig: &Rig| rig.parts.clock.state.get_untracked().playing;
+    let play =
+        PLAY.get().expect("the timeline recorded its play button");
+
+    // Clicking the play button plays, and leaves it focused.
+    rig.click(play);
+    assert!(playing(&rig), "the click played");
+    // Space now toggles once; were the focused button pressed too, the
+    // two toggles would cancel out.
+    rig.key(NamedKey::Space, KeyCode::Space);
+    assert!(!playing(&rig), "Space paused, and only once");
+    rig.key(NamedKey::Space, KeyCode::Space);
+    assert!(playing(&rig), "and plays again");
 }
 
 /// A renderer that accepts every frame and draws nothing.

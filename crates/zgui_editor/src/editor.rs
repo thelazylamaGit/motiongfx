@@ -67,7 +67,27 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
         setup.canvas,
         clock.wanted(),
     );
+    let sound = Sound::new(status, &clock);
+    let surface = zgui::elements::surface()
+        .class("preview")
+        .renderer(preview)
+        .into_view();
+    view! {
+        EditorTheme(scheme = setup.color_scheme) {
+            {workspace(clock, viewport, sound, surface)}
+        }
+    }
+}
 
+/// `preview` above the timeline for `clock`, with the editor's keyboard
+/// shortcuts. Everything in the window but the theme, so a test can open
+/// it with a stand-in for the GPU preview.
+pub(crate) fn workspace(
+    clock: Clock,
+    viewport: RwSignal<Viewport, LocalStorage>,
+    sound: Sound,
+    preview: impl IntoView,
+) -> impl IntoView {
     // Shortcuts work before anything is focused: register the root for
     // keys nothing else takes.
     let root = NodeRef::new();
@@ -80,7 +100,6 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
     );
     on_cleanup_local(move || drop(registration));
 
-    let sound = Sound::new(status, &clock);
     let keys = clock.clone();
     // K toggles playback. While it is held, J and L step one frame, as in
     // most editors; the time K was pressed at is kept so a step lands a
@@ -94,7 +113,6 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
             .update(|view| *view = change(*view, time.as_secs_f64()));
     };
     view! {
-        EditorTheme(scheme = setup.color_scheme) {
             column(
                 class = "editor",
                 node_ref = root,
@@ -135,7 +153,15 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
                         }
                     }
                     let later = match &ev.key {
-                        Key::Named(NamedKey::Space) => return keys.toggle(),
+                        Key::Named(NamedKey::Space) => {
+                            // Space always plays and pauses, as in most
+                            // editors. Without this, zgui would also press
+                            // whichever button was last clicked, since a
+                            // click focuses it and Space activates what is
+                            // focused. Enter still does.
+                            ev.prevent_default();
+                            return keys.toggle();
+                        }
                         Key::Named(NamedKey::Home) => return keys.seek(Duration::ZERO),
                         Key::Named(NamedKey::End) => {
                             return keys.seek(keys.state.get_untracked().duration);
@@ -156,9 +182,8 @@ pub(crate) fn editor(setup: Setup) -> impl IntoView {
                     }
                 }
             ) {
-                {zgui::elements::surface().class("preview").renderer(preview).into_view()}
+                {preview}
                 {timeline(clock, viewport, sound)}
             }
-        }
     }
 }

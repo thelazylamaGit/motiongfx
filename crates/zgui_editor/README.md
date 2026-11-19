@@ -18,7 +18,8 @@ cargo run -p vello_winit_example --example sorting --features zgui
 
 Keys:
 
-- Space and K play and pause. L plays forwards and J backwards; pressed
+- Space and K play and pause, even when a button has focus (Enter
+  still presses the focused button). L plays forwards and J backwards; pressed
   again in the direction already playing, they shuttle faster (2x, 4x,
   8x). With K held, J and L step one frame.
 - M mutes and unmutes.

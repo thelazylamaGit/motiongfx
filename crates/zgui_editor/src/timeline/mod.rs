@@ -127,6 +127,9 @@ pub(crate) fn timeline(
         clock.clone(),
         clock.clone(),
     );
+    let play_button = NodeRef::new();
+    #[cfg(test)]
+    crate::headless::PLAY.set(Some(play_button));
     let buttons = view! {
         row(class = "transport__buttons") {
             {transport_button(TO_START, "Go to start", "transport__jump", move || start.seek(Duration::ZERO))}
@@ -135,6 +138,7 @@ pub(crate) fn timeline(
                 variant = ButtonVariant::Secondary,
                 size = ButtonSize::Icon,
                 class = "transport__play",
+                node_ref = play_button,
                 on:click = move |_| play.toggle()
             ) {
                 Icon(
