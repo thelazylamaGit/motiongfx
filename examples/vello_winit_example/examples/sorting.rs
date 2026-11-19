@@ -150,6 +150,14 @@ const ALGORITHMS: &[Algorithm] = &[
         name: "Merge sort",
         sort: merge_sort,
     },
+    Algorithm {
+        name: "Counting sort",
+        sort: counting_sort,
+    },
+    Algorithm {
+        name: "Radix sort (LSD, base 4)",
+        sort: radix_lsd_sort,
+    },
 ];
 
 /// Sweeps adjacent pairs, swapping those out of order; each sweep carries
@@ -540,6 +548,105 @@ fn merge<T: Ord>(
             right += 1;
         }
         left += 1;
+    }
+}
+
+/// Counts how many times each value appears, which gives each value's first
+/// slot in the sorted order, then places every value, in input order, into
+/// the next free slot for it. It never compares two values, so it sorts
+/// integer keys, using one counter per value up to the largest. Reports
+/// each slot it counts (alone), then each value landing in its final slot
+/// (alone).
+fn counting_sort(values: &mut [usize], on_step: OnStep<'_, usize>) {
+    let Some(&max) = values.iter().max() else {
+        return;
+    };
+    sort_by_key_counts(values, max + 1, |value| value, on_step);
+}
+
+/// Counting sort on one base-4 digit at a time, from the lowest. Each pass
+/// splits the row into four buckets, one per digit, side by side. Because
+/// each pass is stable, values with the same digit stay in the order the
+/// lower digits set, so after the highest digit's pass the row is sorted.
+/// Reports the same steps as [`counting_sort`], once per digit.
+fn radix_lsd_sort(values: &mut [usize], on_step: OnStep<'_, usize>) {
+    const RADIX: usize = 4;
+    let Some(&max) = values.iter().max() else {
+        return;
+    };
+    // The place value of the digit this pass sorts by: 1, 4, 16, ...
+    let mut place = 1;
+    while place <= max {
+        sort_by_key_counts(
+            values,
+            RADIX,
+            |value| value / place % RADIX,
+            on_step,
+        );
+        let Some(next) = place.checked_mul(RADIX) else {
+            break; // `max` has no higher digit than this one.
+        };
+        place = next;
+    }
+}
+
+/// Rearranges `values` so their keys ascend, keeping values with equal keys
+/// in their current order. `key` maps a value to `0..key_count`.
+///
+/// Counts each key, which gives each key's first slot, then places every
+/// value, in input order, into its key's next free slot. Reports each slot
+/// it counts (alone), then each value landing in its new slot (alone).
+fn sort_by_key_counts(
+    values: &mut [usize],
+    key_count: usize,
+    key: impl Fn(usize) -> usize,
+    on_step: OnStep<'_, usize>,
+) {
+    let mut next_slot = vec![0; key_count];
+    for slot in 0..values.len() {
+        next_slot[key(values[slot])] += 1;
+        on_step(
+            values,
+            Step {
+                active: slot,
+                compared: slot,
+            },
+        );
+    }
+    // Each key's first slot comes after every smaller key's values.
+    let mut start = 0;
+    for count in &mut next_slot {
+        let key_count = *count;
+        *count = start;
+        start += key_count;
+    }
+
+    // A textbook counting sort writes into a second buffer. Every step must
+    // show each bar in exactly one slot, so a value moving into its slot
+    // swaps with the one there instead. That one is always still unplaced,
+    // because placed values only ever sit in their own new slots.
+    // `slot_of[i]` is where the value that started at slot `i` is now, and
+    // `origin_of` is the reverse map.
+    let mut slot_of: Vec<usize> = (0..values.len()).collect();
+    let mut origin_of = slot_of.clone();
+    for origin in 0..values.len() {
+        let from = slot_of[origin];
+        let value_key = key(values[from]);
+        let to = next_slot[value_key];
+        next_slot[value_key] += 1;
+        values.swap(from, to);
+        let displaced = origin_of[to];
+        slot_of[displaced] = from;
+        origin_of[from] = displaced;
+        slot_of[origin] = to;
+        origin_of[to] = origin;
+        on_step(
+            values,
+            Step {
+                active: to,
+                compared: to,
+            },
+        );
     }
 }
 
