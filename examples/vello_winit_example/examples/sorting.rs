@@ -97,8 +97,8 @@ struct Step {
     /// The slot holding the value the algorithm is working on: the one
     /// being carried, scanned or inserted.
     active: usize,
-    /// The slot it was compared with. Equal to `active` when a value is
-    /// swapped with itself.
+    /// The slot it was compared with. Equal to `active` when a step looks
+    /// at only one slot, such as a value swapped with itself.
     compared: usize,
 }
 
@@ -141,6 +141,10 @@ const ALGORITHMS: &[Algorithm] = &[
     Algorithm {
         name: "Bitonic sort",
         sort: bitonic_sort,
+    },
+    Algorithm {
+        name: "Radix sort (MSD)",
+        sort: radix_sort,
     },
 ];
 
@@ -397,6 +401,72 @@ fn bitonic_merge<T: Ord>(
     }
     bitonic_merge(values, lo, lo + gap, ascending, on_step);
     bitonic_merge(values, lo + gap, hi, ascending, on_step);
+}
+
+/// Sorts by binary digit, starting from the highest bit any value uses:
+/// values with that bit clear go left, values with it set go right, and
+/// each side is then sorted by the next bit down. It never compares two
+/// values, only reads their bits. That is why it sorts integer keys, not
+/// any `Ord` type. Reports each slot it reads (alone). When a value with
+/// the bit set is swapped to the right, that value is active and the slot
+/// it left is compared.
+fn radix_sort(values: &mut [usize], on_step: OnStep<'_, usize>) {
+    let Some(&max) = values.iter().max() else {
+        return;
+    };
+    // Bits above the largest value's highest set bit are clear everywhere.
+    let Some(top_bit) = max.checked_ilog2() else {
+        return; // All zeros: already sorted.
+    };
+    let len = values.len();
+    radix_sort_range(values, 0, len, top_bit, on_step);
+}
+
+/// Sorts `values[lo..hi]` by `bit` and the bits below it, and leaves the
+/// rest alone.
+fn radix_sort_range(
+    values: &mut [usize],
+    lo: usize,
+    hi: usize,
+    bit: u32,
+    on_step: OnStep<'_, usize>,
+) {
+    if hi - lo <= 1 {
+        return;
+    }
+    let mask = 1 << bit;
+    // `lo..zeros` holds values with the bit clear and `ones..hi` values
+    // with it set. Each read shrinks the unread middle by one slot.
+    let mut zeros = lo;
+    let mut ones = hi;
+    while zeros < ones {
+        if values[zeros] & mask == 0 {
+            on_step(
+                values,
+                Step {
+                    active: zeros,
+                    compared: zeros,
+                },
+            );
+            zeros += 1;
+        } else {
+            ones -= 1;
+            values.swap(zeros, ones);
+            // The unread value from `ones` now waits at `zeros`, to be read
+            // next.
+            on_step(
+                values,
+                Step {
+                    active: ones,
+                    compared: zeros,
+                },
+            );
+        }
+    }
+    if bit > 0 {
+        radix_sort_range(values, lo, zeros, bit - 1, on_step);
+        radix_sort_range(values, zeros, hi, bit - 1, on_step);
+    }
 }
 
 // ---------------------------------------------------------------------------
