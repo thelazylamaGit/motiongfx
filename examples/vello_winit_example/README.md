@@ -14,7 +14,7 @@ scrubbing controls from `vello_winit_motiongfx`:
 | `lissajous` | Lissajous table | Procedural path construction, reactive reference dots, nested timing, one-time grid intro and a looping curve chapter |
 | `procedural_wave_low_level` | Custom host integration | Direct Vello drawing from preview time; no MotionGfx timeline, with shared pause/seek controls |
 | `insertion_sort` | Canvas Commons sorting | Procedural creation, nested position targets, moving text labels, discrete pass captions |
-| `sorting` | Sorting visualizer | Coloured bars; ten sorting algorithms run at build time on a tracked array, and their recorded compares, swaps and buffer moves play back as beats |
+| `sorting` | Sorting visualizer | Coloured bars; ten sorting algorithms run at build time, animating each compare, swap and buffer move as it happens, with signal-driven highlights |
 | `insertion_sort_low_level` | Previous annotated version | Same sorting choreography using raw MotionGfx and Vello calls |
 | `commit_graph` | Canvas Commons commit graph | A reusable circle/ring component, path reveal, staggered back easing, ordinary ring scale/opacity tracks |
 | `moving_square` | Manim `MovingAround` | Typed property handles, sequential translation, fill interpolation, relative scale, and rotation |
@@ -135,22 +135,25 @@ insertion, comb, quick, bitonic, MSD radix, merge, counting and LSD radix
 sort), reshuffling between them; the title names the current algorithm. Bar
 hue follows height, so the sorted bars form a rainbow.
 
-Each sort is ordinary Rust that works on a `Tracked` array: `less` compares
-two values, `swap` exchanges two slots, `read` reads a value as a key (for
-the radix and counting sorts) and `move_value` moves a value to or from a
-scratch buffer as long as the main row. Each call records an `Op`, so the
-algorithms read like their textbook versions and know nothing about
-animation. To add an algorithm, write a `fn(&mut Tracked)` and list it in
-`ALGORITHMS`.
+Each sort is ordinary Rust that works on `Bars`: `less` compares two values,
+`swap` exchanges two slots, `read` reads a value as a key (for the radix and
+counting sorts) and `move_value` moves a value to or from a scratch buffer as
+long as the main row. The algorithms read like their textbook versions and
+know nothing about animation; each `Bars` method animates what it does as it
+does it, as a Motion Canvas or Manim scene would. To add an algorithm, write
+a `fn(&mut Bars)` and list it in `ALGORITHMS`.
 
-The scene plays the ops back in beats. A swap or move shares a beat with the
-comparison or read that decided it. Compared and read bars turn white and
-fade back; `SWAP_STYLE` chooses whether swapped bars slide or exchange
-heights, and `BUFFER_STYLE` whether the buffer is drawn as a second row
-(the main row shrinks to make room while a sort uses it) or hidden, in which
-case a value moved back overwrites the bar in its slot. Each sort lasts about
-`SORT_TIME`: beats are `SORT_TIME` divided by the sort's beat count apart,
-between `MIN_BEAT` and `MAX_BEAT`. Moves take `MOVE_TIME` without holding up
+A comparison or read starts a beat, and the swap or move it decides happens
+in the same beat. Compared and read bars light up: each bar's fill is a
+`computed!` mix of its `color` signal and a `glow` signal, so a flash only
+animates `glow` and never collides with a change of colour. `SWAP_STYLE`
+chooses whether swapped bars slide or exchange heights, and `BUFFER_STYLE`
+whether the buffer is drawn as a second row (opened by a sort's first move,
+shrinking the main row) or hidden, in which case a value moved back
+overwrites the bar in its slot. Beats start `BEAT` (20 ms) apart, so a sort
+that does more work takes longer. Bars are anchored at their bottom edge, so
+a bar's position depends only on its slot and a change of value only
+animates its height and colour. Moves take `MOVE_TIME` without holding up
 the next beat, and each beat is marked `.interrupt()`, so a bar lit again
 mid-fade lights up from there and a bar moved again mid-slide turns towards
 its new place from wherever it is.

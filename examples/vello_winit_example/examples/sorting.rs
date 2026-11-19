@@ -3,21 +3,22 @@
 //!
 //! The file reads top to bottom in three parts:
 //!
-//! 1. **The algorithms.** Each is ordinary Rust that sorts a [`Tracked`]
-//!    array through its methods: comparing, swapping and reading values,
-//!    and moving them to and from a scratch buffer. Each call also records
-//!    an [`Op`]. The algorithms know nothing about animation.
+//! 1. **The algorithms.** Each is ordinary Rust that sorts [`Bars`]
+//!    through its methods: comparing, swapping and reading values, and
+//!    moving them to and from a scratch buffer. They know nothing about
+//!    animation.
 //! 2. **Layout.** Small functions that turn a slot or a value into a
-//!    position, size or colour.
-//! 3. **The scene.** [`build_animation`] creates the bars, runs every sort
-//!    once, and plays back its ops in beats. A swap or move shares a beat
-//!    with the comparison or read that decided it. Compared and read bars
-//!    turn white for a moment and play a note whose pitch follows their
-//!    height. Swapped bars slide or exchange heights ([`SWAP_STYLE`]), and
-//!    moved bars drop into a buffer row below the main one or, with the
-//!    buffer hidden, overwrite the bar in their slot ([`BUFFER_STYLE`]).
-//!    Moves never hold up the beats; a bar that moves again mid-slide
-//!    turns towards its new place from wherever it is.
+//!    position, height or colour.
+//! 3. **The scene.** Each [`Bars`] method animates what it does as it
+//!    does it, as a Motion Canvas or Manim scene would: compared and read
+//!    bars light up and play a note whose pitch follows their height,
+//!    swapped bars slide or exchange heights ([`SWAP_STYLE`]), and moved
+//!    bars drop into a buffer row below the main one or, with the buffer
+//!    hidden, overwrite the bar in their slot ([`BUFFER_STYLE`]). A
+//!    comparison or read starts a beat, and the swap or move it decides
+//!    happens in the same beat. Beats start `BEAT` apart without waiting
+//!    for slides or fades; a bar that moves again mid-slide turns towards
+//!    its new place from wherever it is.
 //!
 //! The sorts run once, while the scene is built. Playback only samples the
 //! finished timeline, which is why scrubbing backwards works. Sound plays
@@ -27,12 +28,12 @@
 //! [`bubble_sort`] and add it to [`ALGORITHMS`].
 
 use crate::Loc::{Buffer, Main};
-use motiongfx::prelude::{ease, ms, s};
+use motiongfx::prelude::{ease, ms};
 use motiongfx_2d::{
     Animation, Color, CompiledScene, Handle, Point, Rectangle, Scene,
-    Size, Text, all, chain,
+    Signal, Text, all, anchor, chain,
     colors::{WHITE, hsl},
-    flow, wait,
+    computed, flow, signal, wait,
 };
 use motiongfx_audio::Instrument;
 use motiongfx_audio::fundsp::prelude32::{adsr_live, sine_hz};
@@ -51,7 +52,7 @@ const SEED: u64 = 0x5EED;
 /// How swapped bars change places.
 const SWAP_STYLE: SwapStyle = SwapStyle::Slide;
 /// Whether sorts that use a scratch buffer show it as a second row.
-const BUFFER_STYLE: BufferStyle = BufferStyle::Row;
+const BUFFER_STYLE: BufferStyle = BufferStyle::Hidden;
 
 /// Width the bars spread across, in canvas units.
 const SPREAD: f64 = 1200.0;
@@ -76,14 +77,9 @@ const BUFFER_ROW: RowLayout = RowLayout {
     max_height: 260.0,
 };
 
-/// About how long each sort takes. A beat starts every `SORT_TIME` divided
-/// by the sort's number of beats, so sorts that do more work go faster,
-/// within `MIN_BEAT..=MAX_BEAT`.
-const SORT_TIME: Duration = s(15);
-/// The shortest time between beats.
-const MIN_BEAT: Duration = ms(5);
-/// The longest time between beats.
-const MAX_BEAT: Duration = ms(50);
+/// Time between beats. A beat is one comparison or read, with the swap or
+/// move it decided, so this sets how long each sort takes.
+const BEAT: Duration = ms(20);
 /// How long a swapped or moved bar takes to reach its new place. Moves run
 /// alongside the beats, so this doesn't lengthen the sort.
 const MOVE_TIME: Duration = ms(100);
@@ -122,7 +118,7 @@ const VOLUME: f32 = 0.1;
 /// A sorting algorithm and the name shown while it runs.
 struct Algorithm {
     name: &'static str,
-    sort: fn(&mut Tracked),
+    sort: fn(&mut Bars),
 }
 
 /// The algorithms to show, in order.
@@ -169,138 +165,10 @@ const ALGORITHMS: &[Algorithm] = &[
     },
 ];
 
-/// A place that holds one value: a slot of the main row, or of the scratch
-/// buffer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Loc {
-    Main(usize),
-    Buffer(usize),
-}
-
-/// One thing a sort did, recorded by [`Tracked`] for the scene to animate.
-#[derive(Clone, Copy, Debug)]
-enum Op {
-    /// Compared the values at two places.
-    Compare(Loc, Loc),
-    /// Read one value as a key, for sorts that use its digits or count it
-    /// instead of comparing it.
-    Read(Loc),
-    /// Swapped two slots of the main row.
-    Swap(usize, usize),
-    /// Moved `value` from one place to an empty one, leaving `from` empty.
-    Move { from: Loc, to: Loc, value: usize },
-}
-
-/// The values a sort works on: the main row, and a scratch buffer of the
-/// same length that starts empty. Every comparison, read, swap and move
-/// through its methods is recorded as an [`Op`].
-struct Tracked {
-    main: Vec<Option<usize>>,
-    buffer: Vec<Option<usize>>,
-    ops: Vec<Op>,
-}
-
-impl Tracked {
-    fn new(values: &[usize]) -> Self {
-        Self {
-            main: values.iter().copied().map(Some).collect(),
-            buffer: vec![None; values.len()],
-            ops: Vec::new(),
-        }
-    }
-
-    /// Number of slots in the main row, and in the buffer.
-    fn len(&self) -> usize {
-        self.main.len()
-    }
-
-    fn slot(&mut self, at: Loc) -> &mut Option<usize> {
-        match at {
-            Main(slot) => &mut self.main[slot],
-            Buffer(slot) => &mut self.buffer[slot],
-        }
-    }
-
-    /// The value at `at`, without recording anything.
-    ///
-    /// # Panics
-    ///
-    /// If `at` is empty because its value was moved away.
-    #[track_caller]
-    fn value(&mut self, at: Loc) -> usize {
-        match *self.slot(at) {
-            Some(value) => value,
-            None => panic!("{at:?} is empty"),
-        }
-    }
-
-    /// Whether the value in main slot `i` is smaller than the one in `j`.
-    #[track_caller]
-    fn less(&mut self, i: usize, j: usize) -> bool {
-        self.less_at(Main(i), Main(j))
-    }
-
-    /// Whether the value at `a` is smaller than the one at `b`.
-    #[track_caller]
-    fn less_at(&mut self, a: Loc, b: Loc) -> bool {
-        self.ops.push(Op::Compare(a, b));
-        self.value(a) < self.value(b)
-    }
-
-    /// The value at `at`, to use as a key: its digits, or which counter it
-    /// adds to.
-    #[track_caller]
-    fn read(&mut self, at: Loc) -> usize {
-        self.ops.push(Op::Read(at));
-        self.value(at)
-    }
-
-    /// Swaps main slots `i` and `j`. Swapping a slot with itself changes
-    /// nothing, so it isn't recorded.
-    fn swap(&mut self, i: usize, j: usize) {
-        if i != j {
-            self.main.swap(i, j);
-            self.ops.push(Op::Swap(i, j));
-        }
-    }
-
-    /// Moves the value at `from` to the empty place `to`.
-    ///
-    /// # Panics
-    ///
-    /// If `from` is empty or `to` isn't.
-    #[track_caller]
-    fn move_value(&mut self, from: Loc, to: Loc) {
-        let value = self.value(from);
-        if self.slot(to).is_some() {
-            panic!("{to:?} is not empty");
-        }
-        *self.slot(from) = None;
-        *self.slot(to) = Some(value);
-        self.ops.push(Op::Move { from, to, value });
-    }
-
-    /// The sorted values and the ops that sorted them.
-    ///
-    /// # Panics
-    ///
-    /// If the sort left a value in the buffer.
-    fn finish(self) -> (Vec<usize>, Vec<Op>) {
-        let values = self
-            .main
-            .into_iter()
-            .map(|value| {
-                value.expect("the sort left a value in the buffer")
-            })
-            .collect();
-        (values, self.ops)
-    }
-}
-
 /// Sweeps adjacent pairs, swapping those out of order; each sweep carries
 /// the largest remaining value to the end. Stops after a sweep with no
 /// swaps.
-fn bubble_sort(a: &mut Tracked) {
+fn bubble_sort(a: &mut Bars) {
     for end in (1..a.len()).rev() {
         let mut swapped = false;
         for i in 0..end {
@@ -316,7 +184,7 @@ fn bubble_sort(a: &mut Tracked) {
 }
 
 /// Scans for the smallest remaining value and swaps it into the next slot.
-fn selection_sort(a: &mut Tracked) {
+fn selection_sort(a: &mut Bars) {
     for i in 0..a.len() {
         let mut smallest = i;
         for j in i + 1..a.len() {
@@ -330,7 +198,7 @@ fn selection_sort(a: &mut Tracked) {
 
 /// Takes each value in turn and swaps it left past the larger values
 /// before it.
-fn insertion_sort(a: &mut Tracked) {
+fn insertion_sort(a: &mut Bars) {
     for i in 1..a.len() {
         let mut j = i;
         while j > 0 && a.less(j, j - 1) {
@@ -345,7 +213,7 @@ fn insertion_sort(a: &mut Tracked) {
 /// instead of creeping one slot per sweep. The gap starts at the length and
 /// shrinks by about 1.3 each sweep; at 1 it is a bubble sort, and it stops
 /// after a sweep with no swaps.
-fn comb_sort(a: &mut Tracked) {
+fn comb_sort(a: &mut Bars) {
     let mut gap = a.len();
     let mut swapped = true;
     while gap > 1 || swapped {
@@ -367,13 +235,13 @@ fn comb_sort(a: &mut Tracked) {
 /// Picks the last value of a range as the pivot, moves everything no
 /// larger than it to its left, puts it between the two groups, and sorts
 /// each group the same way.
-fn quick_sort(a: &mut Tracked) {
+fn quick_sort(a: &mut Bars) {
     let len = a.len();
     quick_sort_range(a, 0, len);
 }
 
 /// Sorts main slots `lo..hi` and leaves the rest alone.
-fn quick_sort_range(a: &mut Tracked, lo: usize, hi: usize) {
+fn quick_sort_range(a: &mut Bars, lo: usize, hi: usize) {
     if hi - lo <= 1 {
         return;
     }
@@ -384,7 +252,7 @@ fn quick_sort_range(a: &mut Tracked, lo: usize, hi: usize) {
 
 /// Splits main slots `lo..hi` around the last one's value and returns the
 /// pivot's final slot.
-fn partition(a: &mut Tracked, lo: usize, hi: usize) -> usize {
+fn partition(a: &mut Bars, lo: usize, hi: usize) -> usize {
     let pivot = hi - 1;
     // The next slot for a value no larger than the pivot.
     let mut store = lo;
@@ -403,7 +271,7 @@ fn partition(a: &mut Tracked, lo: usize, hi: usize) -> usize {
 /// advance and never depends on the values. That is why it runs well on
 /// parallel hardware. Splitting at the largest power of two below the
 /// length lets it sort any length, not just powers of two.
-fn bitonic_sort(a: &mut Tracked) {
+fn bitonic_sort(a: &mut Bars) {
     let len = a.len();
     bitonic_sort_range(a, 0, len, true);
 }
@@ -411,7 +279,7 @@ fn bitonic_sort(a: &mut Tracked) {
 /// Sorts main slots `lo..hi` ascending or descending and leaves the rest
 /// alone.
 fn bitonic_sort_range(
-    a: &mut Tracked,
+    a: &mut Bars,
     lo: usize,
     hi: usize,
     ascending: bool,
@@ -430,7 +298,7 @@ fn bitonic_sort_range(
 /// Sorts main slots `lo..hi`, which rise then fall (or the reverse), in
 /// the given direction.
 fn bitonic_merge(
-    a: &mut Tracked,
+    a: &mut Bars,
     lo: usize,
     hi: usize,
     ascending: bool,
@@ -458,7 +326,7 @@ fn bitonic_merge(
 }
 
 /// Reads every value to find the largest. `None` if there are none.
-fn max_value(a: &mut Tracked) -> Option<usize> {
+fn max_value(a: &mut Bars) -> Option<usize> {
     let len = a.len();
     (0..len).map(|slot| a.read(Main(slot))).max()
 }
@@ -467,7 +335,7 @@ fn max_value(a: &mut Tracked) -> Option<usize> {
 /// values with that bit clear go left, values with it set go right, and
 /// each side is then sorted by the next bit down. It never compares two
 /// values, only reads their bits.
-fn radix_msd_sort(a: &mut Tracked) {
+fn radix_msd_sort(a: &mut Bars) {
     // Bits above the largest value's highest set bit are clear everywhere.
     let Some(top_bit) = max_value(a).and_then(usize::checked_ilog2)
     else {
@@ -479,7 +347,7 @@ fn radix_msd_sort(a: &mut Tracked) {
 
 /// Sorts main slots `lo..hi` by `bit` and the bits below it, and leaves the
 /// rest alone.
-fn radix_msd_range(a: &mut Tracked, lo: usize, hi: usize, bit: u32) {
+fn radix_msd_range(a: &mut Bars, lo: usize, hi: usize, bit: u32) {
     if hi - lo <= 1 {
         return;
     }
@@ -504,36 +372,35 @@ fn radix_msd_range(a: &mut Tracked, lo: usize, hi: usize, bit: u32) {
     }
 }
 
-/// Sorts each half, then merges the two sorted halves: it moves both into
-/// the buffer, then repeatedly moves the smaller of their first values
-/// back. Equal values keep their order, so the sort is stable.
-fn merge_sort(a: &mut Tracked) {
+/// Sorts each half, then merges the two sorted halves: it repeatedly moves
+/// the smaller of their first values into the buffer, then moves the
+/// merged run back. Equal values keep their order, so the sort is stable.
+fn merge_sort(a: &mut Bars) {
     let len = a.len();
     merge_sort_range(a, 0, len);
 }
 
 /// Sorts main slots `lo..hi` and leaves the rest alone.
-fn merge_sort_range(a: &mut Tracked, lo: usize, hi: usize) {
+fn merge_sort_range(a: &mut Bars, lo: usize, hi: usize) {
     if hi - lo <= 1 {
         return;
     }
     let mid = lo + (hi - lo) / 2;
     merge_sort_range(a, lo, mid);
     merge_sort_range(a, mid, hi);
-    for slot in lo..hi {
-        a.move_value(Main(slot), Buffer(slot));
-    }
-    // The first value not yet moved back from each half.
+    // The first value not yet merged from each half.
     let mut left = lo;
     let mut right = mid;
     for slot in lo..hi {
         // Taking the left value on a tie keeps the sort stable.
-        let take_left = right == hi
-            || (left < mid
-                && !a.less_at(Buffer(right), Buffer(left)));
+        let take_left =
+            right == hi || (left < mid && !a.less(right, left));
         let from = if take_left { &mut left } else { &mut right };
-        a.move_value(Buffer(*from), Main(slot));
+        a.move_value(Main(*from), Buffer(slot));
         *from += 1;
+    }
+    for slot in lo..hi {
+        a.move_value(Buffer(slot), Main(slot));
     }
 }
 
@@ -541,48 +408,56 @@ fn merge_sort_range(a: &mut Tracked, lo: usize, hi: usize) {
 /// first slot in the sorted order, then moves every value, in order, into
 /// the next free slot for it. It never compares two values; it needs one
 /// counter per value up to the largest.
-fn counting_sort(a: &mut Tracked) {
-    let Some(max) = max_value(a) else {
-        return;
-    };
-    sort_by_key_counts(a, max + 1, |value| value);
+fn counting_sort(a: &mut Bars) {
+    sort_by_key_counts(a, |value| value);
 }
 
 /// Counting sort on one base-4 digit at a time, from the lowest. Each pass
-/// splits the buffer into four buckets, one per digit, side by side.
+/// fills four buckets, one per digit, side by side in the row.
 /// Because each pass is stable, values with the same digit stay in the
 /// order the lower digits set, so after the highest digit's pass the row
 /// is sorted.
-fn radix_lsd_sort(a: &mut Tracked) {
+fn radix_lsd_sort(a: &mut Bars) {
     const RADIX: usize = 4;
-    let Some(max) = max_value(a) else {
-        return;
-    };
     // The place value of the digit this pass sorts by: 1, 4, 16, ...
     let mut place = 1;
-    while place <= max {
-        sort_by_key_counts(a, RADIX, |value| value / place % RADIX);
-        let Some(next) = place.checked_mul(RADIX) else {
-            break; // `max` has no higher digit than this one.
-        };
-        place = next;
+    loop {
+        // Each pass reads every value anyway, so it also finds the largest
+        // instead of a separate sweep before the first pass.
+        let max =
+            sort_by_key_counts(a, |value| value / place % RADIX);
+        match place.checked_mul(RADIX) {
+            Some(next) if next <= max => place = next,
+            // `max` has no digit above this one.
+            _ => break,
+        }
     }
 }
 
 /// Rearranges the main row so keys ascend, keeping values with equal keys
-/// in their current order. `key` maps a value to `0..key_count`.
+/// in their current order, and returns the largest value (0 if there are
+/// none).
 ///
-/// Counts each key, which gives each key's first slot. Then it moves every
-/// value, in order, into its key's next free slot in the buffer, and moves
-/// the buffer back.
+/// Counts each key while moving every value into the buffer, which gives
+/// each key's first slot. Then it moves every value back, in order, into
+/// its key's next free slot.
 fn sort_by_key_counts(
-    a: &mut Tracked,
-    key_count: usize,
+    a: &mut Bars,
     key: impl Fn(usize) -> usize,
-) {
-    let mut next_slot = vec![0; key_count];
+) -> usize {
+    // One counter per key up to the largest seen so far, so the counting
+    // sweep needs no earlier sweep to find the largest key.
+    let mut next_slot = Vec::new();
+    let mut max = 0;
     for slot in 0..a.len() {
-        next_slot[key(a.read(Main(slot)))] += 1;
+        let value = a.read(Main(slot));
+        max = max.max(value);
+        let value_key = key(value);
+        if value_key >= next_slot.len() {
+            next_slot.resize(value_key + 1, 0);
+        }
+        next_slot[value_key] += 1;
+        a.move_value(Main(slot), Buffer(slot));
     }
     // Each key's first slot comes after every smaller key's values.
     let mut start = 0;
@@ -592,13 +467,11 @@ fn sort_by_key_counts(
         start += key_total;
     }
     for slot in 0..a.len() {
-        let bucket = &mut next_slot[key(a.read(Main(slot)))];
-        a.move_value(Main(slot), Buffer(*bucket));
+        let bucket = &mut next_slot[key(a.read(Buffer(slot)))];
+        a.move_value(Buffer(slot), Main(*bucket));
         *bucket += 1;
     }
-    for slot in 0..a.len() {
-        a.move_value(Buffer(slot), Main(slot));
-    }
+    max
 }
 
 // ---------------------------------------------------------------------------
@@ -613,15 +486,15 @@ struct RowLayout {
 }
 
 impl RowLayout {
-    /// Centre and size of the bar showing `value` (`0..BAR_COUNT`) in
-    /// `slot`. The smallest value is still visible.
-    fn place(self, slot: usize, value: usize) -> (Point, Size) {
-        let height =
-            (value + 1) as f64 / BAR_COUNT as f64 * self.max_height;
-        (
-            Point::new(slot_x(slot), self.baseline + height / 2.0),
-            Size::new(BAR_WIDTH, height),
-        )
+    /// The middle of `slot`'s bottom edge, where its bar is anchored.
+    fn base(self, slot: usize) -> Point {
+        Point::new(slot_x(slot), self.baseline)
+    }
+
+    /// Height of the bar for `value` (`0..BAR_COUNT`); the smallest is
+    /// still visible.
+    fn height(self, value: usize) -> f64 {
+        (value + 1) as f64 / BAR_COUNT as f64 * self.max_height
     }
 }
 
@@ -672,230 +545,350 @@ enum BufferStyle {
     Hidden,
 }
 
-/// Whether `op` acts on what `prev` just looked at, such as a swap right
-/// after comparing one of the same slots, so the two play as one beat.
-fn acts_on(prev: &Op, op: &Op) -> bool {
-    let looked = match *prev {
-        Op::Compare(a, b) => [a, b],
-        Op::Read(at) => [at, at],
-        _ => return false,
-    };
-    let acted = match *op {
-        Op::Swap(i, j) => [Main(i), Main(j)],
-        Op::Move { from, .. } => [from, from],
-        _ => return false,
-    };
-    acted.iter().any(|at| looked.contains(at))
+/// A place that holds one value: a slot of the main row, or of the scratch
+/// buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Loc {
+    Main(usize),
+    Buffer(usize),
 }
 
-/// What a bar was last animated to, so each beat only animates what
-/// changed.
-#[derive(Clone, Copy, PartialEq)]
-struct Drawn {
-    position: Point,
-    size: Size,
-    value: usize,
+/// One bar on screen.
+struct Bar {
+    rect: Handle<Rectangle>,
+    /// The bar's own colour, which follows the value it shows.
+    color: Signal<Color>,
+    /// How brightly it is lit: 0 shows its colour, 1 white. Lighting is
+    /// its own signal, so a flash and a change of colour never animate the
+    /// same property and can run at once.
+    glow: Signal<f64>,
 }
 
-/// The bars on screen: which value each shows and where it is, kept in
-/// step with a sort as its ops are applied.
-struct Stage<'a> {
+/// The values being sorted and the bars that show them. Sorts call
+/// [`less`](Self::less), [`read`](Self::read), [`swap`](Self::swap) and
+/// [`move_value`](Self::move_value), and each call animates what it does.
+struct Bars<'a> {
     instrument: &'a Instrument,
-    bars: Vec<Handle<Rectangle>>,
-    /// The value each bar shows. Bars exchange values rather than places
-    /// with `SwapStyle::Heights` or a hidden buffer, so after such a sort
-    /// this is no longer each bar's starting value.
-    shows: Vec<usize>,
-    /// The bar in each main-row slot; `None` while its value is in the
-    /// buffer row.
+    bars: Vec<Bar>,
+    /// The value in each main-row slot; `None` while it is in the buffer.
     main: Vec<Option<usize>>,
-    /// The bar in each buffer-row slot; always empty with a hidden buffer.
+    /// The scratch buffer, as long as the main row and empty between sorts.
     buffer: Vec<Option<usize>>,
-    /// Whether the buffer row is shown, shrinking the main row.
+    /// Where each bar is. With a hidden buffer, bars never leave the main
+    /// row.
+    at: Vec<Loc>,
+    /// The value each bar shows. Bars exchange values rather than places
+    /// with `SwapStyle::Heights` or a hidden buffer.
+    shows: Vec<usize>,
+    /// Whether the buffer row is open, shrinking the main row.
     split: bool,
-    /// What each bar was last animated to.
-    drawn: Vec<Drawn>,
+    /// The current sort's animation: finished parts, then its beats since.
+    steps: Vec<Animation>,
+    beats: Vec<Vec<Animation>>,
+    /// The bars lit in the current beat, and whether it has its swap or
+    /// move yet.
+    lit: Vec<usize>,
+    acted: bool,
 }
 
-impl<'a> Stage<'a> {
+impl<'a> Bars<'a> {
     /// Adds a bar to `scene` for each value in `order`, left to right.
     fn new(
         scene: &mut Scene,
         instrument: &'a Instrument,
         order: &[usize],
     ) -> Self {
-        let drawn: Vec<Drawn> = order
+        let bars = order
             .iter()
             .enumerate()
             .map(|(slot, &value)| {
-                let (position, size) = FULL_ROW.place(slot, value);
-                Drawn {
-                    position,
-                    size,
-                    value,
-                }
-            })
-            .collect();
-        let bars = drawn
-            .iter()
-            .map(|bar| {
-                scene.add(
-                    Rectangle::from_size(bar.size)
-                        .position(bar.position)
-                        .fill(bar_color(bar.value)),
-                )
+                let color = signal(bar_color(value));
+                let glow = signal(0.0);
+                // Anchored at the bottom, so a bar's position depends only
+                // on its slot and its height grows up from the baseline.
+                let rect = scene.add(
+                    Rectangle::new(BAR_WIDTH, FULL_ROW.height(value))
+                        .anchor(anchor::BOTTOM)
+                        .position(FULL_ROW.base(slot))
+                        .fill(computed!((color, glow) => {
+                            color.lerp_rect(WHITE, glow as f32)
+                        })),
+                );
+                Bar { rect, color, glow }
             })
             .collect();
         Self {
             instrument,
             bars,
-            shows: order.to_vec(),
-            main: (0..order.len()).map(Some).collect(),
+            main: order.iter().copied().map(Some).collect(),
             buffer: vec![None; order.len()],
+            at: (0..order.len()).map(Main).collect(),
+            shows: order.to_vec(),
             split: false,
-            drawn,
+            steps: Vec::new(),
+            beats: Vec::new(),
+            lit: Vec::new(),
+            acted: false,
         }
     }
 
-    /// The bar at `at`, if one is drawn there.
-    fn bar_at(&mut self, at: Loc) -> &mut Option<usize> {
+    /// Number of slots in the main row, and in the buffer.
+    fn len(&self) -> usize {
+        self.main.len()
+    }
+
+    fn slot(&mut self, at: Loc) -> &mut Option<usize> {
         match at {
             Main(slot) => &mut self.main[slot],
             Buffer(slot) => &mut self.buffer[slot],
         }
     }
 
-    /// Updates the bars for `op`, adding the bars it lights to `lit`.
-    fn apply(&mut self, op: Op, lit: &mut Vec<usize>) {
-        match op {
-            Op::Compare(a, b) => {
-                lit.extend(*self.bar_at(a));
-                lit.extend(*self.bar_at(b));
-            }
-            Op::Read(at) => lit.extend(*self.bar_at(at)),
-            Op::Swap(i, j) => match SWAP_STYLE {
-                SwapStyle::Slide => self.main.swap(i, j),
-                SwapStyle::Heights => {
-                    let (a, b) = (self.main[i], self.main[j]);
-                    self.shows.swap(
-                        a.expect("swapped an empty slot"),
-                        b.expect("swapped an empty slot"),
-                    );
-                }
-            },
-            Op::Move { from, to, value } => match BUFFER_STYLE {
-                BufferStyle::Row => {
-                    let bar = self
-                        .bar_at(from)
-                        .take()
-                        .expect("moved from an empty slot");
-                    *self.bar_at(to) = Some(bar);
-                    lit.push(bar);
-                }
-                // Bars never leave the main row: one whose value moved to
-                // the buffer keeps showing it until another is moved in.
-                BufferStyle::Hidden => match to {
-                    Main(slot) => {
-                        let bar = self.main[slot]
-                            .expect("hidden buffer keeps every slot");
-                        self.shows[bar] = value;
-                        lit.push(bar);
-                    }
-                    Buffer(_) => lit.extend(*self.bar_at(from)),
-                },
-            },
+    /// The value at `at`.
+    ///
+    /// # Panics
+    ///
+    /// If `at` is empty because its value was moved away.
+    #[track_caller]
+    fn value(&mut self, at: Loc) -> usize {
+        match *self.slot(at) {
+            Some(value) => value,
+            None => panic!("{at:?} is empty"),
         }
     }
 
-    /// Animates every bar to where it now is and what it now shows, taking
-    /// `duration`, and lights the bars in `lit`: each turns white, fades to
-    /// its colour and plays its note.
-    fn sync(
-        &mut self,
+    /// Whether the value in main slot `i` is smaller than the one in `j`.
+    /// Starts a beat that lights both.
+    #[track_caller]
+    fn less(&mut self, i: usize, j: usize) -> bool {
+        self.start_beat();
+        self.light(Main(i));
+        self.light(Main(j));
+        self.value(Main(i)) < self.value(Main(j))
+    }
+
+    /// The value at `at`, to use as a key: its digits, or which counter it
+    /// adds to. Starts a beat that lights it.
+    #[track_caller]
+    fn read(&mut self, at: Loc) -> usize {
+        self.start_beat();
+        self.light(at);
+        self.value(at)
+    }
+
+    /// Swaps main slots `i` and `j`: the bars slide to each other's slots,
+    /// or exchange heights.
+    fn swap(&mut self, i: usize, j: usize) {
+        if i == j {
+            return;
+        }
+        self.main.swap(i, j);
+        let a = self.bar_at(Main(i)).expect("swapped an empty slot");
+        let b = self.bar_at(Main(j)).expect("swapped an empty slot");
+        match SWAP_STYLE {
+            SwapStyle::Slide => self.at.swap(a, b),
+            SwapStyle::Heights => self.shows.swap(a, b),
+        }
+        self.join_beat();
+        self.place(a, MOVE_TIME);
+        self.place(b, MOVE_TIME);
+    }
+
+    /// Moves the value at `from` to the empty place `to`. The first move of
+    /// a sort opens the buffer row.
+    ///
+    /// # Panics
+    ///
+    /// If `from` is empty or `to` isn't.
+    #[track_caller]
+    fn move_value(&mut self, from: Loc, to: Loc) {
+        let value = self.value(from);
+        if self.slot(to).is_some() {
+            panic!("{to:?} is not empty");
+        }
+        *self.slot(from) = None;
+        *self.slot(to) = Some(value);
+        if BUFFER_STYLE == BufferStyle::Row && !self.split {
+            self.set_split(true);
+        }
+        self.join_beat();
+        match (BUFFER_STYLE, to) {
+            (BufferStyle::Row, _) => {
+                let bar =
+                    self.bar_at(from).expect("moved a missing bar");
+                self.at[bar] = to;
+                self.place(bar, MOVE_TIME);
+                self.light(to);
+            }
+            // The bar in the slot shows the value moved into it.
+            (BufferStyle::Hidden, Main(_)) => {
+                let bar = self
+                    .bar_at(to)
+                    .expect("every main slot has a bar");
+                self.shows[bar] = value;
+                self.place(bar, MOVE_TIME);
+                self.light(to);
+            }
+            // The bar stays, showing its value until another moves in.
+            (BufferStyle::Hidden, Buffer(_)) => self.light(from),
+        }
+    }
+
+    /// The bar drawn at `at`, if any.
+    fn bar_at(&self, at: Loc) -> Option<usize> {
+        self.at.iter().position(|&place| place == at)
+    }
+
+    /// Starts a new beat, `BEAT` after the last.
+    fn start_beat(&mut self) {
+        self.beats.push(Vec::new());
+        self.lit.clear();
+        self.acted = false;
+    }
+
+    /// Adds a swap or move to the current beat, or starts one if it already
+    /// has its swap or move.
+    fn join_beat(&mut self) {
+        if self.beats.is_empty() || self.acted {
+            self.start_beat();
+        }
+        self.acted = true;
+    }
+
+    /// Adds `animation` to the current beat.
+    fn animate(&mut self, animation: Animation) {
+        self.beats
+            .last_mut()
+            .expect("animations belong to a beat")
+            .push(animation);
+    }
+
+    /// Animates `bar` to its place and the value it shows, over
+    /// `duration`.
+    fn moved_to_place(
+        &self,
+        bar: usize,
         duration: Duration,
-        lit: &[usize],
-    ) -> Vec<Animation> {
-        let main_row = if self.split { MAIN_ROW } else { FULL_ROW };
-        // Destructured so the closure can update `drawn` while the loops
-        // below read `main` and `buffer`.
-        let Self {
-            instrument,
-            bars,
-            shows,
-            main,
-            buffer,
-            drawn,
-            ..
-        } = self;
-        let mut animations = Vec::new();
-        let mut animate =
-            |bar: usize, (position, size): (Point, Size)| {
-                let target = Drawn {
-                    position,
-                    size,
-                    value: shows[bar],
-                };
-                let last = std::mem::replace(&mut drawn[bar], target);
-                let handle = bars[bar];
-                if target.position != last.position {
-                    animations.push(
-                        handle
-                            .position()
-                            .to(target.position)
-                            .over(duration),
-                    );
-                }
-                if target.size != last.size {
-                    animations.push(
-                        handle.size().to(target.size).over(duration),
-                    );
-                }
-                let color = bar_color(target.value);
-                if lit.contains(&bar) {
-                    animations.push(all([
-                        chain([
-                            handle.fill_to(WHITE).over(LIGHT_TIME),
-                            handle.fill_to(color).over(FADE_TIME),
-                        ]),
-                        instrument
-                            .note(bar_note(target.value))
-                            .over(NOTE_TIME),
-                    ]));
-                } else if target.value != last.value {
-                    animations
-                        .push(handle.fill_to(color).over(duration));
-                }
-            };
-        for (slot, bar) in main.iter().enumerate() {
-            if let Some(bar) = *bar {
-                animate(bar, main_row.place(slot, shows[bar]));
-            }
-        }
-        for (slot, bar) in buffer.iter().enumerate() {
-            if let Some(bar) = *bar {
-                animate(bar, BUFFER_ROW.place(slot, shows[bar]));
-            }
-        }
-        animations
+    ) -> Animation {
+        let (row, slot) = match self.at[bar] {
+            Main(slot) if self.split => (MAIN_ROW, slot),
+            Main(slot) => (FULL_ROW, slot),
+            Buffer(slot) => (BUFFER_ROW, slot),
+        };
+        let value = self.shows[bar];
+        let Bar { rect, color, .. } = &self.bars[bar];
+        all([
+            rect.position().to(row.base(slot)).over(duration),
+            rect.height().to(row.height(value)).over(duration),
+            color.to(bar_color(value)).over(duration),
+        ])
     }
 
-    /// Puts the bars in `order`, left to right, to animate with `sync`.
-    /// Every bar must be in the main row.
-    fn arrange(&mut self, order: &[usize]) {
-        let mut bar_of = vec![0; order.len()];
-        for (bar, &value) in self.shows.iter().enumerate() {
-            bar_of[value] = bar;
+    /// Animates `bar` to its place in the current beat.
+    fn place(&mut self, bar: usize, duration: Duration) {
+        let animation = self.moved_to_place(bar, duration);
+        self.animate(animation);
+    }
+
+    /// Lights the bar at `at`, if there is one, once per beat.
+    fn light(&mut self, at: Loc) {
+        let Some(bar) = self.bar_at(at) else {
+            return;
+        };
+        if !self.lit.contains(&bar) {
+            self.lit.push(bar);
+            let animation = self.flash(bar, LIGHT_TIME);
+            self.animate(animation);
         }
+    }
+
+    /// Turns `bar` white over `light`, fades it back and plays the note of
+    /// the value it shows.
+    fn flash(&self, bar: usize, light: Duration) -> Animation {
+        let glow = &self.bars[bar].glow;
+        all([
+            chain([
+                glow.to(1.0).over(light),
+                glow.to(0.0).over(FADE_TIME),
+            ]),
+            self.instrument
+                .note(bar_note(self.shows[bar]))
+                .over(NOTE_TIME),
+        ])
+    }
+
+    /// Ends the beats so far, so what follows waits for them.
+    fn end_beats(&mut self) {
+        if self.beats.is_empty() {
+            return;
+        }
+        // Beats come faster than fades and moves finish, so a beat takes
+        // over a bar from where the last one left it: a bar lit again
+        // mid-fade lights up from there, and a bar moved again mid-slide
+        // turns towards its new place. Notes always ring out.
+        let beats = std::mem::take(&mut self.beats)
+            .into_iter()
+            .map(|beat| all(beat).interrupt());
+        self.steps.push(flow(BEAT, beats));
+    }
+
+    /// Opens or closes the buffer row below the main row.
+    fn set_split(&mut self, split: bool) {
+        self.end_beats();
+        self.split = split;
+        let moves = (0..self.bars.len())
+            .map(|bar| self.moved_to_place(bar, SPLIT_TIME));
+        let moves = all(moves.collect::<Vec<_>>());
+        self.steps.push(moves);
+    }
+
+    /// The animation of the sort just run, closing the buffer row if it
+    /// opened.
+    fn take_sort(&mut self) -> Animation {
+        self.end_beats();
+        if self.split {
+            self.set_split(false);
+        }
+        chain(std::mem::take(&mut self.steps))
+    }
+
+    /// Slides the bars into `order`, left to right, for the next sort.
+    fn shuffle(&mut self, order: &[usize]) -> Animation {
+        let mut slot_of = vec![0; order.len()];
         for (slot, &value) in order.iter().enumerate() {
-            self.main[slot] = Some(bar_of[value]);
+            slot_of[value] = slot;
+            self.main[slot] = Some(value);
         }
+        for (at, &value) in self.at.iter_mut().zip(&self.shows) {
+            *at = Main(slot_of[value]);
+        }
+        all((0..self.bars.len())
+            .map(|bar| self.moved_to_place(bar, SHUFFLE_TIME))
+            .collect::<Vec<_>>())
     }
 
-    /// Whether the main row shows `order`, left to right.
-    fn shows_order(&self, order: &[usize]) -> bool {
-        self.main.iter().zip(order).all(|(bar, &value)| {
-            bar.is_some_and(|bar| self.shows[bar] == value)
-        })
+    /// Flashes the bars left to right, 15 ms apart: once sorted, a climb up
+    /// the scale. Each fade and note carries on after the next starts.
+    fn sweep(&self) -> Animation {
+        flow(
+            ms(15),
+            (0..self.len()).map(|slot| {
+                let bar = self
+                    .bar_at(Main(slot))
+                    .expect("every slot has a bar");
+                self.flash(bar, Duration::ZERO)
+            }),
+        )
+    }
+
+    /// Whether the values are sorted and every bar shows the value in its
+    /// slot.
+    fn is_sorted(&self) -> bool {
+        self.main.is_sorted()
+            && self.main.iter().all(Option::is_some)
+            && self.at.iter().zip(&self.shows).all(|(&at, &value)| {
+                matches!(at, Main(slot) if self.main[slot] == Some(value))
+            })
     }
 }
 
@@ -927,85 +920,26 @@ fn build_animation(instrument: &Instrument) -> CompiledScene {
     let mut rng = SplitMix64(SEED);
     let mut order: Vec<usize> = (0..BAR_COUNT).collect();
     rng.shuffle(&mut order);
-    let mut stage = Stage::new(&mut scene, instrument, &order);
+    let mut bars = Bars::new(&mut scene, instrument, &order);
 
     let mut steps = Vec::new();
     for (index, algorithm) in ALGORITHMS.iter().enumerate() {
         if index > 0 {
             rng.shuffle(&mut order);
-            stage.arrange(&order);
             steps.push(title.set_content("Shuffling"));
-            steps.push(all(stage.sync(SHUFFLE_TIME, &[])));
+            steps.push(bars.shuffle(&order));
         }
         steps.push(title.set_content(algorithm.name));
-
-        let mut tracked = Tracked::new(&order);
-        (algorithm.sort)(&mut tracked);
-        let ops;
-        (order, ops) = tracked.finish();
+        steps.push(wait(PAUSE_BEFORE));
+        (algorithm.sort)(&mut bars);
         debug_assert!(
-            order.is_sorted(),
+            bars.is_sorted(),
             "{} left bars unsorted",
             algorithm.name
         );
-
-        let buffer_row = BUFFER_STYLE == BufferStyle::Row
-            && ops.iter().any(|op| matches!(op, Op::Move { .. }));
-        if buffer_row {
-            stage.split = true;
-            steps.push(all(stage.sync(SPLIT_TIME, &[])));
-        }
-        steps.push(wait(PAUSE_BEFORE));
-
-        let beats: Vec<&[Op]> = ops.chunk_by(acts_on).collect();
-        let gap = (SORT_TIME / beats.len().max(1) as u32)
-            .clamp(MIN_BEAT, MAX_BEAT);
-        let mut lit = Vec::new();
-        let beats = beats.into_iter().map(|beat| {
-            lit.clear();
-            for &op in beat {
-                stage.apply(op, &mut lit);
-            }
-            // Beats come faster than fades and moves finish, so a beat
-            // takes over a bar from where the last one left it: a bar lit
-            // again mid-fade lights up from there, and a bar moved again
-            // mid-slide turns towards its new place. Notes always ring out.
-            all(stage.sync(MOVE_TIME, &lit)).interrupt()
-        });
-        steps.push(flow(gap, beats.collect::<Vec<_>>()));
-        debug_assert!(
-            stage.shows_order(&order),
-            "the bars don't show {}'s result",
-            algorithm.name
-        );
-
+        steps.push(bars.take_sort());
         steps.push(wait(ms(200)));
-        if buffer_row {
-            stage.split = false;
-            steps.push(all(stage.sync(SPLIT_TIME, &[])));
-        }
-
-        // Sorted now, so value order is left-to-right order: sweep across,
-        // climbing the scale. The `flow` moves on after 15 ms while each
-        // fade and note carries on.
-        steps.push(flow(
-            ms(15),
-            stage.main.iter().map(|bar| {
-                let bar =
-                    bar.expect("every bar is back in the main row");
-                let (handle, value) =
-                    (stage.bars[bar], stage.shows[bar]);
-                all([
-                    chain([
-                        handle.set_fill(WHITE),
-                        handle
-                            .fill_to(bar_color(value))
-                            .over(FADE_TIME),
-                    ]),
-                    instrument.note(bar_note(value)).over(NOTE_TIME),
-                ])
-            }),
-        ));
+        steps.push(bars.sweep());
         steps.push(wait(PAUSE_AFTER));
     }
     scene.compile(steps)
