@@ -45,8 +45,10 @@ is the reference for working usage.
   panics for misuse visible while building, collected `compile` errors for
   problems found while compiling.
 - Measure before claiming a performance change (setup, sampling and rendering
-  are separate costs). Bench noise on this machine reaches ~30%, so A/B
-  against a saved Criterion baseline and re-run surprising results.
+  are separate costs). Bench noise on this machine reaches ~30%, so run
+  benches through `scripts/bench.ps1` (pins them to the performance cores),
+  A/B against a Criterion baseline saved in the same session, and re-run
+  surprising results.
 - Preserve user edits. Leave finished, verified work uncommitted for review;
   commit (in focused commits on the current branch) only when explicitly
   asked, and don't push unless asked.
