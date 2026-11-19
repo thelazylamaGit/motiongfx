@@ -4,14 +4,18 @@
 //! A [`BindingPlan`] holds every binding in a scene. It is checked once
 //! ([`BindingPlan::prepare`]: missing properties, two bindings writing one
 //! field, bound fields that are also animated, cycles) and then evaluated
-//! after each sample, in dependency order. A binding recalculates only when
-//! its inputs change.
+//! after each sample, in dependency order. Only bindings whose inputs may
+//! have changed run: those reading a sequence the timeline just wrote, the
+//! sample time, or a binding that recalculated. A binding whose inputs are
+//! unchanged still skips recalculating.
 
 use crate::{Property, source::SourceId};
-use motiongfx::action::{ActionKey, ActionTable};
+use motiongfx::action::{ActionKey, ActionTable, UntypedSubjectId};
 use motiongfx::prelude::{SubjectSource, ThreadSafe, Timeline};
 use motiongfx::subject::SubjectId;
 use std::any::{Any, TypeId};
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
@@ -63,11 +67,11 @@ impl std::error::Error for BindingError {}
 trait SubjectKey: ThreadSafe {
     fn as_any(&self) -> &dyn Any;
     fn equals(&self, other: &dyn SubjectKey) -> bool;
-    fn matches_action(
+    /// The ID its sequences are keyed by, if the timeline animates it.
+    fn untyped(
         &self,
-        key: &ActionKey,
         table: &ActionTable,
-    ) -> bool;
+    ) -> Option<UntypedSubjectId>;
     fn describe(&self) -> String;
 }
 impl<I: SubjectId> SubjectKey for I {
@@ -77,14 +81,11 @@ impl<I: SubjectId> SubjectKey for I {
     fn equals(&self, other: &dyn SubjectKey) -> bool {
         other.as_any().downcast_ref::<I>() == Some(self)
     }
-    fn matches_action(
+    fn untyped(
         &self,
-        key: &ActionKey,
         table: &ActionTable,
-    ) -> bool {
-        key.subject_id().type_id() == TypeId::of::<I>()
-            && table.get_id::<I>(&key.subject_id().uid())
-                == Some(self)
+    ) -> Option<UntypedSubjectId> {
+        table.get_uid(self).map(UntypedSubjectId::new::<I>)
     }
     fn describe(&self) -> String {
         format!("{self:?}")
@@ -118,14 +119,11 @@ impl PropertyKey {
             && self.subject.equals(&*other.subject)
             && paths_overlap(self.path, other.path)
     }
-    fn matches_action(
+    fn untyped(
         &self,
-        key: &ActionKey,
         table: &ActionTable,
-    ) -> bool {
-        self.source == key.field().source_id()
-            && paths_overlap(self.path, key.field().field_path())
-            && self.subject.matches_action(key, table)
+    ) -> Option<UntypedSubjectId> {
+        self.subject.untyped(table)
     }
     fn describe(&self) -> String {
         format!("{}{}", self.subject.describe(), self.path)
@@ -139,7 +137,28 @@ pub struct BindingDependency(Dependency);
 #[derive(Clone)]
 enum Dependency {
     Property(PropertyKey),
-    Computed { plan: u64, index: usize },
+    Computed {
+        plan: u64,
+        index: usize,
+    },
+    /// The sample time, which changes on every sample that moves it.
+    Time,
+}
+impl BindingDependency {
+    /// The sample time, for sources that depend only on when the scene is
+    /// sampled.
+    pub fn time() -> Self {
+        Self(Dependency::Time)
+    }
+    /// The whole object `id` of type `S`: everything stored in it.
+    pub fn object<I: SubjectId, S: 'static>(id: I) -> Self {
+        Self(Dependency::Property(PropertyKey {
+            subject: Arc::new(id),
+            source: TypeId::of::<S>(),
+            // The object itself; every field path starts with `.`.
+            path: "",
+        }))
+    }
 }
 
 /// Cached computed values, read through [`ComputedSlot`]s.
@@ -253,26 +272,51 @@ tuple_source!(A:0, B:1, C:2);
 tuple_source!(A:0, B:1, C:2, D:3);
 tuple_source!(A:0, B:1, C:2, D:3, E:4);
 
-type Evaluate<W> =
-    Box<dyn FnMut(&mut W, &mut DerivedValues, bool) + Send + Sync>;
+type Evaluate<W> = Box<
+    dyn FnMut(&mut W, &mut DerivedValues, bool) -> bool + Send + Sync,
+>;
 type Validate<W> =
     Box<dyn Fn(&W) -> Result<(), BindingError> + Send + Sync>;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Bind,
+    Computed,
+    BindMut,
+}
 struct Node<W> {
+    kind: Kind,
     dependencies: Vec<BindingDependency>,
-    destination: Option<PropertyKey>,
+    /// What it writes: a bound field, or a `bind_mut`'s whole objects.
+    destinations: Vec<PropertyKey>,
     validate: Validate<W>,
+    /// Runs the node, or with `reset` runs it even if its inputs are
+    /// unchanged. Returns whether it wrote anything.
     evaluate: Evaluate<W>,
 }
 
 /// Every binding and computed value in one scene. Add them with
-/// [`bind`](Self::bind) and [`computed`](Self::computed), check them once
-/// with [`prepare`](Self::prepare), then call [`evaluate`](Self::evaluate)
+/// [`bind`](Self::bind), [`bind_mut`](Self::bind_mut) and
+/// [`computed`](Self::computed), check them once with
+/// [`prepare`](Self::prepare), then call [`evaluate`](Self::evaluate)
 /// after each sample. A [`Scene`](crate::Scene) does all of this for you.
 pub struct BindingPlan<W> {
     id: u64,
     registered: HashMap<SourceId, usize>,
     nodes: Vec<Node<W>>,
+    /// Evaluation order: every node after the nodes it reads.
     order: Vec<usize>,
+    /// The nodes that read each node's output.
+    dependents: Vec<Vec<usize>>,
+    /// The nodes to run when the timeline writes a sequence.
+    watchers: HashMap<ActionKey, Box<[usize]>>,
+    /// Subject types with watched sequences, so sequences of other types
+    /// are skipped without a lookup.
+    watched_types: Vec<TypeId>,
+    /// The nodes that read the sample time.
+    timed: Vec<usize>,
+    /// Nodes to run in the current evaluation.
+    dirty: Vec<bool>,
     values: DerivedValues,
     prepared: bool,
     first_evaluation: bool,
@@ -285,6 +329,11 @@ impl<W> Default for BindingPlan<W> {
             registered: HashMap::new(),
             nodes: Vec::new(),
             order: Vec::new(),
+            dependents: Vec::new(),
+            watchers: HashMap::new(),
+            watched_types: Vec::new(),
+            timed: Vec::new(),
+            dirty: Vec::new(),
             values: DerivedValues::default(),
             prepared: false,
             first_evaluation: true,
@@ -319,7 +368,7 @@ impl<W: 'static> BindingPlan<W> {
         source.read(world, &self.values)
     }
 
-    /// Check a source read outside the plan (such as by `scene.update`):
+    /// Check a source read outside the plan (such as by a simulation):
     /// its properties exist and its computed values belong to this plan.
     ///
     /// # Errors
@@ -333,14 +382,20 @@ impl<W: 'static> BindingPlan<W> {
         source.validate(world)?;
         for BindingDependency(dependency) in source.dependencies() {
             if let Dependency::Computed { plan, index } = dependency
-                && (plan != self.id
-                    || index >= self.nodes.len()
-                    || self.nodes[index].destination.is_some())
+                && !self.is_own_computed(plan, index)
             {
                 return Err(BindingError::ForeignDerived);
             }
         }
         Ok(())
+    }
+
+    fn is_own_computed(&self, plan: u64, index: usize) -> bool {
+        plan == self.id
+            && self
+                .nodes
+                .get(index)
+                .is_some_and(|node| node.kind == Kind::Computed)
     }
 
     /// Set `destination` to `calculate(value)` whenever `source`'s value
@@ -364,8 +419,9 @@ impl<W: 'static> BindingPlan<W> {
         let validation_source = source.clone();
         let mut previous = None;
         self.nodes.push(Node {
+            kind: Kind::Bind,
             dependencies: source.dependencies(),
-            destination: Some(PropertyKey::of(destination)),
+            destinations: vec![PropertyKey::of(destination)],
             validate: Box::new(move |world| {
                 validation_source.validate(world)?;
                 world
@@ -381,14 +437,58 @@ impl<W: 'static> BindingPlan<W> {
                 let input = source
                     .read(world, values)
                     .expect("validated binding source exists");
-                if reset || previous.as_ref() != Some(&input) {
-                    let output = calculate(input.clone());
-                    world.apply_source(destination.id, |object| {
-                        *destination.path.lens.get_mut(object) =
-                            output
-                    });
-                    previous = Some(input);
+                if !reset && previous.as_ref() == Some(&input) {
+                    return false;
                 }
+                let output = calculate(input.clone());
+                world.apply_source(destination.id, |object| {
+                    *destination.path.lens.get_mut(object) = output
+                });
+                previous = Some(input);
+                true
+            }),
+        });
+        self.values.0.push(None);
+    }
+
+    /// Run `write` with `source`'s value whenever it changes, or when
+    /// anything else writes one of `targets` (whole objects, from
+    /// [`BindingDependency::object`]), so `write` always has the last
+    /// word on them. `write` should set fields from the value alone, so
+    /// seeking reproduces the same result.
+    pub fn bind_mut<Source, F>(
+        &mut self,
+        targets: Vec<BindingDependency>,
+        source: Source,
+        mut write: F,
+    ) where
+        Source: BindingSource<W>,
+        F: FnMut(&mut W, Source::Value) + ThreadSafe,
+    {
+        self.prepared = false;
+        let destinations = targets
+            .into_iter()
+            .filter_map(|BindingDependency(target)| match target {
+                Dependency::Property(key) => Some(key),
+                _ => None,
+            })
+            .collect();
+        let validation_source = source.clone();
+        self.nodes.push(Node {
+            kind: Kind::BindMut,
+            dependencies: source.dependencies(),
+            destinations,
+            validate: Box::new(move |world| {
+                validation_source.validate(world)
+            }),
+            // Runs whenever it is reached: its source or one of its
+            // targets changed, and either needs writing again.
+            evaluate: Box::new(move |world, values, _| {
+                let input = source
+                    .read(world, values)
+                    .expect("validated bind_mut source exists");
+                write(world, input);
+                true
             }),
         });
         self.values.0.push(None);
@@ -411,8 +511,9 @@ impl<W: 'static> BindingPlan<W> {
         let validation_source = source.clone();
         let mut previous = None;
         self.nodes.push(Node {
+            kind: Kind::Computed,
             dependencies: source.dependencies(),
-            destination: None,
+            destinations: Vec::new(),
             validate: Box::new(move |world| {
                 validation_source.validate(world)
             }),
@@ -420,18 +521,20 @@ impl<W: 'static> BindingPlan<W> {
                 let input = source
                     .read(world, values)
                     .expect("validated derived source exists");
-                if reset || previous.as_ref() != Some(&input) {
-                    let output = calculate(input.clone());
-                    if let Some(cached) = values.0[index].as_mut() {
-                        *cached
-                            .downcast_mut::<T>()
-                            .expect("derived output type is fixed") =
-                            output;
-                    } else {
-                        values.0[index] = Some(Box::new(output));
-                    }
-                    previous = Some(input);
+                if !reset && previous.as_ref() == Some(&input) {
+                    return false;
                 }
+                let output = calculate(input.clone());
+                if let Some(cached) = values.0[index].as_mut() {
+                    *cached
+                        .downcast_mut::<T>()
+                        .expect("derived output type is fixed") =
+                        output;
+                } else {
+                    values.0[index] = Some(Box::new(output));
+                }
+                previous = Some(input);
+                true
             }),
         });
         self.values.0.push(None);
@@ -442,8 +545,9 @@ impl<W: 'static> BindingPlan<W> {
         }
     }
 
-    /// Check every binding against `world` and `timeline`, and work out
-    /// the order to evaluate them in. Call again after adding bindings.
+    /// Check every binding against `world` and `timeline`, work out the
+    /// order to evaluate them in, and which timeline sequences each one
+    /// reads. Call again after adding bindings.
     ///
     /// # Errors
     ///
@@ -457,117 +561,294 @@ impl<W: 'static> BindingPlan<W> {
     ) -> Result<(), BindingError> {
         self.prepared = false;
         let count = self.nodes.len();
-        let mut edges = vec![Vec::new(); count];
-        let mut incoming = vec![0; count];
+        let table = timeline.action_table();
+        // Every animated sequence, grouped by subject and source type, so
+        // finding the ones a property overlaps is one lookup.
+        let mut sequences: HashMap<
+            (UntypedSubjectId, TypeId),
+            Vec<ActionKey>,
+        > = HashMap::new();
+        for track in timeline.tracks() {
+            for (key, _) in track.sequences_spans() {
+                sequences
+                    .entry((
+                        *key.subject_id(),
+                        key.field().source_id(),
+                    ))
+                    .or_default()
+                    .push(*key);
+            }
+        }
+        let overlapping = |property: &PropertyKey| {
+            property
+                .untyped(table)
+                .and_then(|subject| {
+                    sequences.get(&(subject, property.source))
+                })
+                .into_iter()
+                .flatten()
+                .filter(|key| {
+                    paths_overlap(
+                        property.path,
+                        key.field().field_path(),
+                    )
+                })
+        };
+
+        // `predecessors[node]` must run before `node`. A `bind_mut` writes
+        // whole objects, so ordering its readers after it is held back
+        // until the rest is known; see below.
+        let mut predecessors = vec![Vec::new(); count];
+        let mut bind_mut_readers = Vec::new();
+        let mut watchers: HashMap<ActionKey, Vec<usize>> =
+            HashMap::new();
+        let mut timed = Vec::new();
         for (index, node) in self.nodes.iter().enumerate() {
             (node.validate)(world)?;
-            if let Some(destination) = &node.destination {
-                for other in self
-                    .nodes
-                    .iter()
-                    .take(index)
-                    .filter_map(|n| n.destination.as_ref())
+            for destination in &node.destinations {
+                for (other_index, other) in
+                    self.nodes.iter().enumerate().take(index)
                 {
-                    if destination.overlaps(other) {
-                        return Err(
-                            BindingError::ConflictingWriters(
-                                destination.describe(),
-                            ),
-                        );
+                    if !other
+                        .destinations
+                        .iter()
+                        .any(|other| destination.overlaps(other))
+                    {
+                        continue;
+                    }
+                    // A `bind_mut` writes after any binding of the same
+                    // object, and after earlier `bind_mut`s of it. Two
+                    // bindings of one field are ambiguous.
+                    match (node.kind, other.kind) {
+                        (Kind::BindMut, _) => {
+                            predecessors[index].push(other_index);
+                        }
+                        (_, Kind::BindMut) => {
+                            predecessors[other_index].push(index);
+                        }
+                        _ => {
+                            return Err(
+                                BindingError::ConflictingWriters(
+                                    destination.describe(),
+                                ),
+                            );
+                        }
                     }
                 }
-                for track in timeline.tracks() {
-                    if track.sequences_spans().iter().any(
-                        |(key, _)| {
-                            destination.matches_action(
-                                key,
-                                timeline.action_table(),
-                            )
-                        },
-                    ) {
+                let mut animated =
+                    overlapping(destination).peekable();
+                match node.kind {
+                    Kind::Bind if animated.peek().is_some() => {
                         return Err(
                             BindingError::AnimatedDestination(
                                 destination.describe(),
                             ),
                         );
                     }
+                    // A `bind_mut` writes again after the timeline does.
+                    Kind::BindMut => {
+                        for key in animated {
+                            watchers
+                                .entry(*key)
+                                .or_default()
+                                .push(index);
+                        }
+                    }
+                    _ => {}
                 }
             }
-            let mut predecessors = Vec::new();
             for BindingDependency(dependency) in &node.dependencies {
                 match dependency {
-                    Dependency::Computed { plan, index } => {
-                        if *plan != self.id
-                            || *index >= count
-                            || self.nodes[*index]
-                                .destination
-                                .is_some()
-                        {
+                    Dependency::Computed {
+                        plan,
+                        index: computed,
+                    } => {
+                        if !self.is_own_computed(*plan, *computed) {
                             return Err(BindingError::ForeignDerived);
                         }
-                        predecessors.push(*index);
+                        predecessors[index].push(*computed);
                     }
                     Dependency::Property(source) => {
-                        for (writer, node) in
+                        for key in overlapping(source) {
+                            watchers
+                                .entry(*key)
+                                .or_default()
+                                .push(index);
+                        }
+                        for (writer, other) in
                             self.nodes.iter().enumerate()
                         {
-                            if node
-                                .destination
-                                .as_ref()
-                                .is_some_and(|d| d.overlaps(source))
+                            if !other
+                                .destinations
+                                .iter()
+                                .any(|d| d.overlaps(source))
                             {
-                                predecessors.push(writer);
+                                continue;
+                            }
+                            if other.kind == Kind::BindMut {
+                                // A `bind_mut` reading its own target sees
+                                // the value it wrote last time.
+                                if writer != index {
+                                    bind_mut_readers
+                                        .push((writer, index));
+                                }
+                            } else {
+                                // Reading its own destination is a cycle.
+                                predecessors[index].push(writer);
                             }
                         }
                     }
+                    Dependency::Time => timed.push(index),
                 }
             }
+        }
+        // A binding reading a `bind_mut`'s object runs after it, unless the
+        // `bind_mut` depends on that binding: then it reads the object as
+        // it was before the `bind_mut` wrote. Usually the two touch
+        // different fields, such as one binding `x` and the other `y`.
+        let mut feeds = Vec::new();
+        for (writer, reader) in bind_mut_readers {
+            feeds.clear();
+            feeds.push(writer);
+            let mut seen = vec![false; count];
+            while let Some(node) = feeds.pop() {
+                for &predecessor in &predecessors[node] {
+                    if !std::mem::replace(
+                        &mut seen[predecessor],
+                        true,
+                    ) {
+                        feeds.push(predecessor);
+                    }
+                }
+            }
+            if !seen[reader] {
+                predecessors[reader].push(writer);
+            }
+        }
+
+        // Kahn's algorithm, taking the earliest-added ready node first, so
+        // independent nodes run in the order they were added.
+        let mut dependents = vec![Vec::new(); count];
+        let mut incoming = vec![0; count];
+        for (index, predecessors) in
+            predecessors.iter_mut().enumerate()
+        {
             predecessors.sort_unstable();
             predecessors.dedup();
             incoming[index] = predecessors.len();
-            for predecessor in predecessors {
-                edges[predecessor].push(index);
+            for &predecessor in predecessors.iter() {
+                dependents[predecessor].push(index);
             }
         }
-        let mut ready: Vec<_> = incoming
+        let mut ready: BinaryHeap<Reverse<usize>> = incoming
             .iter()
             .enumerate()
-            .filter_map(|(i, &n)| (n == 0).then_some(i))
+            .filter_map(|(i, &n)| (n == 0).then_some(Reverse(i)))
             .collect();
         let mut order = Vec::with_capacity(count);
-        while let Some(index) = ready.pop() {
+        while let Some(Reverse(index)) = ready.pop() {
             order.push(index);
-            for &dependent in &edges[index] {
+            for &dependent in &dependents[index] {
                 incoming[dependent] -= 1;
                 if incoming[dependent] == 0 {
-                    ready.push(dependent);
+                    ready.push(Reverse(dependent));
                 }
             }
         }
         if order.len() != count {
             return Err(BindingError::Cycle);
         }
+
+        timed.dedup();
+        let mut watched_types = Vec::new();
+        self.watchers = watchers
+            .into_iter()
+            .map(|(key, mut nodes)| {
+                nodes.sort_unstable();
+                nodes.dedup();
+                let subject = key.subject_id().type_id();
+                if !watched_types.contains(&subject) {
+                    watched_types.push(subject);
+                }
+                (key, nodes.into_boxed_slice())
+            })
+            .collect();
+        self.watched_types = watched_types;
+        self.timed = timed;
         self.order = order;
+        self.dependents = dependents;
+        self.dirty = vec![false; count];
         self.prepared = true;
         self.first_evaluation = true;
         Ok(())
     }
 
-    /// Run the bindings whose inputs changed since the last call (all of
-    /// them the first time). Call after each timeline sample.
+    /// Run the bindings whose inputs may have changed: those reading a
+    /// sequence `timeline` just sampled, those reading the sample time if
+    /// `time_changed`, and those reading a binding that recalculated. The
+    /// first call runs every binding. Call after each timeline sample.
     ///
     /// # Panics
     ///
     /// If [`prepare`](Self::prepare) hasn't succeeded since the last change.
-    pub fn evaluate(&mut self, world: &mut W) {
+    pub fn evaluate(
+        &mut self,
+        world: &mut W,
+        timeline: &Timeline<W>,
+        time_changed: bool,
+    ) {
         assert!(self.prepared, "prepare bindings before evaluation");
+        let reset = self.first_evaluation;
+        self.first_evaluation = false;
+        if !reset {
+            // Whichever is smaller: checking each watched sequence, or
+            // each written one. A scene animating thousands of objects
+            // usually watches far fewer sequences than it writes.
+            if self.watchers.len() <= timeline.queued_len() {
+                for (key, nodes) in &self.watchers {
+                    if timeline.is_queued(key) {
+                        for &node in nodes.iter() {
+                            self.dirty[node] = true;
+                        }
+                    }
+                }
+            } else {
+                for key in timeline.queued_keys() {
+                    if !self
+                        .watched_types
+                        .contains(&key.subject_id().type_id())
+                    {
+                        continue;
+                    }
+                    for &node in
+                        self.watchers.get(key).into_iter().flatten()
+                    {
+                        self.dirty[node] = true;
+                    }
+                }
+            }
+            if time_changed {
+                for &node in &self.timed {
+                    self.dirty[node] = true;
+                }
+            }
+        }
         for &index in &self.order {
-            (self.nodes[index].evaluate)(
+            // Cleared even when resetting, so marks made by this pass don't
+            // carry over to the next.
+            let marked = std::mem::take(&mut self.dirty[index]);
+            if !reset && !marked {
+                continue;
+            }
+            if (self.nodes[index].evaluate)(
                 world,
                 &mut self.values,
-                self.first_evaluation,
-            );
+                reset,
+            ) {
+                for &dependent in &self.dependents[index] {
+                    self.dirty[dependent] = true;
+                }
+            }
         }
-        self.first_evaluation = false;
     }
 }

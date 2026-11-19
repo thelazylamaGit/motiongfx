@@ -27,9 +27,9 @@ For composite models use `motiongfx_authoring::Scene<MyModels>` and implement
 `Model2d` to expose a contained `Canvas` store. The same shapes, signals,
 computed descriptions and typed core properties work in that shared scene.
 See [the headless composite model test](tests/composite_model.rs).
-Collection callbacks use the shared `UpdateStorage`/`UpdateHandle` contracts;
+`bind_mut` collections use the shared `BindMutStorage`/`BindMutHandle` contracts;
 the provided 2D collection adapters currently target `Canvas`. A composite
-model supplies its own safe borrowing adapter or specific `UpdateTargets`
+model supplies its own safe borrowing adapter or specific `BindMutTargets`
 implementation. It does not need another timeline.
 
 
@@ -410,7 +410,7 @@ The returned handle retains the concrete tip types: a circle exposes `radius`,
 while triangles and chevrons expose `size` and `angle`. Triangle also exposes
 its independently animatable corner `radius`. The line's own fields are on its `line` field (`arrow.line.reveal()`), and
 `compiled.get(..)` reads the line from either a plain or tipped handle and
-each tip from its own handle. Tipped lines and their shapes also work with direct updates.
+each tip from its own handle. Tipped lines and their shapes also work with `bind_mut`.
 
 `Triangle::new()` and `Chevron::new()` default to a 24-unit axial length and a
 pi/3 full opening angle. Their local apex is at the origin, pointing along +x;
@@ -564,7 +564,8 @@ time zero. Bound fields can feed other bindings; execution order is prepared
 once regardless of registration order. Ordinary property handles still must
 belong to this scene; scene identity validation is not implemented.
 
-`CompiledScene::sample` runs MotionGfx first, then bindings, then direct updates;
+`CompiledScene::sample` runs MotionGfx first, then the bindings (including
+`bind_mut`) whose inputs may have changed;
 rendering reads
 the resulting state. Changed inputs execute native Rust closures; unchanged
 inputs skip calculation/writes. This adds source reads/comparisons and native
@@ -574,12 +575,12 @@ dt updaters, automatic dependency tracking and runtime rebinding are not
 implemented. The sine example needs none of those: it reveals precomputed
 geometry and derives the dot/line endpoints from the same sampled reveal.
 
-## Direct object updates
+## Writing whole objects: `bind_mut`
 
 ```rust
 let progress = signal(0.0);
 let dot = scene.add(Circle::new(6.4).fill(YELLOW));
-scene.update(dot, &progress, |circle, progress| {
+scene.bind_mut(dot, &progress, |circle, progress| {
     let angle = progress * std::f64::consts::TAU;
     circle.transform.position = Point::new(80.0 * angle.cos(), 80.0 * angle.sin());
 });
@@ -592,8 +593,11 @@ the descriptions themselves can be reused across scenes independently.
 `scene.time()` is an explicit source of sampled `Duration`, clamped to the
 timeline range, not elapsed frame time.
 
-`scene.update(targets, sources, callback)` registers an ordinary `FnMut` Rust
-function. It receives mutable objects directly and source values by value.
+`scene.bind_mut(targets, sources, write)` is `bind` with mutable access to
+whole objects: `write` receives the objects directly and the source values by
+value. Use it to change several objects from one calculation, or to change one
+in place (such as `Path::set_quadratic`, which reuses the geometry) instead of
+building a new value. For a single property, prefer a builder input or `bind`.
 Targets may be one object handle, a tuple of two to four handles, or an array
 of one handle type. Group/array order matches the caller's order, even when it
 differs from storage order. Duplicate mutable targets and missing sources are
@@ -601,21 +605,20 @@ rejected with a construction-time panic. Target borrowing uses safe disjoint
 slice access; no `unsafe`, runtime borrow cells, or per-sample target allocation.
 Sources may also be tuples, existing bound properties, or shared derived values.
 
-Callbacks run on **every sample**, including initialization, repeated times,
-holds and backward seeks. They run after all bindings, in registration order.
-There is no automatic dependency sorting, writer-conflict checking or input
-caching for direct updates. Use the sampled inputs to assign positions rather
-than incrementing previous positions if the animation must seek correctly.
-A later callback may read an earlier callback's updated property; a binding
-cannot depend on a later callback and see that write in the same sample. Avoid
-giving both a binding and a callback ownership of the same output. Side effects
-inside callbacks are not made deterministic by Rust's type system.
+`write` runs when its sources change, and again when the timeline or a binding
+writes one of its targets, so it always has the last word on them. Bindings
+that read a target run after it and see its writes in the same sample, unless
+the `bind_mut` itself depends on them; those read the object as it was before.
+`bind_mut`s sharing a target run in the order they were added. Set fields from
+the sampled inputs rather than incrementing previous values, so seeking gives
+the same result; for state carried over time, use `scene.simulate`. Side
+effects inside `write` are not made deterministic by Rust's type system.
 
 The callback incurs a stored function call plus source reads/object selection
 and the math it contains; this is a thin native API, not a claim of zero cost.
 For expensive work, cache explicitly or use the separate derived-value API.
 The Bézier example now uses computed inputs and source-aware builders, with
-no direct updates. `Path::quadratic` and `set_quadratic` use exact
+no `bind_mut`. `Path::quadratic` and `set_quadratic` use exact
 quadratic segments, retaining the normal `start`/`end` reveal properties.
 
 ## Springs

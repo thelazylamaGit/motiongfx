@@ -294,40 +294,31 @@ fn resolve_cues(
     (markers.into_boxed_slice(), events.into_boxed_slice())
 }
 type Prepare<M> = Box<dyn FnOnce(&mut Scene<M>) + Send + Sync>;
-type Update<M> =
-    dyn FnMut(&mut World<M>, &BindingPlan<World<M>>) + Send + Sync;
-
-/// A callback that runs on every sample, made by [`UpdateTargets`].
-pub struct NativeUpdate<M>(Box<Update<M>>);
-impl<M> NativeUpdate<M> {
-    /// Wrap `update`, which receives the world and the bindings' values.
-    pub fn new(
-        update: impl FnMut(&mut World<M>, &BindingPlan<World<M>>)
-        + ThreadSafe,
-    ) -> Self {
-        Self(Box::new(update))
-    }
-}
-/// The objects a `scene.update` callback changes: one handle, or a tuple
-/// or array of them (see [`UpdateStorage`](crate::UpdateStorage)).
-pub trait UpdateTargets<M>: Sized {
+/// Writes a value into a `bind_mut`'s objects, made by
+/// [`BindMutTargets::writer`].
+pub type BindMutWriter<M, V> =
+    Box<dyn FnMut(&mut World<M>, V) + Send + Sync>;
+/// The objects a [`Scene::bind_mut`] writes: one handle, or a tuple or
+/// array of them (see [`BindMutStorage`](crate::BindMutStorage)).
+pub trait BindMutTargets<M>: Sized {
     /// What the callback receives, such as `&mut Circle`.
     type Objects<'a>;
-    /// Check the targets, then build a callback that reads `source` and
-    /// passes its value and the borrowed objects to `update`.
+    /// Each target object, whole, so bindings that read one of them run
+    /// after the `bind_mut`.
+    fn dependencies(&self) -> Vec<crate::BindingDependency>;
+    /// Check the targets, then build a writer that passes the borrowed
+    /// objects and a value to `write`.
     ///
     /// # Panics
     ///
     /// If a target isn't in this scene or is borrowed twice.
-    fn callback<S, F>(
+    fn writer<V: 'static, F>(
         self,
-        source: S,
-        update: F,
+        write: F,
         world: &World<M>,
-    ) -> NativeUpdate<M>
+    ) -> BindMutWriter<M, V>
     where
-        S: crate::BindingSource<World<M>>,
-        F: for<'a> FnMut(Self::Objects<'a>, S::Value) + ThreadSafe;
+        F: for<'a> FnMut(Self::Objects<'a>, V) + ThreadSafe;
 }
 /// Something [`Scene::add`] accepts: an object description, or a reusable
 /// component that adds several objects and returns its own handle type.
@@ -351,7 +342,6 @@ pub trait SceneObject<M> {
 pub struct Scene<M> {
     world: World<M>,
     bindings: BindingPlan<World<M>>,
-    updates: Vec<NativeUpdate<M>>,
     preparation: Vec<(TypeId, Prepare<M>)>,
     defaults: crate::AnimationDefaults,
     simulations: Vec<Box<dyn Stepper<M>>>,
@@ -379,7 +369,6 @@ impl<M: 'static> Scene<M> {
                 time: Duration::ZERO,
             },
             bindings: BindingPlan::default(),
-            updates: Vec::new(),
             preparation: Vec::new(),
             defaults: crate::AnimationDefaults::default(),
             simulations: Vec::new(),
@@ -552,24 +541,35 @@ impl<M: 'static> Scene<M> {
             source.register(&mut self.world, &mut self.bindings);
         self.bindings.bind(destination, source, calculate);
     }
-    /// Run `update` on every sample, after the bindings, with `source`'s
-    /// value and mutable access to `targets` (one handle, or a tuple or
-    /// array of them). Updates run in the order they were added.
+    /// Like [`bind`](Self::bind), but `write` gets mutable access to whole
+    /// objects: `targets` is one handle, or a tuple or array of them. Use
+    /// it to change several objects from one calculation, or to change one
+    /// in place (such as rewriting a path's geometry) instead of building a
+    /// new value.
     ///
-    /// Set fields from the value rather than accumulating changes from one
-    /// frame to the next, so seeking backwards gives the same result.
+    /// `write` runs when `source`'s value changes, and again when an
+    /// animation or binding writes one of the targets, so it always has the
+    /// last word on them. Bindings that read a target run after it. Set
+    /// fields from the value alone, so seeking gives the same result; for
+    /// state carried from one moment to the next, use
+    /// [`simulate`](Self::simulate).
     ///
     /// # Panics
     ///
     /// At the caller's line, if the source or targets are not in this scene.
+    ///
+    /// # Examples
+    ///
+    /// See `motiongfx_2d`'s README, which moves a line's ends and tips from
+    /// one value.
     #[track_caller]
-    pub fn update<T, S, F>(
+    pub fn bind_mut<T, S, F>(
         &mut self,
         targets: T,
         source: S,
-        update: F,
+        write: F,
     ) where
-        T: UpdateTargets<M>,
+        T: BindMutTargets<M>,
         S: Source<World<M>>,
         F: for<'a> FnMut(T::Objects<'a>, S::Value) + ThreadSafe,
     {
@@ -578,13 +578,15 @@ impl<M: 'static> Scene<M> {
         self.bindings
             .validate_source(&self.world, &source)
             .unwrap_or_else(|error| {
-                panic!("invalid update source: {error}")
+                panic!("invalid bind_mut source: {error}")
             });
-        self.updates.push(targets.callback(
+        let dependencies = targets.dependencies();
+        let mut writer = targets.writer(write, &self.world);
+        self.bindings.bind_mut(
+            dependencies,
             source,
-            update,
-            &self.world,
-        ));
+            move |world: &mut World<M>, value| writer(world, value),
+        );
     }
     /// Compile animations into a playable [`CompiledScene`]. The steps run
     /// in order, like [`chain`](crate::chain).
@@ -658,7 +660,6 @@ impl<M: 'static> Scene<M> {
             registry,
             timeline,
             bindings: self.bindings,
-            updates: self.updates,
             markers,
             events,
         };
@@ -673,9 +674,7 @@ impl<M> std::fmt::Debug for Scene<M> {
         &self,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        f.debug_struct("Scene")
-            .field("updates", &self.updates.len())
-            .finish_non_exhaustive()
+        f.debug_struct("Scene").finish_non_exhaustive()
     }
 }
 /// Core keeps only the later-written of two overlapping changes to
@@ -709,7 +708,6 @@ pub struct CompiledScene<M> {
     registry: Registry,
     timeline: Timeline<World<M>>,
     bindings: BindingPlan<World<M>>,
-    updates: Vec<NativeUpdate<M>>,
     markers: Markers,
     /// Sorted by start time.
     events: Box<[TimedEvent]>,
@@ -834,16 +832,19 @@ impl<M: 'static> CompiledScene<M> {
         }
     }
     /// Show the scene at `time` (clamped to the duration): apply the
-    /// animations, then the bindings, then the `scene.update` callbacks.
+    /// animations, then the bindings whose inputs may have changed.
     pub fn sample(&mut self, time: Duration) {
+        let previous = self.world.time;
         self.timeline.set_target_time(time);
         self.world.time = self.timeline.target_time();
         self.timeline.queue_actions();
         self.timeline
             .sample_queued_actions(&self.registry, &mut self.world);
-        self.bindings.evaluate(&mut self.world);
-        for update in &mut self.updates {
-            (update.0)(&mut self.world, &self.bindings);
-        }
+        let time_changed = self.world.time != previous;
+        self.bindings.evaluate(
+            &mut self.world,
+            &self.timeline,
+            time_changed,
+        );
     }
 }

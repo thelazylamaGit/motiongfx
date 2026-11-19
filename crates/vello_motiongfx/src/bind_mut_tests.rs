@@ -1,4 +1,5 @@
-//! Contracts for typed callbacks, sample order, borrowing and geometry reuse.
+//! Contracts for `bind_mut`: when it runs, its order, borrowing and
+//! geometry reuse.
 
 use super::*;
 use std::sync::{
@@ -8,8 +9,7 @@ use std::sync::{
 use vello::kurbo::{ParamCurve, QuadBez};
 
 #[test]
-fn updates_run_after_bindings_in_registration_order_on_every_sample()
-{
+fn bind_mut_runs_after_what_it_reads_and_only_when_that_changes() {
     let mut scene = Scene::new();
     let progress = signal(0.0);
     let a = scene.add(Circle::new(2.0));
@@ -19,12 +19,12 @@ fn updates_run_after_bindings_in_registration_order_on_every_sample()
     scene.bind(a.position_x(), &doubled, |x| x);
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
-    // Reads the just-sampled binding. This native callback itself is uncached.
-    scene.update(b, a.position(), move |b, position| {
+    // Reads the binding written in the same sample.
+    scene.bind_mut(b, a.position(), move |b, position| {
         counter.fetch_add(1, Ordering::Relaxed);
         b.transform.position = position + (0.0, 30.0);
     });
-    scene.update(
+    scene.bind_mut(
         line,
         (b.position(), &doubled),
         |line, (position, doubled)| {
@@ -34,7 +34,7 @@ fn updates_run_after_bindings_in_registration_order_on_every_sample()
     );
     let time = scene.time();
     let clock_label = scene.add(Text::new(""));
-    scene.update(clock_label, time, |label, time| {
+    scene.bind_mut(clock_label, time, |label, time| {
         label.content = time.as_millis().to_string().into();
     });
     let mut animation = scene.compile([
@@ -42,19 +42,18 @@ fn updates_run_after_bindings_in_registration_order_on_every_sample()
         progress.to(10.0).over(s(2)).ease(ease::linear),
         wait(s(1)),
     ]);
-    assert_eq!(calls.load(Ordering::Relaxed), 1); // Initializes at zero.
-    for (index, (time, x)) in [
-        (0, 0.0),
-        (500, 0.0),
-        (2000, 10.0),
-        (2000, 10.0),
-        (4000, 20.0),
-        (1500, 5.0),
-        (0, 0.0),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    assert_eq!(calls.load(Ordering::Relaxed), 1); // The first sample runs it.
+    // It runs again only when `a.position()` changes: not while `progress`
+    // holds, nor when the same time is sampled twice.
+    for (time, x, total) in [
+        (0, 0.0, 1),
+        (500, 0.0, 1),
+        (2000, 10.0, 2),
+        (2000, 10.0, 2),
+        (4000, 20.0, 3),
+        (1500, 5.0, 4),
+        (0, 0.0, 5),
+    ] {
         animation.sample(ms(time));
         assert_eq!(
             animation.get(b).transform.position,
@@ -66,7 +65,11 @@ fn updates_run_after_bindings_in_registration_order_on_every_sample()
             animation.get(clock_label).content.as_ref(),
             time.to_string()
         );
-        assert_eq!(calls.load(Ordering::Relaxed), index + 2);
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            total,
+            "at {time}ms"
+        );
     }
     animation.sample(s(10));
     assert_eq!(animation.get(clock_label).content.as_ref(), "4000");
@@ -82,7 +85,7 @@ fn grouped_targets_preserve_caller_order_and_borrow_disjoint_objects()
     let b = scene.add(Circle::new(2.0));
     let line = scene.add(Line::new(Point::ZERO, Point::ZERO));
     // Reverse storage order and mix object types in one tuple.
-    scene.update((b, line, a), &amount, |(b, line, a), amount| {
+    scene.bind_mut((b, line, a), &amount, |(b, line, a), amount| {
         b.transform.position = Point::new(amount + 20.0, 0.0);
         a.transform.position = Point::new(amount + 10.0, 0.0);
         line.start = a.transform.position;
@@ -91,7 +94,7 @@ fn grouped_targets_preserve_caller_order_and_borrow_disjoint_objects()
     let text = scene.add(Text::new(""));
     let rect = scene.add(Rectangle::new(10.0, 10.0));
     let camera = scene.add(Camera::new());
-    scene.update(
+    scene.bind_mut(
         (rect, text, camera),
         &amount,
         |(rect, text, camera), amount| {
@@ -116,7 +119,7 @@ fn array_targets_preserve_order_and_support_empty_arrays() {
     let lines: [_; 3] = std::array::from_fn(|_| {
         scene.add(Line::new(Point::ZERO, Point::ZERO))
     });
-    scene.update(
+    scene.bind_mut(
         [lines[2], lines[0], lines[1]],
         &amount,
         |lines, amount| {
@@ -125,7 +128,7 @@ fn array_targets_preserve_order_and_support_empty_arrays() {
             }
         },
     );
-    scene.update([] as [Handle<Line>; 0], &amount, |lines, _| {
+    scene.bind_mut([] as [Handle<Line>; 0], &amount, |lines, _| {
         assert!(lines.is_empty())
     });
     let mut animation =
@@ -143,7 +146,7 @@ fn array_targets_preserve_order_and_support_empty_arrays() {
 fn duplicate_targets_are_rejected_during_registration() {
     let mut scene = Scene::new();
     let dot = scene.add(Circle::new(2.0));
-    scene.update((dot, dot), dot.radius(), |_, _| {});
+    scene.bind_mut((dot, dot), dot.radius(), |_, _| {});
 }
 
 #[test]
@@ -159,10 +162,10 @@ fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
     let b = scene.add(Circle::new(1.0));
     let q = scene.add(Circle::new(1.0));
     let line = scene.add(Line::new(start, end));
-    scene.update(curve, &bend, move |curve, bend| {
+    scene.bind_mut(curve, &bend, move |curve, bend| {
         curve.set_quadratic(start, (0.0, 170.0 - bend), end);
     });
-    scene.update(
+    scene.bind_mut(
         (a, b, q),
         (&bend, &t),
         move |(a, b, q), (bend, t)| {
@@ -173,7 +176,7 @@ fn quadratic_updates_match_de_casteljau_reuse_geometry_and_rewind() {
                 + (b.transform.position - a.transform.position) * t;
         },
     );
-    scene.update(
+    scene.bind_mut(
         line,
         (a.position(), b.position()),
         |line, (a, b)| {

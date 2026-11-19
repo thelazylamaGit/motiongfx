@@ -1,13 +1,15 @@
-//! Lets `scene.update` borrow several objects mutably at once: a tuple or
-//! array of handles, checked when the update is added.
-use crate::{BindingSource, NativeUpdate, UpdateTargets, World};
+//! Lets `scene.bind_mut` borrow several objects mutably at once: a tuple
+//! or array of handles, checked when the `bind_mut` is added.
+use crate::{
+    BindMutTargets, BindMutWriter, BindingDependency, World,
+};
 use motiongfx::prelude::ThreadSafe;
-/// A model whose objects `scene.update` can borrow several at a time.
+/// A model whose objects `scene.bind_mut` can borrow several at a time.
 ///
-/// [`layout`](Self::layout) checks a set of targets once, when the update is
-/// added; [`borrow`](Self::borrow) then hands out the mutable references on
+/// [`layout`](Self::layout) checks a set of targets once, when the
+/// `bind_mut` is added; [`borrow`](Self::borrow) then hands out the mutable references on
 /// every sample without allocating.
-pub trait UpdateStorage: Sized + 'static {
+pub trait BindMutStorage: Sized + 'static {
     /// Which object one target refers to.
     type Spec: Copy;
     /// A checked set of `N` targets.
@@ -29,12 +31,17 @@ pub trait UpdateStorage: Sized + 'static {
         layout: &Self::Layout<N>,
     ) -> Self::Batch<'a, N>;
 }
-/// An object handle that can be one of several `scene.update` targets.
-pub trait UpdateHandle<M: UpdateStorage>: Copy + ThreadSafe {
+/// An object handle that can be one of several `scene.bind_mut` targets.
+pub trait BindMutHandle<M: BindMutStorage>:
+    Copy + ThreadSafe
+{
     /// The object the callback receives.
     type Object;
     /// Describe this target, at position `slot` in the tuple or array.
     fn spec(self, slot: usize) -> M::Spec;
+    /// The whole object, so bindings that read it run after the
+    /// `bind_mut` that writes it.
+    fn dependency(self) -> BindingDependency;
     /// Take this target's object out of a borrowed batch.
     fn take<'a, const N: usize>(
         batch: &mut M::Batch<'a, N>,
@@ -43,16 +50,18 @@ pub trait UpdateHandle<M: UpdateStorage>: Copy + ThreadSafe {
 }
 macro_rules! tuple_targets {
     ($($name:ident:$slot:tt),+) => {
-        impl<M:UpdateStorage,$($name: UpdateHandle<M>),+> UpdateTargets<M> for ($($name,)+) {
+        impl<M: BindMutStorage, $($name: BindMutHandle<M>),+> BindMutTargets<M> for ($($name,)+) {
             type Objects<'a> = ($(&'a mut $name::Object,)+);
+            fn dependencies(&self) -> Vec<BindingDependency> {
+                vec![$(self.$slot.dependency(),)+]
+            }
             #[track_caller]
-            fn callback<S, F>(self, source: S, mut update: F, world: &World<M>) -> NativeUpdate<M>
-            where S: BindingSource<World<M>>, F: for<'a> FnMut(Self::Objects<'a>, S::Value) + ThreadSafe {
+            fn writer<V: 'static, F>(self, mut write: F, world: &World<M>) -> BindMutWriter<M, V>
+            where F: for<'a> FnMut(Self::Objects<'a>, V) + ThreadSafe {
                 let layout = world.model().layout([$(self.$slot.spec($slot),)+]);
-                NativeUpdate::new(move |world, bindings| {
-                    let input = bindings.read_source(world, &source).expect("validated update source");
+                Box::new(move |world, value| {
                     let mut batch = world.model_mut().borrow(&layout);
-                    update(($($name::take(&mut batch, $slot),)+), input);
+                    write(($($name::take(&mut batch, $slot),)+), value);
                 })
             }
         }
@@ -62,33 +71,31 @@ tuple_targets!(A:0, B:1);
 tuple_targets!(A:0, B:1, C:2);
 tuple_targets!(A:0, B:1, C:2, D:3);
 
-impl<M: UpdateStorage, H: UpdateHandle<M>, const N: usize>
-    UpdateTargets<M> for [H; N]
+impl<M: BindMutStorage, H: BindMutHandle<M>, const N: usize>
+    BindMutTargets<M> for [H; N]
 {
     type Objects<'a> = [&'a mut H::Object; N];
+    fn dependencies(&self) -> Vec<BindingDependency> {
+        self.iter().map(|handle| handle.dependency()).collect()
+    }
     #[track_caller]
-    fn callback<S, F>(
+    fn writer<V: 'static, F>(
         self,
-        source: S,
-        mut update: F,
+        mut write: F,
         world: &World<M>,
-    ) -> NativeUpdate<M>
+    ) -> BindMutWriter<M, V>
     where
-        S: BindingSource<World<M>>,
-        F: for<'a> FnMut(Self::Objects<'a>, S::Value) + ThreadSafe,
+        F: for<'a> FnMut(Self::Objects<'a>, V) + ThreadSafe,
     {
         let layout =
             world.model().layout(std::array::from_fn::<_, N, _>(
                 |i| self[i].spec(i),
             ));
-        NativeUpdate::new(move |world, bindings| {
-            let input = bindings
-                .read_source(world, &source)
-                .expect("validated update source");
+        Box::new(move |world, value| {
             let mut batch = world.model_mut().borrow(&layout);
-            update(
+            write(
                 std::array::from_fn(|i| H::take(&mut batch, i)),
-                input,
+                value,
             );
         })
     }

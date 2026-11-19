@@ -1,9 +1,9 @@
 //! Two independent model adapters share one schedule, source graph and clock.
 use motiongfx::prelude::*;
 use motiongfx_authoring::{
-    BindingPlan, BindingSource, CompiledScene, Input, NativeUpdate,
-    ObjectDefinition, Property, Scene, SceneObject, UpdateTargets,
-    World, WorldObject, all, computed, signal, wait,
+    BindMutTargets, BindMutWriter, BindingDependency, CompiledScene,
+    Input, ObjectDefinition, Property, Scene, SceneObject, World,
+    WorldObject, all, computed, signal, wait,
 };
 
 #[derive(Clone, Default)]
@@ -92,24 +92,24 @@ impl SceneObject<Models> for DepthModel {
         )
     }
 }
-impl UpdateTargets<Models> for PointHandle {
+impl BindMutTargets<Models> for PointHandle {
     type Objects<'a> = &'a mut PointModel;
-    fn callback<S, F>(
+    fn dependencies(&self) -> Vec<BindingDependency> {
+        vec![BindingDependency::object::<PointId, PointModel>(
+            PointId,
+        )]
+    }
+    fn writer<V: 'static, F>(
         self,
-        source: S,
-        mut update: F,
+        mut write: F,
         _: &World<Models>,
-    ) -> NativeUpdate<Models>
+    ) -> BindMutWriter<Models, V>
     where
-        S: BindingSource<World<Models>>,
-        F: for<'a> FnMut(&'a mut PointModel, S::Value) + ThreadSafe,
+        F: for<'a> FnMut(&'a mut PointModel, V) + ThreadSafe,
     {
-        NativeUpdate::new(
-            move |world, plan: &BindingPlan<World<Models>>| {
-                let value = plan.read_source(world, &source).unwrap();
-                update(&mut world.model_mut().point, value);
-            },
-        )
+        Box::new(move |world, value| {
+            write(&mut world.model_mut().point, value)
+        })
     }
 }
 fn build() -> CompiledScene<Models> {
@@ -125,7 +125,7 @@ fn build() -> CompiledScene<Models> {
     let (z, alpha) = scene.add(DepthModel::default());
     let shared = computed!((progress) => progress * 3.0);
     scene.bind(z, (point.x, &shared), |(x, shared)| x + shared);
-    scene.update(point, z, |point, z| point.y = z * 2.0);
+    scene.bind_mut(point, z, |point, z| point.y = z * 2.0);
     scene.compile([
         all([
             progress.to(10.0).ease(ease::linear),

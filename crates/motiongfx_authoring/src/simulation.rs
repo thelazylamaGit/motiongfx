@@ -62,10 +62,9 @@ impl<M, T: Clone + PartialEq + ThreadSafe> BindingSource<World<M>>
     fn read(&self, world: &World<M>, _: &DerivedValues) -> Option<T> {
         world.simulations.state(*self, world.time()).cloned()
     }
-    // Like the sample time, a simulation's value depends only on when the
-    // scene is sampled, so it has nothing to order after.
+    // A simulation's value depends only on when the scene is sampled.
     fn dependencies(&self) -> Vec<BindingDependency> {
-        Vec::new()
+        vec![BindingDependency::time()]
     }
     fn validate(&self, world: &World<M>) -> Result<(), BindingError> {
         world

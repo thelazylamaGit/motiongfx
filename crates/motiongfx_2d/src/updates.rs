@@ -2,7 +2,8 @@
 use crate::*;
 use motiongfx::prelude::ThreadSafe;
 use motiongfx_authoring::{
-    NativeUpdate, UpdateHandle, UpdateStorage, UpdateTargets,
+    BindMutHandle, BindMutStorage, BindMutTargets, BindMutWriter,
+    BindingDependency,
 };
 #[doc(hidden)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -93,7 +94,7 @@ pub struct ObjectBatch<'a, const N: usize> {
 }
 macro_rules! update_handle {
     ($handle:ty, $object:ty, $field:ident, $kind:literal, $index:expr) => {
-        impl UpdateHandle<Canvas> for $handle {
+        impl BindMutHandle<Canvas> for $handle {
             type Object = $object;
             fn spec(self, slot: usize) -> ObjectSpec {
                 ObjectSpec {
@@ -102,8 +103,11 @@ macro_rules! update_handle {
                     slot,
                 }
             }
+            fn dependency(self) -> BindingDependency {
+                BindingDependency::object::<_, $object>(self.id)
+            }
             fn take<'a, const N: usize>(
-                batch: &mut <Canvas as UpdateStorage>::Batch<'a, N>,
+                batch: &mut <Canvas as BindMutStorage>::Batch<'a, N>,
                 slot: usize,
             ) -> &'a mut Self::Object {
                 batch.$field[slot]
@@ -111,28 +115,25 @@ macro_rules! update_handle {
                     .expect("typed update target")
             }
         }
-        impl UpdateTargets<Canvas> for $handle {
+        impl BindMutTargets<Canvas> for $handle {
             type Objects<'a> = &'a mut $object;
+            fn dependencies(&self) -> Vec<BindingDependency> {
+                vec![self.dependency()]
+            }
             #[track_caller]
-            fn callback<S, F>(
+            fn writer<V: 'static, F>(
                 self,
-                source: S,
-                mut update: F,
+                mut write: F,
                 world: &World<Canvas>,
-            ) -> NativeUpdate<Canvas>
+            ) -> BindMutWriter<Canvas, V>
             where
-                S: BindingSource<World<Canvas>>,
-                F: for<'a> FnMut(Self::Objects<'a>, S::Value)
-                    + ThreadSafe,
+                F: for<'a> FnMut(Self::Objects<'a>, V) + ThreadSafe,
             {
                 let layout =
                     Layout::new([self.spec(0)], world.model());
-                NativeUpdate::new(move |world, bindings| {
-                    let input = bindings
-                        .read_source(world, &source)
-                        .expect("validated update source");
+                Box::new(move |world, value| {
                     let mut batch = layout.borrow(world.model_mut());
-                    update(Self::take(&mut batch, 0), input);
+                    write(Self::take(&mut batch, 0), value);
                 })
             }
         }
@@ -162,36 +163,40 @@ update_handle!(Handle<Chevron>, Chevron, chevrons, 7, |h: Handle<
     Chevron,
 >| h.id.0);
 
-impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe> UpdateHandle<Canvas>
+impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe> BindMutHandle<Canvas>
     for LineTipHandle<S, E>
 {
     type Object = Line;
     fn spec(self, slot: usize) -> ObjectSpec {
         self.line.spec(slot)
     }
+    fn dependency(self) -> BindingDependency {
+        self.line.dependency()
+    }
     fn take<'a, const N: usize>(
-        batch: &mut <Canvas as UpdateStorage>::Batch<'a, N>,
+        batch: &mut <Canvas as BindMutStorage>::Batch<'a, N>,
         slot: usize,
     ) -> &'a mut Line {
         Handle::<Line>::take(batch, slot)
     }
 }
-impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe> UpdateTargets<Canvas>
-    for LineTipHandle<S, E>
+impl<S: Copy + ThreadSafe, E: Copy + ThreadSafe>
+    BindMutTargets<Canvas> for LineTipHandle<S, E>
 {
     type Objects<'a> = &'a mut Line;
+    fn dependencies(&self) -> Vec<BindingDependency> {
+        self.line.dependencies()
+    }
     #[track_caller]
-    fn callback<I, F>(
+    fn writer<V: 'static, F>(
         self,
-        source: I,
-        update: F,
+        write: F,
         world: &World<Canvas>,
-    ) -> NativeUpdate<Canvas>
+    ) -> BindMutWriter<Canvas, V>
     where
-        I: BindingSource<World<Canvas>>,
-        F: for<'a> FnMut(&'a mut Line, I::Value) + ThreadSafe,
+        F: for<'a> FnMut(&'a mut Line, V) + ThreadSafe,
     {
-        self.line.callback(source, update, world)
+        self.line.writer(write, world)
     }
 }
 update_handle!(Handle<Path>, Path, paths, 3, |h: Handle<Path>| h
@@ -204,7 +209,7 @@ update_handle!(Handle<Camera>, Camera, cameras, 5, |_: Handle<
     Camera,
 >| 0);
 
-impl UpdateStorage for Canvas {
+impl BindMutStorage for Canvas {
     type Spec = ObjectSpec;
     type Layout<const N: usize> = Layout<N>;
     type Batch<'a, const N: usize> = ObjectBatch<'a, N>;

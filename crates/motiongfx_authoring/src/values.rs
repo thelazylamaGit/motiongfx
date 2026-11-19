@@ -21,7 +21,7 @@ impl<M> BindingSource<World<M>> for SampleTime {
         Some(world.time())
     }
     fn dependencies(&self) -> Vec<BindingDependency> {
-        Vec::new()
+        vec![BindingDependency::time()]
     }
     fn validate(&self, _: &World<M>) -> Result<(), BindingError> {
         Ok(())

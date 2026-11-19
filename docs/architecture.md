@@ -143,8 +143,8 @@ methods, so authoring stays free of graphics types.
    instead of panicking. Animations are values, so reusable functions and
    components return them; there is no merge API for compiled scenes yet.
    See [the authoring redesign](authoring-redesign.md) for the representation.
-4. Sampling applies the core timeline, evaluates the prepared binding plan,
-   then runs direct update callbacks in registration order.
+4. Sampling applies the core timeline, then evaluates the bindings whose
+   inputs may have changed, in the prepared dependency order.
 5. The host invokes a separate `vello_motiongfx::Renderer`, which reads sampled
    graphics and emits Vello scene commands. Its caches initialize lazily on
    first rendering and remain outside sampled/baked subject state.
@@ -210,17 +210,41 @@ time, binary size and timing differences have not been benchmarked.
 
 ### Evaluation and rendering are separate
 
-The current evaluator visits every registered binding/computed node on each
-sample, reads/clones its inputs, and compares them with previous inputs.
-Unchanged inputs skip the calculation and destination write. Changed inputs run
-native Rust closures; shared calculations have cached outputs. Dependency order
-is prepared once, not sorted every frame.
+Each binding, `computed` value and `bind_mut` declares what it reads. When the
+plan is prepared, it records which timeline sequences each node reads (grouped
+by subject and source type, so this is one lookup per sequence, not a scan of
+every pair), which nodes read the sample time (`scene.time()` and
+simulations), and which nodes read each other. On each sample it marks the
+nodes reading a sequence the timeline just wrote (`Timeline::queued_keys`, the
+same set it sampled, including seeks and track changes), plus the time readers
+if the time moved, and walks the prepared order running only marked nodes. A
+node that recalculates marks the nodes reading it; one whose inputs turn out
+unchanged still skips its calculation and write, and marks nothing. The first
+sample after preparing runs everything.
 
-This is sample-and-compare reactivity, not automatic subscriptions, lazy
-demand-driven evaluation, or a general effects system. It has reads, comparisons,
-cloning and closure dispatch costs. Only the thin timeline conveniences lower
-away to ordinary MotionGfx actions; do not call the entire signal system
-zero-cost. Large inputs can make cloning/comparison expensive.
+So an idle binding costs nothing per sample, and an animating one costs the
+timeline write plus its closure and write. What remains per sample is a lookup
+for each written sequence of a watched subject type, a check of the time, and a
+pass over the order's marks. This is declared-dependency tracking, not
+automatic subscriptions, lazy demand-driven evaluation, or a general effects
+system. Only the thin timeline conveniences lower away to ordinary MotionGfx
+actions; do not call the signal system zero-cost. Large inputs can make
+cloning/comparison expensive.
+
+The timeline also skips a sequence while the playhead stays inside a gap
+between two of its clips: the value written on entering the gap still holds,
+so nothing is written and nothing reading it is marked. Without that, every
+sequence whose clips span the current time was rewritten each sample, so
+"written" meant little for signals animated in many short bursts.
+
+Measured on the sorting example (64 bars, each fill a `computed!` of two
+signals animated in short flashes), sampling the whole scene at 60 fps, release
+build, best of 5: 35.4–35.9 µs per frame with the old evaluator, 37.8–38.6 µs
+with change tracking alone (every signal sequence was still rewritten), and
+6.6–6.7 µs with gaps skipped too (18.0 µs before the fills used signals at
+all). The 2D authoring benchmark's playback, A/B against the same code without
+these changes and run four times, moved between −6% and +7% per case, within
+this machine's noise.
 
 For a circle driven by a position signal, the binding checks that input and
 updates stored position only on change. Rendering subsequently reads the stored
@@ -305,10 +329,17 @@ ordinary cache checks, bounds/transforms, and Vello recording still take work.
   common calculations through computed descriptions instead of repeating work.
 - `scene.bind` is advanced explicit wiring after object creation. Builder inputs
   normally register equivalent relationships automatically.
-- `scene.update` is a direct `FnMut` callback for grouped mutation or work that
-  does not fit property relationships. It runs on **every** sample, after
-  bindings, without change caching or dependency ordering between callbacks.
-  Keep it for those cases, not as the default for every animated property.
+- `scene.bind_mut` is `bind` with mutable access to whole objects, for
+  changing several objects from one calculation or one object in place (such
+  as rewriting a path's geometry). It runs when its source changes or
+  something else writes one of its targets, so it has the last word on them,
+  and bindings reading its targets run after it. Keep it for those cases, not
+  as the default for every animated property.
+- What a value depends on decides the API: authored time is the timeline;
+  other values right now are signals, computed values, builder inputs, `bind`
+  and `bind_mut`; its own past is `simulate`. One-off happenings such as sounds
+  are timeline `event`s that hosts act on during playback; nothing runs side
+  effects while sampling, which also happens for seeks, tests and exports.
 - `scene.simulate` / `simulate_with` are sources that advance in fixed steps
   from their previous state (collisions, forces, feedback). They run once at
   `compile` and are looked up by time, so seeking stays exact. See
@@ -319,7 +350,10 @@ ordinary cache checks, bounds/transforms, and Vello recording still take work.
 
 Rust checks source/output/property types. Preparation checks binding cycles,
 missing properties, overlapping binding writers and timeline writes to bound
-fields. Direct updates do not have equivalent writer/dependency validation.
+fields. A `bind_mut` may share objects with bindings and other `bind_mut`s,
+which it then writes after; because it writes whole objects, a binding that it
+depends on reads its targets as they were before it wrote, instead of forming a
+cycle.
 Ordinary graphics handles do not enforce scene identity; mixing handles between
 scenes is unsupported and may alias a valid local ID. Purity, numerical validity,
 and simulation determinism are not guaranteed by the type system.
@@ -470,10 +504,9 @@ their speed when cut, are designed in [interruption.md](interruption.md).
 The current `signal`/`.map`/`computed!` authoring shape can be preserved while
 improving evaluation internally. Profile first. Potential improvements:
 
-1. Version counters/dirty propagation could skip checks of unaffected nodes.
-   Every supported write path, including timeline sampling, must participate.
-   Direct mutable callbacks require particular care; incorrect invalidation
-   would leave stale state. Preserve arbitrary forward/backward seeking.
+1. Dirty propagation that skips unaffected nodes is implemented (see
+   "Evaluation and rendering are separate"). Every write path participates:
+   timeline sequences, the sample time, bindings and `bind_mut` targets.
 2. Separate visual invalidation could let the host avoid unnecessary redraws
    during pauses/static holds. Resize, exposure, controls, camera, interaction
    and background changes still need appropriate redraws.

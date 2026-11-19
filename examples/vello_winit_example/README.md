@@ -236,7 +236,7 @@ signals/computed geometry, object creation, then the timeline. It uses
 standalone `signal(...)` for guide opacity, probe position and bend. `.map(...)`
 and `computed!` describe shared calculations without borrowing the scene. Computed
 positions feed circles, connecting lines and the exact quadratic directly in
-their constructors; no `scene.update` or explicit `scene.bind` calls are used.
+their constructors; no `scene.bind_mut` or explicit `scene.bind` calls are used.
 The reusable grid helper creates styled lines whose `reveal` properties are
 animated together in the timeline without procedural point-buffer updates.
 

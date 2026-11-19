@@ -45,12 +45,12 @@ Its 2D objects can share signals, computed relationships and scheduled changes
 with other models. Source types usually infer the model from `scene.add`;
 a completely detached descriptor may need an explicit `Object<Circle>` type.
 
-Shared callback execution uses `UpdateTargets<M>`. Safe borrowing of concrete
-storage stays in model adapters. The optional `UpdateStorage`/`UpdateHandle`
-contracts provide generic tuple/array scheduling; the current 2D collection
-adapter targets `Canvas`. Composite callback targets require their own safe
-borrowing adapter or specific `UpdateTargets` implementation. There is no
-implicit mixed-store callback ordering or aliasing scheme.
+`scene.bind_mut` writers are built through `BindMutTargets<M>`. Safe borrowing
+of concrete storage stays in model adapters. The optional
+`BindMutStorage`/`BindMutHandle` contracts provide generic tuple/array
+targets; the current 2D collection adapter targets `Canvas`. Composite targets
+require their own safe borrowing adapter or specific `BindMutTargets`
+implementation. There is no implicit mixed-store aliasing scheme.
 
 Reads use the shared `compiled.get(handle)`; the camera is an ordinary unique
 object added with `scene.add`, and the background is set through authoring's

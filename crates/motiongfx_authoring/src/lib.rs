@@ -31,8 +31,8 @@ pub use input::{Input, PreparedInput};
 pub use object::ObjectDefinition;
 mod values;
 pub use scene::{
-    CompileContext, CompileError, CompiledScene, Event, NativeUpdate,
-    ObjectHandle, Scene, SceneObject, UpdateTargets, World,
+    BindMutTargets, BindMutWriter, CompileContext, CompileError,
+    CompiledScene, Event, ObjectHandle, Scene, SceneObject, World,
     WorldObject,
 };
 pub use values::SampleTime;
@@ -42,7 +42,9 @@ pub use simulation::Simulated;
 mod source;
 mod spring;
 mod target;
-pub use bindings::{BindingError, BindingPlan, BindingSource};
+pub use bindings::{
+    BindingDependency, BindingError, BindingPlan, BindingSource,
+};
 pub use signals::{
     Signal, SignalId, SignalValues, SignalWorld, signal,
 };
@@ -245,4 +247,4 @@ impl<I, S, T> Property<I, S, T> {
 }
 
 mod updates;
-pub use updates::{UpdateHandle, UpdateStorage};
+pub use updates::{BindMutHandle, BindMutStorage};

@@ -121,7 +121,7 @@ fn replacement_tips_drop_obsolete_wiring_and_grouped_updates_borrow_shapes_safel
     assert_eq!(scene.model().draw_order().len(), 1);
     // The line and its registered tips use disjoint storage. Their ordinary
     // typed handles also remain usable as a heterogeneous update target tuple.
-    scene.update(
+    scene.bind_mut(
         (line, line.start_tip, line.end_tip),
         &amount,
         |(line, triangle, chevron), value| {

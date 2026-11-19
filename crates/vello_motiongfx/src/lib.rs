@@ -26,6 +26,8 @@ use vello::kurbo::Stroke;
 #[cfg(test)]
 use vello::peniko::Fill;
 #[cfg(test)]
+mod bind_mut_tests;
+#[cfg(test)]
 mod binding_tests;
 #[cfg(test)]
 mod camera_tests;
@@ -41,5 +43,3 @@ mod style_tests;
 mod tests;
 #[cfg(test)]
 mod text_tests;
-#[cfg(test)]
-mod update_tests;

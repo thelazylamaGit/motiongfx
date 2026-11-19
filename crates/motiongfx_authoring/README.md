@@ -100,7 +100,7 @@ subject types can expose their own typed `Property` fields.
 ## Shared scene lifecycle
 
 `Scene<M>` owns an application-selected model `M`, one native binding plan,
-and the ordered native update callbacks. `World<M>` wraps the model with
+including its `bind_mut` writers. `World<M>` wraps the model with
 scene-local signal storage and sampled time. Models implement
 `WorldObject<ModelId, M>` for each object type using model-owned typed IDs;
 a blanket impl provides core's `SubjectSource` for `World<M>` from it.
@@ -128,13 +128,15 @@ registration order. `model()` exposes a read-only sampled model; `state()`
 also exposes shared time and registered signal inspection. Renderers consume
 these views separately and own their own caches/resources.
 
-`UpdateTargets<M>` prepares a native callback with model-specific safe target
-borrowing. The optional `UpdateStorage`/`UpdateHandle` contracts implement
-array/tuple target collections without a renderer-specific collection engine.
-Direct callbacks run on every sample, have no dependency/writer sorting, and
-must assign from sampled inputs for arbitrary-time seeking. Mutable models
-and callbacks remain native Rust; this does not add a scripting runtime.
-Invalid update sources or targets panic at the `scene.update(..)` call.
+`BindMutTargets<M>` builds a `scene.bind_mut` writer with model-specific safe
+target borrowing, and names each target object so the plan can order the
+bindings that read it. The optional `BindMutStorage`/`BindMutHandle` contracts
+implement array/tuple target collections without a renderer-specific
+collection engine. A `bind_mut` runs when its source changes or something else
+writes one of its targets, after any binding of the same objects, and must
+assign from sampled inputs for arbitrary-time seeking. Mutable models and
+writers remain native Rust; this does not add a scripting runtime. Invalid
+`bind_mut` sources or targets panic at the `scene.bind_mut(..)` call.
 
 `prepare_with<Key>(...)` is an integration hook for final configuration such
 as last-setter-wins backgrounds. It runs during construction and is keyed by
