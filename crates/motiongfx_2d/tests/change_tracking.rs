@@ -95,3 +95,25 @@ fn bind_mut_has_the_last_word_and_its_readers_see_it_at_once() {
         );
     }
 }
+
+#[test]
+fn an_unchanged_result_stops_at_the_computed_value() {
+    let mut scene = Scene::new();
+    scene.defaults(s(1), ease::linear);
+    let t = signal(0.0);
+    let step = computed!((t) => (t * 4.0_f64).floor());
+    let (calls, counted) = counter();
+    let dot = scene.add(Circle::new(1.0));
+    scene.bind_mut(dot, &step, move |dot, step| {
+        counted.fetch_add(1, Ordering::Relaxed);
+        dot.radius = 1.0 + step;
+    });
+    let mut animation = scene.compile([t.to(1.0)]);
+    // `t` changes on every sample, but `step` only four times, so the
+    // `bind_mut` runs once at the start and once per step.
+    for time in (0..=1000).step_by(50) {
+        animation.sample(ms(time));
+    }
+    assert_eq!(animation.get(dot).radius, 5.0);
+    assert_eq!(calls.load(Ordering::Relaxed), 5);
+}

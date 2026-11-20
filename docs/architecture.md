@@ -218,9 +218,14 @@ simulations), and which nodes read each other. On each sample it marks the
 nodes reading a sequence the timeline just wrote (`Timeline::queued_keys`, the
 same set it sampled, including seeks and track changes), plus the time readers
 if the time moved, and walks the prepared order running only marked nodes. A
-node that recalculates marks the nodes reading it; one whose inputs turn out
-unchanged still skips its calculation and write, and marks nothing. The first
-sample after preparing runs everything.
+marked node first compares its input with the last one and skips if it is the
+same. A `computed` value that recalculates also compares its result with the
+cached one, as Leptos's memos do, so a rounded, clamped or thresholded value
+that comes out the same wakes nothing downstream. Only a node whose output may
+have changed marks the nodes reading it. A `bind_mut` is marked one of two
+ways: by its source, when it compares its input like any node, or by something
+else writing one of its targets, when it writes again regardless to keep the
+last word. The first sample after preparing runs everything.
 
 So an idle binding costs nothing per sample, and an animating one costs the
 timeline write plus its closure and write. What remains per sample is a lookup
@@ -245,6 +250,13 @@ with change tracking alone (every signal sequence was still rewritten), and
 all). The 2D authoring benchmark's playback, A/B against the same code without
 these changes and run four times, moved between −6% and +7% per case, within
 this machine's noise.
+
+Comparing `computed` results and `bind_mut` inputs, measured pinned to the
+performance cores in one session: a stepped `computed` (`floor(t * 10)`)
+feeding 1,000 `bind_mut`s went from 7.6–7.8 µs to 0.53 µs per frame, and the
+sorting example stayed at 6.7–7.0 µs. The authoring bench's playback, whose
+bound circles follow a smoothly changing value so nothing is skipped and each
+recalculation pays one extra comparison, moved 0% to +3%.
 
 For a circle driven by a position signal, the binding checks that input and
 updates stored position only on change. Rendering subsequently reads the stored

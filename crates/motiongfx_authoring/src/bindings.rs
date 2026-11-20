@@ -278,6 +278,27 @@ type Evaluate<W> = Box<
 type Validate<W> =
     Box<dyn Fn(&W) -> Result<(), BindingError> + Send + Sync>;
 
+/// Why a node runs in an evaluation, as bit flags.
+type Mark = u8;
+/// One of its inputs may have changed: it compares its input first and
+/// skips if it is the same.
+const SOURCE: Mark = 1;
+/// Something else wrote one of a `bind_mut`'s targets: it writes again
+/// even if its input is the same, to keep the last word.
+const TARGET: Mark = 2;
+
+/// Sorts `(node, mark)` pairs by node and merges each node's marks.
+fn merge_marks(pairs: &mut Vec<(usize, Mark)>) {
+    pairs.sort_unstable_by_key(|&(node, _)| node);
+    pairs.dedup_by(|later, kept| {
+        let same = later.0 == kept.0;
+        if same {
+            kept.1 |= later.1;
+        }
+        same
+    });
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Bind,
@@ -290,8 +311,9 @@ struct Node<W> {
     /// What it writes: a bound field, or a `bind_mut`'s whole objects.
     destinations: Vec<PropertyKey>,
     validate: Validate<W>,
-    /// Runs the node, or with `reset` runs it even if its inputs are
-    /// unchanged. Returns whether it wrote anything.
+    /// Runs the node, or with `force` runs it even if its input is
+    /// unchanged. Returns whether its output may have changed, so the
+    /// nodes reading it should run.
     evaluate: Evaluate<W>,
 }
 
@@ -306,17 +328,18 @@ pub struct BindingPlan<W> {
     nodes: Vec<Node<W>>,
     /// Evaluation order: every node after the nodes it reads.
     order: Vec<usize>,
-    /// The nodes that read each node's output.
-    dependents: Vec<Vec<usize>>,
-    /// The nodes to run when the timeline writes a sequence.
-    watchers: HashMap<ActionKey, Box<[usize]>>,
+    /// The nodes that read each node's output, and how to mark them.
+    dependents: Vec<Vec<(usize, Mark)>>,
+    /// The nodes to run when the timeline writes a sequence, and how to
+    /// mark them.
+    watchers: HashMap<ActionKey, Box<[(usize, Mark)]>>,
     /// Subject types with watched sequences, so sequences of other types
     /// are skipped without a lookup.
     watched_types: Vec<TypeId>,
     /// The nodes that read the sample time.
     timed: Vec<usize>,
-    /// Nodes to run in the current evaluation.
-    dirty: Vec<bool>,
+    /// Why each node runs in the current evaluation; 0 if it doesn't.
+    dirty: Vec<Mark>,
     values: DerivedValues,
     prepared: bool,
     first_evaluation: bool,
@@ -433,11 +456,11 @@ impl<W: 'static> BindingPlan<W> {
                         )
                     })
             }),
-            evaluate: Box::new(move |world, values, reset| {
+            evaluate: Box::new(move |world, values, force| {
                 let input = source
                     .read(world, values)
                     .expect("validated binding source exists");
-                if !reset && previous.as_ref() == Some(&input) {
+                if !force && previous.as_ref() == Some(&input) {
                     return false;
                 }
                 let output = calculate(input.clone());
@@ -474,6 +497,7 @@ impl<W: 'static> BindingPlan<W> {
             })
             .collect();
         let validation_source = source.clone();
+        let mut previous = None;
         self.nodes.push(Node {
             kind: Kind::BindMut,
             dependencies: source.dependencies(),
@@ -481,13 +505,16 @@ impl<W: 'static> BindingPlan<W> {
             validate: Box::new(move |world| {
                 validation_source.validate(world)
             }),
-            // Runs whenever it is reached: its source or one of its
-            // targets changed, and either needs writing again.
-            evaluate: Box::new(move |world, values, _| {
+            // Forced when something else wrote one of its targets.
+            evaluate: Box::new(move |world, values, force| {
                 let input = source
                     .read(world, values)
                     .expect("validated bind_mut source exists");
-                write(world, input);
+                if !force && previous.as_ref() == Some(&input) {
+                    return false;
+                }
+                write(world, input.clone());
+                previous = Some(input);
                 true
             }),
         });
@@ -517,23 +544,29 @@ impl<W: 'static> BindingPlan<W> {
             validate: Box::new(move |world| {
                 validation_source.validate(world)
             }),
-            evaluate: Box::new(move |world, values, reset| {
+            evaluate: Box::new(move |world, values, force| {
                 let input = source
                     .read(world, values)
                     .expect("validated derived source exists");
-                if !reset && previous.as_ref() == Some(&input) {
+                if !force && previous.as_ref() == Some(&input) {
                     return false;
                 }
                 let output = calculate(input.clone());
-                if let Some(cached) = values.0[index].as_mut() {
-                    *cached
-                        .downcast_mut::<T>()
-                        .expect("derived output type is fixed") =
-                        output;
-                } else {
-                    values.0[index] = Some(Box::new(output));
-                }
                 previous = Some(input);
+                let slot = &mut values.0[index];
+                if let Some(cached) = slot.as_mut() {
+                    let cached = cached
+                        .downcast_mut::<T>()
+                        .expect("derived output type is fixed");
+                    // An unchanged result, such as a rounded or clamped
+                    // value, stops here: nothing reading it needs to run.
+                    if !force && *cached == output {
+                        return false;
+                    }
+                    *cached = output;
+                } else {
+                    *slot = Some(Box::new(output));
+                }
                 true
             }),
         });
@@ -598,9 +631,10 @@ impl<W: 'static> BindingPlan<W> {
         // `predecessors[node]` must run before `node`. A `bind_mut` writes
         // whole objects, so ordering its readers after it is held back
         // until the rest is known; see below.
-        let mut predecessors = vec![Vec::new(); count];
+        let mut predecessors: Vec<Vec<(usize, Mark)>> =
+            vec![Vec::new(); count];
         let mut bind_mut_readers = Vec::new();
-        let mut watchers: HashMap<ActionKey, Vec<usize>> =
+        let mut watchers: HashMap<ActionKey, Vec<(usize, Mark)>> =
             HashMap::new();
         let mut timed = Vec::new();
         for (index, node) in self.nodes.iter().enumerate() {
@@ -621,10 +655,12 @@ impl<W: 'static> BindingPlan<W> {
                     // bindings of one field are ambiguous.
                     match (node.kind, other.kind) {
                         (Kind::BindMut, _) => {
-                            predecessors[index].push(other_index);
+                            predecessors[index]
+                                .push((other_index, TARGET));
                         }
                         (_, Kind::BindMut) => {
-                            predecessors[other_index].push(index);
+                            predecessors[other_index]
+                                .push((index, TARGET));
                         }
                         _ => {
                             return Err(
@@ -651,7 +687,7 @@ impl<W: 'static> BindingPlan<W> {
                             watchers
                                 .entry(*key)
                                 .or_default()
-                                .push(index);
+                                .push((index, TARGET));
                         }
                     }
                     _ => {}
@@ -666,14 +702,14 @@ impl<W: 'static> BindingPlan<W> {
                         if !self.is_own_computed(*plan, *computed) {
                             return Err(BindingError::ForeignDerived);
                         }
-                        predecessors[index].push(*computed);
+                        predecessors[index].push((*computed, SOURCE));
                     }
                     Dependency::Property(source) => {
                         for key in overlapping(source) {
                             watchers
                                 .entry(*key)
                                 .or_default()
-                                .push(index);
+                                .push((index, SOURCE));
                         }
                         for (writer, other) in
                             self.nodes.iter().enumerate()
@@ -694,7 +730,8 @@ impl<W: 'static> BindingPlan<W> {
                                 }
                             } else {
                                 // Reading its own destination is a cycle.
-                                predecessors[index].push(writer);
+                                predecessors[index]
+                                    .push((writer, SOURCE));
                             }
                         }
                     }
@@ -712,7 +749,7 @@ impl<W: 'static> BindingPlan<W> {
             feeds.push(writer);
             let mut seen = vec![false; count];
             while let Some(node) = feeds.pop() {
-                for &predecessor in &predecessors[node] {
+                for &(predecessor, _) in &predecessors[node] {
                     if !std::mem::replace(
                         &mut seen[predecessor],
                         true,
@@ -722,7 +759,7 @@ impl<W: 'static> BindingPlan<W> {
                 }
             }
             if !seen[reader] {
-                predecessors[reader].push(writer);
+                predecessors[reader].push((writer, SOURCE));
             }
         }
 
@@ -733,11 +770,10 @@ impl<W: 'static> BindingPlan<W> {
         for (index, predecessors) in
             predecessors.iter_mut().enumerate()
         {
-            predecessors.sort_unstable();
-            predecessors.dedup();
+            merge_marks(predecessors);
             incoming[index] = predecessors.len();
-            for &predecessor in predecessors.iter() {
-                dependents[predecessor].push(index);
+            for &(predecessor, mark) in predecessors.iter() {
+                dependents[predecessor].push((index, mark));
             }
         }
         let mut ready: BinaryHeap<Reverse<usize>> = incoming
@@ -748,7 +784,7 @@ impl<W: 'static> BindingPlan<W> {
         let mut order = Vec::with_capacity(count);
         while let Some(Reverse(index)) = ready.pop() {
             order.push(index);
-            for &dependent in &dependents[index] {
+            for &(dependent, _) in &dependents[index] {
                 incoming[dependent] -= 1;
                 if incoming[dependent] == 0 {
                     ready.push(Reverse(dependent));
@@ -764,8 +800,7 @@ impl<W: 'static> BindingPlan<W> {
         self.watchers = watchers
             .into_iter()
             .map(|(key, mut nodes)| {
-                nodes.sort_unstable();
-                nodes.dedup();
+                merge_marks(&mut nodes);
                 let subject = key.subject_id().type_id();
                 if !watched_types.contains(&subject) {
                     watched_types.push(subject);
@@ -777,7 +812,7 @@ impl<W: 'static> BindingPlan<W> {
         self.timed = timed;
         self.order = order;
         self.dependents = dependents;
-        self.dirty = vec![false; count];
+        self.dirty = vec![0; count];
         self.prepared = true;
         self.first_evaluation = true;
         Ok(())
@@ -807,8 +842,8 @@ impl<W: 'static> BindingPlan<W> {
             if self.watchers.len() <= timeline.queued_len() {
                 for (key, nodes) in &self.watchers {
                     if timeline.is_queued(key) {
-                        for &node in nodes.iter() {
-                            self.dirty[node] = true;
+                        for &(node, mark) in nodes.iter() {
+                            self.dirty[node] |= mark;
                         }
                     }
                 }
@@ -820,33 +855,34 @@ impl<W: 'static> BindingPlan<W> {
                     {
                         continue;
                     }
-                    for &node in
+                    for &(node, mark) in
                         self.watchers.get(key).into_iter().flatten()
                     {
-                        self.dirty[node] = true;
+                        self.dirty[node] |= mark;
                     }
                 }
             }
             if time_changed {
                 for &node in &self.timed {
-                    self.dirty[node] = true;
+                    self.dirty[node] |= SOURCE;
                 }
             }
         }
         for &index in &self.order {
             // Cleared even when resetting, so marks made by this pass don't
             // carry over to the next.
-            let marked = std::mem::take(&mut self.dirty[index]);
-            if !reset && !marked {
+            let mark = std::mem::take(&mut self.dirty[index]);
+            if !reset && mark == 0 {
                 continue;
             }
+            let force = reset || mark & TARGET != 0;
             if (self.nodes[index].evaluate)(
                 world,
                 &mut self.values,
-                reset,
+                force,
             ) {
-                for &dependent in &self.dependents[index] {
-                    self.dirty[dependent] = true;
+                for &(dependent, mark) in &self.dependents[index] {
+                    self.dirty[dependent] |= mark;
                 }
             }
         }
