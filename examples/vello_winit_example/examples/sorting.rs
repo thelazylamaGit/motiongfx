@@ -52,7 +52,7 @@ const SEED: u64 = 0x5EED;
 /// How swapped bars change places.
 const SWAP_STYLE: SwapStyle = SwapStyle::Slide;
 /// Whether sorts that use a scratch buffer show it as a second row.
-const BUFFER_STYLE: BufferStyle = BufferStyle::Hidden;
+const BUFFER_STYLE: BufferStyle = BufferStyle::Row;
 
 /// Width the bars spread across, in canvas units.
 const SPREAD: f64 = 1200.0;
@@ -709,7 +709,12 @@ impl<'a> Bars<'a> {
         *self.slot(from) = None;
         *self.slot(to) = Some(value);
         if BUFFER_STYLE == BufferStyle::Row && !self.split {
+            // The comparison or read that chose this move waits for the
+            // row to open, so it lights and sounds with its move.
+            let deciding =
+                if self.acted { None } else { self.beats.pop() };
             self.set_split(true);
+            self.beats.extend(deciding);
         }
         self.join_beat();
         match (BUFFER_STYLE, to) {
